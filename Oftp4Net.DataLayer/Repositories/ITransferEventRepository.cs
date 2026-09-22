@@ -10,6 +10,10 @@ public interface ITransferEventRepository : IRepository<TransferEvent, int>
     Task<DataFragment<TransferEvent>> GetFragmentAsync(TransferEventFilter filter, GridDataProviderRequest<TransferEvent> request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Filtered page of records, newest first (REST API).</summary>
+    Task<DataFragment<TransferEvent>> GetListAsync(TransferEventFilter filter, int skip, int take,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Marks records older than <paramref name="cutoff"/> as archived, returns their count.</summary>
     Task<int> ArchiveOlderThanAsync(DateTime cutoff, CancellationToken cancellationToken = default);
 }

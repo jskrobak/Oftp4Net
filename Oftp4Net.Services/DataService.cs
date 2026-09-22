@@ -187,4 +187,11 @@ public class DataService(
             return null;
         }
     }
+
+    public async Task MarkReceivedFileFetchedAsync(ReceivedFile receivedFile)
+    {
+        receivedFile.FetchedDate = DateTime.Now;
+        unitOfWork.AddForUpdate(receivedFile);
+        await unitOfWork.CommitAsync();
+    }
 }

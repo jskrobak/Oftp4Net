@@ -122,7 +122,7 @@ file name, severity, period) and a detail of every record:
 | Outgoing | connections we open (start, end, failures, rejected authentication) and sent files (sent, failed, retries) |
 | Incoming | connections partners open, including failed TLS handshakes, and received or refused files |
 | EERP / NERP | End to End Responses sent for received files and received for sent files |
-| Hooks | every hook run with exit code, duration and output |
+| Hooks and webhooks | every hook run with exit code, duration and output, and every webhook call |
 
 Records older than *Archive transfer log after (days)* (setting, default 90) are archived: they are kept, but shown only
 when *Complete archive* is checked in the filter. *Log stream* remains the live technical log.
@@ -144,6 +144,46 @@ which has no counterpart in the ANSI code pages, becomes a line feed when a rece
 
 The conversion is driven only by the setting: OFTP does not tell which character set the content of a virtual file
 uses, so *Convert incoming EBCDIC to ANSI* is to be set for partners that send EBCDIC.
+
+## REST API
+
+Integrations can use a REST API authenticated with a bearer token: `Authorization: Bearer <token>`.
+Tokens are created in *Settings → API tokens* and shown only once (only their hash is stored).
+The description of the endpoints is at `/openapi/v1.json`.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/outbox` | puts a file into the send queue (multipart: `file`, `partner`, `identity`, optional `virtualFileName`, `description`, `reference`, `webhookUrl`, `webhookSecret`) |
+| `GET /api/v1/outbox` | lists queued files (`status`, `partner`, `reference`, `from`, `to`, `skip`, `take`) |
+| `GET /api/v1/outbox/{id}` | detail of a queued file |
+| `DELETE /api/v1/outbox/{id}` | removes a file that has not been transferred yet |
+| `POST /api/v1/outbox/{id}/retry` | puts a failed or finished file back into the queue |
+| `GET /api/v1/inbox` | lists received files; `onlyNew=true` returns files not fetched yet |
+| `GET /api/v1/inbox/{id}` / `…/content` | detail / content of a received file |
+| `POST /api/v1/inbox/{id}/fetched` | marks a received file as fetched |
+| `GET /api/v1/partners`, `/identities` | codes usable when sending |
+| `GET /api/v1/events` | reads the transfer log |
+| `GET /api/v1/status` | state of the services, listeners and queues |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -F file=@orders.edi -F partner=O0013000000PARTNER \
+     -F identity=O0013000000ME -F reference=ORDER-4711 \
+     -F webhookUrl=https://erp.example.com/oftp/callback -F webhookSecret=$SECRET \
+     https://oftp.example.com/api/v1/outbox
+```
+
+### Webhooks
+
+`webhookUrl` registered with a file is called on `file.sent`, `file.delivered` (EERP arrived), `file.not_delivered`
+(NERP) and `file.send_failed`. A token can also carry an *inbox webhook URL*, called on `file.received`.
+
+The request is a `POST` with a JSON body (`event`, `timestamp`, `queueItemId` or `receivedFileId`, `reference`,
+`virtualFileName`, `fileDate`, `fileTime`, `fileSize`, `partnerName`, `partnerSsid`, `originator`, `destination`,
+`status`, `error`, `sentDate`, `deliveredDate`) and the header `X-Oftp4Net-Event`. When a secret is set, the header
+`X-Oftp4Net-Signature` contains `sha256=<hex>`, the HMAC-SHA256 of the body; verify it before trusting the call.
+A call that fails is retried (`Webhooks:RetryDelaysSeconds`, default after 5 s, 30 s and 2 min) and the result is in
+*Logs → Hooks and webhooks*. URLs in private or loopback networks are refused unless
+`Webhooks:AllowPrivateNetworks` is enabled.
 
 ## Hooks
 

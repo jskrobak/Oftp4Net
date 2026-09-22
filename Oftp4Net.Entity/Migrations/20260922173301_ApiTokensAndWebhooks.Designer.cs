@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oftp4Net.Entity;
@@ -11,9 +12,11 @@ using Oftp4Net.Entity;
 namespace Oftp4Net.Entity.Migrations
 {
     [DbContext(typeof(O4NDbContext))]
-    partial class O4NDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260922173301_ApiTokensAndWebhooks")]
+    partial class ApiTokensAndWebhooks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -214,18 +217,9 @@ namespace Oftp4Net.Entity.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("AnsiCodePage")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("ConvertIncomingEbcdicToAnsi")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("Description")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
-
-                    b.Property<int>("EbcdicCodePage")
-                        .HasColumnType("integer");
 
                     b.Property<string>("Host")
                         .IsRequired()
@@ -236,11 +230,6 @@ namespace Oftp4Net.Entity.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
-
-                    b.Property<string>("OutgoingEncoding")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
 
                     b.Property<string>("Password")
                         .HasMaxLength(1000)

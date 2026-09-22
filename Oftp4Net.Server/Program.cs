@@ -16,10 +16,12 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Oftp4Net.DependencyInjection;
 using Oftp4Net.Server;
+using Oftp4Net.Server.Api;
 using Oftp4Net.Server.Components;
 using Oftp4Net.Server.Logging;
 using Oftp4Net.Services;
 using Oftp4Net.Services.Oftp;
+using Oftp4Net.Services.Api;
 using Oftp4Net.Services.Hooks;
 using Oftp4Net.Services.TransferEvents;
 using Serilog;
@@ -46,7 +48,10 @@ builder.Services.AddDataProtection()
     .SetApplicationName("Oftp4Net")
     .PersistKeysToFileSystem(new DirectoryInfo(builder.Configuration["DataProtection:KeysDirectory"] ?? "keys"));
 
+builder.Services.AddOpenApi();
+
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenAuthenticationHandler.SchemeName, null)
     .AddCookie(options =>
     {
         options.LoginPath = "/Login";
@@ -96,6 +101,11 @@ builder.Services.AddScoped<LoopbackSeedService>();
 builder.AddBlazorCookies();
 
 builder.Services.AddSingleton<TransferClaims>();
+builder.Services.AddScoped<ApiTokenService>();
+builder.Services.AddHttpClient(WebhookDispatcher.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<WebhookDispatcher>();
+builder.Services.AddSingleton<IWebhookDispatcher>(sp => sp.GetRequiredService<WebhookDispatcher>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookDispatcher>());
 builder.Services.AddSingleton<TransferEventLog>();
 builder.Services.AddSingleton<ITransferEventLog>(sp => sp.GetRequiredService<TransferEventLog>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TransferEventLog>());
@@ -153,6 +163,9 @@ app.UseAntiforgery();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+app.MapApi();
+app.MapOpenApi().AllowAnonymous();
 
 app.MapPost("/account/login", async (HttpContext httpContext, UserService userService, [FromForm] string username,
     [FromForm] string password, [FromForm] string? returnUrl) =>

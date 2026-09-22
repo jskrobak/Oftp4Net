@@ -41,6 +41,8 @@ public enum TransferEventType
     UnknownEndResponse,
     HookFinished,
     HookFailed,
+    WebhookDelivered,
+    WebhookFailed,
 }
 
 /// <summary>

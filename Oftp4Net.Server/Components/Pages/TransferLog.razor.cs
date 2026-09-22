@@ -17,7 +17,7 @@ public partial class TransferLog : ComponentBase
             ["outgoing"] = (TransferEventCategory.Outgoing, "Outgoing"),
             ["incoming"] = (TransferEventCategory.Incoming, "Incoming"),
             ["eerp"] = (TransferEventCategory.EndResponse, "EERP / NERP"),
-            ["hooks"] = (TransferEventCategory.Hook, "Hooks"),
+            ["hooks"] = (TransferEventCategory.Hook, "Hooks and webhooks"),
         };
 
     [Parameter] public string Section { get; set; } = "";

@@ -44,4 +44,5 @@ public interface IDataService
     Task<DataFragment<ReceivedFile>> GetReceivedFilesDataFragmentAsync(ReceivedFileFilter filter,
         GridDataProviderRequest<ReceivedFile> request, CancellationToken cancellationToken = default);
     Task<ReceivedFile?> GetReceivedFileAsync(int id);
+    Task MarkReceivedFileFetchedAsync(ReceivedFile receivedFile);
 }

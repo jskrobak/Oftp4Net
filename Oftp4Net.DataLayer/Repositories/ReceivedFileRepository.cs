@@ -39,6 +39,25 @@ public class ReceivedFileRepository(
         };
     }
 
+    public async Task<DataFragment<ReceivedFile>> GetListAsync(ReceivedFileFilter filter, int skip, int take,
+        CancellationToken cancellationToken = default)
+    {
+        var filtered = filter.Apply(Data.Include(i => i.Partner));
+        var count = await filtered.CountAsync(cancellationToken);
+        var items = await filtered
+            .OrderByDescending(i => i.Id)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+        return new DataFragment<ReceivedFile> { Data = items, TotalCount = count };
+    }
+
+    public async Task<ReceivedFile?> FindWithRefsAsync(int id, CancellationToken cancellationToken = default)
+    {
+        return await Data.Include(i => i.Partner).FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
+    }
+
     public async Task<List<ReceivedFile>> GetUnconfirmedAsync(int partnerId, CancellationToken cancellationToken = default)
     {
         return await Data

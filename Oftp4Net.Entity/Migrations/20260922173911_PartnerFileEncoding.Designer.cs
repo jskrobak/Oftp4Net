@@ -40,6 +40,57 @@ namespace Oftp4Net.Entity.Migrations
                     b.ToTable("__DataSeed", (string)null);
                 });
 
+            modelBuilder.Entity("Oftp4Net.Domain.ApiToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("Created")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("InboxWebhookUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("LastUsed")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("WebhookSecret")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("ApiTokens");
+                });
+
             modelBuilder.Entity("Oftp4Net.Domain.Certificate", b =>
                 {
                     b.Property<int>("Id")
@@ -250,6 +301,9 @@ namespace Oftp4Net.Entity.Migrations
                         .HasMaxLength(25)
                         .HasColumnType("character varying(25)");
 
+                    b.Property<DateTime?>("FetchedDate")
+                        .HasColumnType("timestamp without time zone");
+
                     b.Property<string>("FileDate")
                         .IsRequired()
                         .HasMaxLength(8)
@@ -348,6 +402,10 @@ namespace Oftp4Net.Entity.Migrations
                     b.Property<int>("PartnerId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Reference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<int>("RetryCount")
                         .HasColumnType("integer");
 
@@ -361,6 +419,14 @@ namespace Oftp4Net.Entity.Migrations
                         .IsRequired()
                         .HasMaxLength(26)
                         .HasColumnType("character varying(26)");
+
+                    b.Property<string>("WebhookSecret")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("WebhookUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.HasKey("Id");
 
