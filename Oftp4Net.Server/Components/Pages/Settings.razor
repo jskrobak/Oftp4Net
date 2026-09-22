@@ -15,13 +15,13 @@
                 <div class="row g-3" style="max-width: 60rem;">
                     <div class="col-12">
                         <HxInputText Label="Receive directory"
-                                     Hint="Received files are stored in a sub-directory per partner. Relative paths are resolved against the application directory."
+                                     Hint="@($"Received files are stored in a sub-directory per partner. Relative paths are resolved against {GlobalSettingsService.DataDirectory}.")"
                                      @bind-Value="@settings.ReceiveDirectory" />
                     </div>
 
                     <div class="col-12">
                         <HxInputText Label="Outbox directory"
-                                     Hint="Files uploaded to the send queue are stored here."
+                                     Hint="@($"Files uploaded to the send queue are stored here. Relative paths are resolved against {GlobalSettingsService.DataDirectory}.")"
                                      @bind-Value="@settings.OutboxDirectory" />
                     </div>
 

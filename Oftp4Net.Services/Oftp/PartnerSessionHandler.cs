@@ -25,6 +25,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private readonly TransferClaims _claims;
     private readonly ITimeService _timeService;
     private readonly GlobalSettings _settings;
+    private readonly GlobalSettingsService _settingsService;
     private readonly ILogger _logger;
 
     private readonly Identity? _identity;
@@ -45,6 +46,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _claims = scopedServices.GetRequiredService<TransferClaims>();
         _timeService = scopedServices.GetRequiredService<ITimeService>();
         _settings = settings;
+        _settingsService = scopedServices.GetRequiredService<GlobalSettingsService>();
         _logger = logger;
         Partner = partner;
         _identity = identity;
@@ -245,7 +247,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         if (await _receivedFiles.ExistsAsync(partner.Id, header.DatasetName, header.Date, header.Time, cancellationToken))
             return OftpStartFileDecision.Reject(AnswerReasonCodes.DuplicateFile, "File was already received.");
 
-        var directory = Path.Combine(_settings.ReceiveDirectory, SafeFileName(partner.SSID));
+        var directory = Path.Combine(_settingsService.ResolvePath(_settings.ReceiveDirectory), SafeFileName(partner.SSID));
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"{SafeFileName(header.DatasetName)}_{header.Date}{header.Time}");
 

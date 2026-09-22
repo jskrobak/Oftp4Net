@@ -1,13 +1,6 @@
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-USER $APP_UID
-WORKDIR /app
-# Web UI
-EXPOSE 8080
-# OFTP over TLS / plain TCP (configure listeners with these ports)
-EXPOSE 6619
-EXPOSE 3305
-
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# The application is framework-dependent (no native code), so it is compiled once on the build machine's
+# platform and the result is copied into the runtime image of each target platform (amd64, arm64).
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["global.json", "nuget.config", "Directory.Build.props", "Directory.Packages.props", "./"]
@@ -20,19 +13,23 @@ COPY ["Oftp4Net.Entity/Oftp4Net.Entity.csproj", "Oftp4Net.Entity/"]
 COPY ["Oftp4Net.Services/Oftp4Net.Services.csproj", "Oftp4Net.Services/"]
 RUN dotnet restore "Oftp4Net.Server/Oftp4Net.Server.csproj"
 COPY . .
-WORKDIR "/src/Oftp4Net.Server"
-RUN dotnet build "Oftp4Net.Server.csproj" -c $BUILD_CONFIGURATION -o /app/build --no-restore
+RUN dotnet publish "Oftp4Net.Server/Oftp4Net.Server.csproj" -c $BUILD_CONFIGURATION -o /app/publish \
+        /p:UseAppHost=false --no-restore \
+    && mkdir -p /app/data
 
-FROM build AS publish
-ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "Oftp4Net.Server.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false --no-restore
-
-FROM base AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
-COPY --from=publish /app/publish .
-# Persistent data: received files, data protection keys, logs. Mount a volume here.
-ENV LogDirectory=/data/logs \
-    DataProtection__KeysDirectory=/data/keys \
-    UploadBasePath=/data/uploads
+# Web UI
+EXPOSE 8080
+# OFTP over TLS / plain TCP (configure listeners with these ports)
+EXPOSE 6619
+EXPOSE 3305
+COPY --from=build /app/publish .
+# Persistent data (received files, outbox, data protection keys, logs), writable by the non-root app user.
+COPY --from=build --chown=$APP_UID:$APP_UID /app/data /data
+ENV DataDirectory=/data \
+    LogDirectory=/data/logs \
+    DataProtection__KeysDirectory=/data/keys
 VOLUME ["/data"]
+USER $APP_UID
 ENTRYPOINT ["dotnet", "Oftp4Net.Server.dll"]

@@ -38,6 +38,7 @@ reason code.
 | `ConnectionStrings:Oftp4Net` | PostgreSQL connection string (required) |
 | `Database:MigrateOnStartup` | Create / update the database schema on startup (default `true`) |
 | `DataProtection:KeysDirectory` | Keys encrypting the auth cookie and the passwords stored in the database. **Back them up together with the database**, without them stored passwords cannot be decrypted. |
+| `DataDirectory` | Base directory for relative receive / outbox directories (default: current directory, `/data` in Docker) |
 | `LogDirectory` | Directory of the rolling log file |
 | `Upload:MaxOutboxFileSizeMB` | Maximum size of a file uploaded to the send queue (default 512) |
 | `ReverseProxy:TrustAll` | Trust `X-Forwarded-*` headers from any proxy |
@@ -84,14 +85,23 @@ dotnet ef migrations add <Name> --project Oftp4Net.Entity
 
 ## Docker
 
+Images for `linux/amd64` and `linux/arm64` are published to the GitHub Container Registry:
+`latest` from the `main` branch, `X.Y.Z` / `X.Y` for release tags `vX.Y.Z` and `sha-…` for every build.
+
 ```bash
-docker build -f Oftp4Net.Server/Dockerfile -t oftp4net-server .
 docker run -p 8080:8080 -p 6619:6619 -v oftp4net-data:/data \
   -e ConnectionStrings__Oftp4Net="Host=db;Database=oftp4net;Username=oftp;Password=..." \
-  oftp4net-server
+  ghcr.io/jskrobak/oftp4net:latest
 ```
 
-Set the receive directory to a path under `/data` (e.g. `/data/received`) on the settings page.
+All persistent data lives in the `/data` volume (`DataDirectory`): data protection keys, logs and the receive and
+outbox directories (relative paths in the settings are resolved against it).
+
+To build the image locally:
+
+```bash
+docker build -f Oftp4Net.Server/Dockerfile -t oftp4net-server .
+```
 
 ## Setting up a partner
 

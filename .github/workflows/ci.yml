@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -56,19 +57,50 @@ jobs:
   docker:
     name: Docker image
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    # Publish only after the build and tests passed.
+    needs: build-and-test
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v4
 
-      - name: Build image
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/oftp4net
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=ref,event=pr
+          labels: |
+            org.opencontainers.image.title=Oftp4Net
+            org.opencontainers.image.description=OFTP2 (RFC 5024) server with a Blazor administration UI
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Oftp4Net.Server/Dockerfile
-          push: false
-          tags: oftp4net-server:ci
+          platforms: linux/amd64,linux/arm64
+          # Pull requests only verify that the image builds.
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

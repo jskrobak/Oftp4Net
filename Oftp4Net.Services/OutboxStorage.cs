@@ -44,7 +44,7 @@ public class OutboxStorage(GlobalSettingsService settingsService)
     }
 
     private async Task<string> GetDirectoryAsync() =>
-        Path.GetFullPath((await settingsService.GetGlobalSettingsAsync()).OutboxDirectory);
+        settingsService.ResolvePath((await settingsService.GetGlobalSettingsAsync()).OutboxDirectory);
 
     private static string SafeFileName(string fileName)
     {

@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using Havit.Data.Patterns.UnitOfWorks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
@@ -11,7 +12,7 @@ namespace Oftp4Net.Services;
 /// Loads and stores <see cref="GlobalSettings"/> as one JSON value per property in the settings table.
 /// Every call returns a new instance, so callers can modify it freely before saving.
 /// </summary>
-public class GlobalSettingsService(IServiceScopeFactory serviceScopeFactory)
+public class GlobalSettingsService(IServiceScopeFactory serviceScopeFactory, IConfiguration configuration)
 {
     private static readonly PropertyInfo[] SettingsProperties = typeof(GlobalSettings)
         .GetProperties()
@@ -22,6 +23,17 @@ public class GlobalSettingsService(IServiceScopeFactory serviceScopeFactory)
     private Dictionary<string, string>? _cache;
 
     public event Action? SettingsChanged;
+
+    /// <summary>
+    /// Base directory for relative paths in the settings (receive and outbox directory): the <c>DataDirectory</c>
+    /// configuration value (e.g. <c>/data</c> in the Docker image), otherwise the current directory.
+    /// </summary>
+    public string DataDirectory => configuration["DataDirectory"] is { Length: > 0 } dataDirectory
+        ? Path.GetFullPath(dataDirectory)
+        : Directory.GetCurrentDirectory();
+
+    /// <summary>Resolves a directory from the settings; absolute paths are returned unchanged.</summary>
+    public string ResolvePath(string path) => Path.GetFullPath(Path.Combine(DataDirectory, path));
 
     public async Task<GlobalSettings> GetGlobalSettingsAsync()
     {
