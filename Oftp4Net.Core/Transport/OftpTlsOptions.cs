@@ -17,8 +17,9 @@ public sealed class OftpTlsOptions
     /// <summary>
     /// Additional trust anchors. The remote certificate is accepted when it is valid according to the operating
     /// system trust store, when it chains up to one of these certificates, or when it equals one of them (pinning).
+    /// The collection is read on every handshake; assign a new collection to change it while a listener is running.
     /// </summary>
-    public X509Certificate2Collection TrustedCertificates { get; init; } = [];
+    public X509Certificate2Collection TrustedCertificates { get; set; } = [];
 
     /// <summary>Listener only: require the client to present a certificate.</summary>
     public bool RequireClientCertificate { get; init; }

@@ -36,6 +36,15 @@ public class PartnerRepository(
         };
     }
 
+    public async Task<List<Certificate>> GetTrustedCertificatesAsync(CancellationToken cancellationToken = default)
+    {
+        return await Data
+            .Where(p => p.TrustedCertificate != null)
+            .Select(p => p.TrustedCertificate!)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<Partner?> FindBySsidAsync(string ssid, CancellationToken cancellationToken = default)
     {
         return await Data

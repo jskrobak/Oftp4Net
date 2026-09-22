@@ -138,7 +138,6 @@ public class SendService(ILogger<SendService> logger,
     {
         using var scope = serviceScopeFactory.CreateScope();
         using var handler = PartnerSessionHandler.ForInitiator(scope.ServiceProvider, settings, logger, partner, identity);
-        var sessionStarted = false;
 
         try
         {
@@ -148,7 +147,6 @@ public class SendService(ILogger<SendService> logger,
                 partner.Name, partner.Host, partner.Port, tls is null ? "plain TCP" : "TLS");
 
             await using var transport = await OftpConnector.ConnectAsync(partner.Host, partner.Port, tls, stoppingToken);
-            sessionStarted = true;
 
             var session = new OftpSession(transport, new OftpSessionOptions
             {
@@ -173,9 +171,9 @@ public class SendService(ILogger<SendService> logger,
         catch (Exception ex)
         {
             logger.LogError(ex, "Session with {Partner} failed", partner.Name);
-            // A connection failure affects all waiting files of the partner, a failure during the session
-            // only the file being transferred.
-            await handler.OnSessionFailedAsync(ex, includeUnattempted: !sessionStarted, CancellationToken.None);
+            // A failure before any file was offered (connection, TLS, authentication) affects all waiting files
+            // of the partner, a failure during a transfer only the file being transferred.
+            await handler.OnSessionFailedAsync(ex, includeUnattempted: !handler.FileTransferStarted, CancellationToken.None);
         }
     }
 

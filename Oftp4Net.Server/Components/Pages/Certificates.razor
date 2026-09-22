@@ -83,11 +83,18 @@
                               SortKeySelector="d => d.ValidFrom"
                               ItemCssClass="text-end"
                               HeaderCssClass="text-end"/>
-                <HxGridColumn HeaderText="SFID"
+                <HxGridColumn HeaderText="Valid to"
                               ItemTextSelector="@(d => d.ValidTo.ToString("d"))"
                               SortKeySelector="d => d.ValidTo"
                               ItemCssClass="text-end"
                               HeaderCssClass="text-end"/>
+                <HxGridColumn HeaderText="">
+                    <ItemTemplate Context="cert">
+                        <a href="@($"certificates/{cert.Id}/download")" title="Download public certificate (.crt)">
+                            <HxIcon Icon="BootstrapIcon.Download"/>
+                        </a>
+                    </ItemTemplate>
+                </HxGridColumn>
                 
                 <HxContextMenuGridColumn Context="currentCertificate">
                     <HxContextMenu>

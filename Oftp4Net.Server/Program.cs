@@ -1,4 +1,7 @@
 using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using Oftp4Net.DataLayer.Repositories;
 using BitzArt.Blazor.Cookies;
 using Havit.Blazor.Components.Web;
 using Havit.Blazor.Components.Web.Bootstrap;
@@ -85,6 +88,7 @@ builder.Services.AddSingleton<GlobalSettingsService>();
 builder.Services.AddSingleton<OutboxStorage>();
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<CertificateSeedService>();
+builder.Services.AddScoped<SelfSignedCertificateService>();
 builder.Services.AddScoped<LoopbackSeedService>();
 
 builder.AddBlazorCookies();
@@ -104,7 +108,7 @@ builder.Services.AddResponseCompression(opts =>
 var app = builder.Build();
 
 // Create or update the database schema, the default user admin/admin on an empty database
-// and the development data (SeedCertificates, SeedLoopback).
+// the development data (SeedCertificates, SeedLoopback) and, when there is none, an own TLS certificate.
 using (var scope = app.Services.CreateScope())
 {
     if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
@@ -116,6 +120,7 @@ using (var scope = app.Services.CreateScope())
 
     await scope.ServiceProvider.GetRequiredService<UserService>().EnsureDefaultUserAsync();
     await scope.ServiceProvider.GetRequiredService<CertificateSeedService>().SeedAsync(app.Environment.ContentRootPath);
+    await scope.ServiceProvider.GetRequiredService<SelfSignedCertificateService>().EnsureCertificateAsync();
     await scope.ServiceProvider.GetRequiredService<LoopbackSeedService>().SeedAsync(app.Environment.ContentRootPath);
 }
 
@@ -211,6 +216,18 @@ app.MapPost("/upload/outbox", async ([FromForm] IFormFile file, OutboxStorage ou
 }).DisableAntiforgery()
   .WithMetadata(new RequestSizeLimitAttribute(maxOutboxFileSize),
       new RequestFormLimitsAttribute { MultipartBodyLengthLimit = maxOutboxFileSize });
+
+// Public part of a stored certificate (PEM), e.g. to send our certificate to a partner.
+app.MapGet("/certificates/{id:int}/download", async (int id, ICertificateRepository certificates) =>
+{
+    var certificate = (await certificates.GetAllAsync()).FirstOrDefault(c => c.Id == id);
+    if (certificate is null)
+        return Results.NotFound();
+
+    using var x509 = CertificateLoader.Load(certificate);
+    var fileName = (x509.GetNameInfo(X509NameType.SimpleName, false) is { Length: > 0 } cn ? cn : $"certificate-{id}") + ".crt";
+    return Results.File(Encoding.ASCII.GetBytes(x509.ExportCertificatePem() + "\n"), "application/x-pem-file", fileName);
+});
 
 app.MapGet("/received/{id:int}/download", async (int id, IDataService dataService) =>
 {

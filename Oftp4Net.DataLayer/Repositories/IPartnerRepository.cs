@@ -10,5 +10,8 @@ public interface IPartnerRepository : IRepository<Partner, int>
     Task<DataFragment<Partner>> GetFragmentAsync(PartnerFilter filter, GridDataProviderRequest<Partner> request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Certificates trusted for partners (pinned certificates or CAs), used to verify TLS client certificates.</summary>
+    Task<List<Certificate>> GetTrustedCertificatesAsync(CancellationToken cancellationToken = default);
+
     Task<Partner?> FindBySsidAsync(string ssid, CancellationToken cancellationToken = default);
 }

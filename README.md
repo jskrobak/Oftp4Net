@@ -41,6 +41,8 @@ reason code.
 | `DataDirectory` | Base directory for relative receive / outbox directories (default: current directory, `/data` in Docker) |
 | `LogDirectory` | Directory of the rolling log file |
 | `Upload:MaxOutboxFileSizeMB` | Maximum size of a file uploaded to the send queue (default 512) |
+| `Tls:GenerateCertificate` | Create a self-signed TLS certificate on startup when there is none with a private key (default `true`) |
+| `Tls:CertificateSubject` | Host name in the generated certificate (default: machine / container name) |
 | `ReverseProxy:TrustAll` | Trust `X-Forwarded-*` headers from any proxy |
 
 Runtime settings (receive directory, send interval, retry count, buffer size, credit, timeouts, TLS client certificate)
@@ -93,6 +95,12 @@ docker run -p 8080:8080 -p 6619:6619 -v oftp4net-data:/data \
   -e ConnectionStrings__Oftp4Net="Host=db;Database=oftp4net;Username=oftp;Password=..." \
   ghcr.io/jskrobak/oftp4net:latest
 ```
+
+On the first start the container creates its own self-signed TLS certificate (RSA 3072, 3 years) when the database
+contains no certificate with a private key. Set the host name partners use with `Tls__CertificateSubject`
+(default: the container host name). The certificate is used as the TLS client certificate and can be selected as the
+server certificate of a listener; its public part is written to `/data/certs/server.crt` and can be downloaded on the
+*Certificates* page to send it to partners.
 
 All persistent data lives in the `/data` volume (`DataDirectory`): data protection keys, logs and the receive and
 outbox directories (relative paths in the settings are resolved against it).

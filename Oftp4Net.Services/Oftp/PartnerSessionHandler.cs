@@ -67,6 +67,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     public Partner? Partner { get; private set; }
 
     public int FilesSent { get; private set; }
+
+    /// <summary>At least one queued file was offered to the peer (SFID sent) in this session.</summary>
+    public bool FileTransferStarted { get; private set; }
     public int FilesReceived { get; private set; }
 
     #region Authentication
@@ -139,6 +142,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             item.FileDate = date;
             item.FileTime = time;
             _inFlight = item;
+            FileTransferStarted = true;
 
             return new OftpOutgoingFile
             {

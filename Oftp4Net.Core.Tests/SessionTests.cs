@@ -174,6 +174,33 @@ public class SessionTests
     }
 
     [Fact]
+    public async Task MutualTlsWithPinnedClientCertificate()
+    {
+        using var serverCertificate = CreateSelfSignedCertificate();
+        using var clientCertificate = CreateSelfSignedCertificate();
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        client.Enqueue("MTLS", "mutual tls"u8.ToArray(), ServerCode);
+
+        var (clientError, serverError) = await RunAsync(client, server,
+            serverTls: new OftpTlsOptions
+            {
+                LocalCertificate = serverCertificate,
+                RequireClientCertificate = true,
+                TrustedCertificates = [X509CertificateLoader.LoadCertificate(clientCertificate.RawData)]
+            },
+            clientTls: new OftpTlsOptions
+            {
+                LocalCertificate = clientCertificate,
+                TrustedCertificates = [X509CertificateLoader.LoadCertificate(serverCertificate.RawData)]
+            });
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal("mutual tls"u8.ToArray(), server.ReceivedFiles["MTLS"]);
+    }
+
+    [Fact]
     public async Task TlsWithUntrustedCertificateIsRejected()
     {
         using var certificate = CreateSelfSignedCertificate();

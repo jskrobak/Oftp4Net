@@ -24,6 +24,7 @@ public class ListenerService(
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly List<OftpListener> _listeners = [];
+    private readonly List<OftpTlsOptions> _tlsOptions = [];
     private readonly ConcurrentDictionary<int, ListenerStatus> _status = new();
     private CancellationTokenSource _stopping = new();
     private int _disposed;
@@ -58,6 +59,30 @@ public class ListenerService(
         }
     }
 
+    /// <summary>
+    /// Reloads the certificates trusted for TLS client authentication (after partners changed) without restarting
+    /// the listeners, so running transfers are not interrupted.
+    /// </summary>
+    public async Task RefreshTrustedCertificatesAsync()
+    {
+        List<Certificate> partnerCertificates;
+        using (var scope = serviceScopeFactory.CreateScope())
+        {
+            partnerCertificates = await scope.ServiceProvider.GetRequiredService<IPartnerRepository>().GetTrustedCertificatesAsync();
+        }
+
+        await _lock.WaitAsync();
+        try
+        {
+            foreach (var tls in _tlsOptions)
+                tls.TrustedCertificates = LoadTrustedCertificates(partnerCertificates);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     /// <summary>Stops all listeners and starts the enabled ones again, e.g. after their configuration changed.</summary>
     public async Task ReloadAsync()
     {
@@ -67,13 +92,15 @@ public class ListenerService(
             await StopListenersAsync();
 
             List<Listener> configured;
+            List<Certificate> partnerCertificates;
             using (var scope = serviceScopeFactory.CreateScope())
             {
                 configured = await scope.ServiceProvider.GetRequiredService<IListenerRepository>().GetEnabledWithRefsAsync();
+                partnerCertificates = await scope.ServiceProvider.GetRequiredService<IPartnerRepository>().GetTrustedCertificatesAsync();
             }
 
             foreach (var listener in configured)
-                StartListener(listener);
+                StartListener(listener, partnerCertificates);
         }
         finally
         {
@@ -82,7 +109,11 @@ public class ListenerService(
         }
     }
 
-    private void StartListener(Listener listener)
+    /// <param name="partnerCertificates">
+    /// Trusted certificates of all partners; a TLS client certificate is accepted when it is one of them or issued by one
+    /// of them (the partner is only known after SSID, so the TLS layer accepts any configured partner).
+    /// </param>
+    private void StartListener(Listener listener, IReadOnlyList<Certificate> partnerCertificates)
     {
         var endPoint = $"{listener.ListenIPAddress}:{listener.Port}";
         try
@@ -103,7 +134,9 @@ public class ListenerService(
                     LocalCertificate = CertificateLoader.Load(listener.Certificate),
                     Protocols = listener.Tls == SslProtocols.None ? SslProtocols.Tls12 | SslProtocols.Tls13 : listener.Tls,
                     RequireClientCertificate = listener.RequireClientCertificate,
+                    TrustedCertificates = LoadTrustedCertificates(partnerCertificates),
                 };
+                _tlsOptions.Add(tls);
             }
 
             var oftpListener = new OftpListener(new IPEndPoint(address, listener.Port), tls,
@@ -117,6 +150,25 @@ public class ListenerService(
             logger.LogError(ex, "Cannot start OFTP listener {Listener} on {EndPoint}", listener.Name, endPoint);
             _status[listener.Id] = new ListenerStatus(listener.Id, listener.Name, endPoint, false, ex.Message, 0);
         }
+    }
+
+    private System.Security.Cryptography.X509Certificates.X509Certificate2Collection LoadTrustedCertificates(
+        IReadOnlyList<Certificate> certificates)
+    {
+        var collection = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection();
+        foreach (var certificate in certificates)
+        {
+            try
+            {
+                collection.Add(CertificateLoader.Load(certificate));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Cannot load trusted certificate {Name}", certificate.Name);
+            }
+        }
+
+        return collection;
     }
 
     private async Task HandleConnectionAsync(Listener listener, Core.Protocol.OftpTransport transport,
@@ -172,6 +224,7 @@ public class ListenerService(
         foreach (var listener in _listeners)
             await listener.DisposeAsync();
         _listeners.Clear();
+        _tlsOptions.Clear();
         _status.Clear();
         _stopping.Dispose();
         _stopping = new CancellationTokenSource();

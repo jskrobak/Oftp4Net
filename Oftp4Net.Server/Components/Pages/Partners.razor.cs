@@ -13,6 +13,7 @@ public partial class Partners : ComponentBase
     [Inject] protected IDataService DataService { get; set; } = null!;
     [Inject] protected IHxMessengerService Messenger { get; set; } = null!;
     [Inject] protected IHxMessageBoxService MessageBox { get; set; } = null!;
+    [Inject] protected ListenerService ListenerService { get; set; } = null!;
     
     private Partner currentPartner = new();
     private HashSet<Partner> selectedItems = [];
@@ -51,6 +52,7 @@ public partial class Partners : ComponentBase
     private async Task HandleDeleteClick(Partner partner)
     {
         await DataService.DeletePartnerAsync(partner);
+        await ListenerService.RefreshTrustedCertificatesAsync();
         await gridComponent.RefreshDataAsync();
     }
     
@@ -85,6 +87,7 @@ public partial class Partners : ComponentBase
         {
             foreach (var item in selectedItems.ToList())
                 await DataService.DeletePartnerAsync(item);
+            await ListenerService.RefreshTrustedCertificatesAsync();
         }
         catch (Exception ex)
         {
@@ -98,6 +101,7 @@ public partial class Partners : ComponentBase
     private async Task SavePartner()
     {
         await DataService.SavePartnerAsync(currentPartner);
+        await ListenerService.RefreshTrustedCertificatesAsync();
         
         await gridComponent.RefreshDataAsync();
         await partnerEditModal.HideAsync();
