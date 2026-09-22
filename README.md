@@ -1,5 +1,7 @@
 # Oftp4Net Server
 
+[![CI](https://github.com/jskrobak/Oftp4Net/actions/workflows/ci.yml/badge.svg)](https://github.com/jskrobak/Oftp4Net/actions/workflows/ci.yml)
+
 OFTP2 (ODETTE File Transfer Protocol 2.0, [RFC 5024](https://www.rfc-editor.org/rfc/rfc5024)) server and client
 with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 
