@@ -149,7 +149,9 @@ uses, so *Convert incoming EBCDIC to ANSI* is to be set for partners that send E
 
 Integrations can use a REST API authenticated with a bearer token: `Authorization: Bearer <token>`.
 Tokens are created in *Settings → API tokens* and shown only once (only their hash is stored).
-The description of the endpoints is at `/openapi/v1.json`.
+
+*Settings → REST API* shows the interactive documentation (Scalar) with request examples in several languages;
+the OpenAPI description itself is at `/openapi/v1.json`. Both require a signed in administrator.
 
 | Endpoint | Purpose |
 |---|---|

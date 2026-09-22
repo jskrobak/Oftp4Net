@@ -20,6 +20,7 @@
     <PackageVersion Include="Havit.Data.EntityFrameworkCore.Patterns" Version="2.10.4" />
     <PackageVersion Include="Havit.Data.Patterns" Version="2.1.34" />
     <PackageVersion Include="BitzArt.Blazor.Cookies.Server" Version="1.5.2" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.8" />
     <PackageVersion Include="Serilog" Version="4.4.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />

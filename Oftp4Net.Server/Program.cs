@@ -24,6 +24,8 @@ using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.Api;
 using Oftp4Net.Services.Hooks;
 using Oftp4Net.Services.TransferEvents;
+using Microsoft.OpenApi;
+using Scalar.AspNetCore;
 using Serilog;
 
 System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
@@ -48,7 +50,29 @@ builder.Services.AddDataProtection()
     .SetApplicationName("Oftp4Net")
     .PersistKeysToFileSystem(new DirectoryInfo(builder.Configuration["DataProtection:KeysDirectory"] ?? "keys"));
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    // Describe the bearer authentication of the REST API, so it can be used from the documentation.
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info = new OpenApiInfo
+        {
+            Title = "Oftp4Net REST API",
+            Version = "v1",
+            Description = "Sending and receiving OFTP files. Authenticate with a token from Settings / API tokens.",
+        };
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            Description = "Token created in Settings / API tokens.",
+        };
+        document.Security = [new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference("Bearer", document)] = [] }];
+        return Task.CompletedTask;
+    });
+});
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenAuthenticationHandler.SchemeName, null)
@@ -166,7 +190,13 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapApi();
-app.MapOpenApi().AllowAnonymous();
+
+// API description and its documentation; both require a signed in administrator (fallback policy).
+app.MapOpenApi();
+app.MapScalarApiReference("/ApiReference", options => options
+    .WithTitle("Oftp4Net REST API")
+    .WithOpenApiRoutePattern("/openapi/{documentName}.json")
+    .AddPreferredSecuritySchemes("Bearer"));
 
 app.MapPost("/account/login", async (HttpContext httpContext, UserService userService, [FromForm] string username,
     [FromForm] string password, [FromForm] string? returnUrl) =>
@@ -187,7 +217,7 @@ app.MapPost("/account/login", async (HttpContext httpContext, UserService userSe
     // Only redirect to local paths to prevent open redirects.
     var target = "/" + (returnUrl ?? "").TrimStart('/');
     return Results.LocalRedirect(Uri.IsWellFormedUriString(target, UriKind.Relative) && !target.StartsWith("//") ? target : "/");
-}).AllowAnonymous();
+}).AllowAnonymous().ExcludeFromDescription();
 
 app.MapPost("/account/change-password", async (HttpContext httpContext, UserService userService,
     [FromForm] string currentPassword, [FromForm] string newPassword, [FromForm] string confirmPassword) =>
@@ -208,13 +238,13 @@ app.MapPost("/account/change-password", async (HttpContext httpContext, UserServ
     // Issue a new cookie without the "must change password" flag.
     await SignInAsync(httpContext, userName, mustChangePassword: false);
     return Results.Redirect("/?passwordChanged=1");
-});
+}).ExcludeFromDescription();
 
 app.MapPost("/account/logout", async (HttpContext httpContext) =>
 {
     await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/Login");
-});
+}).ExcludeFromDescription();
 
 // File upload endpoint used by HxInputFile (certificates). The browser posts it with the auth cookie.
 app.MapPost("/upload", async ([FromForm] IFormFile file, IUploadService uploadService) =>
@@ -225,7 +255,7 @@ app.MapPost("/upload", async ([FromForm] IFormFile file, IUploadService uploadSe
     var fileId = await uploadService.SaveFileAsync(file);
 
     return Results.Ok(fileId);
-}).DisableAntiforgery().WithMetadata(new RequestSizeLimitAttribute(5 * 1024 * 1024));
+}).DisableAntiforgery().WithMetadata(new RequestSizeLimitAttribute(5 * 1024 * 1024)).ExcludeFromDescription();
 
 // Files for the send queue; streamed to the outbox directory, so they may be large.
 var maxOutboxFileSize = app.Configuration.GetValue("Upload:MaxOutboxFileSizeMB", 512L) * 1024 * 1024;
@@ -239,7 +269,8 @@ app.MapPost("/upload/outbox", async ([FromForm] IFormFile file, OutboxStorage ou
     return Results.Ok(path);
 }).DisableAntiforgery()
   .WithMetadata(new RequestSizeLimitAttribute(maxOutboxFileSize),
-      new RequestFormLimitsAttribute { MultipartBodyLengthLimit = maxOutboxFileSize });
+      new RequestFormLimitsAttribute { MultipartBodyLengthLimit = maxOutboxFileSize })
+  .ExcludeFromDescription();
 
 // Public part of a stored certificate (PEM), e.g. to send our certificate to a partner.
 app.MapGet("/certificates/{id:int}/download", async (int id, ICertificateRepository certificates) =>
@@ -251,7 +282,7 @@ app.MapGet("/certificates/{id:int}/download", async (int id, ICertificateReposit
     using var x509 = CertificateLoader.Load(certificate);
     var fileName = (x509.GetNameInfo(X509NameType.SimpleName, false) is { Length: > 0 } cn ? cn : $"certificate-{id}") + ".crt";
     return Results.File(Encoding.ASCII.GetBytes(x509.ExportCertificatePem() + "\n"), "application/x-pem-file", fileName);
-});
+}).ExcludeFromDescription();
 
 app.MapGet("/received/{id:int}/download", async (int id, IDataService dataService) =>
 {
@@ -260,7 +291,7 @@ app.MapGet("/received/{id:int}/download", async (int id, IDataService dataServic
         return Results.NotFound();
 
     return Results.File(Path.GetFullPath(file.FilePath), "application/octet-stream", file.VirtualFileName);
-});
+}).ExcludeFromDescription();
 
 app.Run();
 
