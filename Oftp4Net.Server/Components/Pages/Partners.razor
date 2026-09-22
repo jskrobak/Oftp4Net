@@ -5,6 +5,7 @@
 @using Oftp4Net.DataLayer.Filters
 @using Oftp4Net.Domain
 @using Oftp4Net.Services.Encodings
+@using Oftp4Net.Services.Security
 <style>
     .scrollable-table-container {
         overflow: auto;
@@ -92,6 +93,53 @@
                                   Nullable="false" />
                     }
 
+                    <hr />
+                    <h6>Security</h6>
+
+                    <HxCheckbox Label="Enable file compression"
+                                Hint="Content of sent files is compressed with zlib in a CMS package."
+                                @bind-Value="@currentPartner.CompressFiles" />
+
+                    <HxCheckbox Label="Enable file signing"
+                                Hint="Content of sent files is signed with the file security certificate from the settings."
+                                @bind-Value="@currentPartner.SignFiles" />
+
+                    <HxCheckbox Label="Enable file encryption"
+                                Hint="Content of sent files is encrypted for the partner's certificate."
+                                @bind-Value="@currentPartner.EncryptFiles" />
+
+                    <HxCheckbox Label="Enable secure authentication"
+                                Hint="After the SSID exchange both sides prove they hold the private key of the certificate the other one knows. The partner has to require it too."
+                                @bind-Value="@currentPartner.SecureAuthentication" />
+
+                    <HxCheckbox Label="Ask partner for a signed EERP or NERP"
+                                Hint="The partner is asked to sign the End to End Response of our files."
+                                @bind-Value="@currentPartner.RequestSignedEndResponse" />
+
+                    @if (FileSecurityConfigured)
+                    {
+                        <HxSelect TItem="CipherSuite"
+                                  TValue="string"
+                                  Label="Cipher suite"
+                                  Hint="Used for signatures, encryption and hashes. Suites 01 and 02 are supported by every OFTP2 node."
+                                  Data="CipherSuite.All"
+                                  @bind-Value="@currentPartner.FileCipherSuite"
+                                  TextSelector="@(s => $"{s.Code} - {s.Name}")"
+                                  ValueSelector="@(s => s.Code)"
+                                  Nullable="false" />
+
+                        <HxSelect TItem="Certificate"
+                                  TValue="int?"
+                                  Label="Partner certificate"
+                                  Hint="The partner's certificate: files and authentication challenges are encrypted for it and the partner's signatures are verified against it."
+                                  Data="availableCertificates"
+                                  @bind-Value="@currentPartner.SecurityCertificateId"
+                                  TextSelector="@(c => $"{c.Name} (valid to {c.ValidTo:d})")"
+                                  ValueSelector="@(c => c.Id)"
+                                  Nullable="true"
+                                  NullText="-none-" />
+                    }
+
                     <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
 
                 </EditForm>
@@ -153,6 +201,8 @@
                 @* Not sortable: an enum sort key cannot be translated to SQL. *@
                 <HxGridColumn HeaderText="Encoding"
                               ItemTextSelector="@(d => EncodingDescription(d))"/>
+                <HxGridColumn HeaderText="Security"
+                              ItemTextSelector="@(d => SecurityDescription(d))"/>
                 
                 <HxContextMenuGridColumn Context="currentPartner">
                     <HxContextMenu>

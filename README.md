@@ -13,11 +13,11 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - End to End Responses: EERP is sent for received files and processed for sent files (status `DELIVERED`), NERP is handled
 - TLS with the system trust store, a custom CA or a pinned partner certificate; optional client certificates
 - Character set conversion per partner: files are sent in ANSI or EBCDIC and received EBCDIC content is converted to ANSI
+- File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses
+- Secure authentication (SSIDAUTH with SECD/AUCH/AURP): both sides prove they hold the private key of their certificate
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
 
-Not supported yet: secure authentication (AUCH/AURP), restart of interrupted transfers, buffer compression when sending,
-file level security (CMS encryption, signing, compression) and signed EERP. Such files are refused with a proper SFNA
-reason code.
+Not supported yet: restart of interrupted transfers and buffer compression when sending.
 
 ## Solution structure
 
@@ -145,6 +145,56 @@ which has no counterpart in the ANSI code pages, becomes a line feed when a rece
 The conversion is driven only by the setting: OFTP does not tell which character set the content of a virtual file
 uses, so *Convert incoming EBCDIC to ANSI* is to be set for partners that send EBCDIC.
 
+## File level security
+
+The content of a virtual file can be signed, compressed and encrypted (RFC 5024, section 6). Each step wraps the
+content in a CMS package and they are applied in this order; a received file is unpacked in the reverse order.
+
+Two certificates are involved:
+
+| Certificate | Where | Used for |
+|---|---|---|
+| ours, with private key | *Settings* → *File security certificate* | signing files and end responses, decrypting received files |
+| the partner's, public part | *Partners* → *Partner certificate* | encrypting files for the partner, verifying its signatures |
+
+Give the public part of your certificate to the partner and import theirs on the *Certificates* page. The
+self signed certificate created at the first start can be used for both TLS and file security.
+
+Each partner has (on the *Partners* page):
+
+| Setting | Meaning |
+|---|---|
+| *Enable file compression* | the content is compressed with zlib (CMS CompressedData, SFIDCOMP=1) |
+| *Enable file signing* | the content is signed with our file security certificate (SFIDSEC) |
+| *Enable file encryption* | the content is encrypted for the partner's certificate (SFIDSEC) |
+| *Enable secure authentication* | both sides authenticate each other after the SSID exchange (SSIDAUTH) |
+| *Ask partner for a signed EERP or NERP* | the partner is asked to sign the end response of our files (SFIDSIGN) |
+| *Cipher suite* | algorithms used for signatures, encryption and hashes (SFIDCIPH) |
+
+The cipher suites are those of RFC 5024 and its common extensions; `01` (3DES, SHA-1) and `02` (AES-256, SHA-1) are
+supported by every OFTP2 node, `03`–`06` use SHA-256 or SHA-512.
+
+A signed end response carries the hash of the transferred content (EERPHSH) and a CMS signature (EERPSIG). A response
+we asked to be signed is only accepted when the signature is valid, made by the partner's certificate and covers the
+hash of the content we sent; otherwise the file stays in the state *SENT* with the problem in the transfer log.
+
+Files that cannot be unpacked are refused with the reason code that says what is wrong (cipher suite not supported,
+decryption failure, invalid file signature, …). Signing, compression and encryption are done in memory, so files
+larger than *Maximum size of a secured file (MB)* (setting, default 100) are not transferred to partners with file
+security and the error is written to the transfer log.
+
+## Secure authentication
+
+With *Enable secure authentication* the session continues after the SSID exchange with the authentication phase of
+RFC 5024, section 4.2.3: each side sends a challenge (a 20 byte random number in a CMS envelope for the certificate
+of the other side, AUCH) and expects it back decrypted (AURP). The initiator is challenged first, then the roles are
+swapped with a Security Change Direction (SECD). The same two certificates as for file level security are used.
+
+Secure authentication is not negotiated: both sides have to require it, otherwise the session is ended with reason
+code `12` (*secure authentication requirements incompatible*). A wrong answer to a challenge ends the session with
+reason code `11`. Because it authenticates the identity behind the certificate, it is worth switching on in addition
+to the TLS connection and the SSID password.
+
 ## REST API
 
 Integrations can use a REST API authenticated with a bearer token: `Authorization: Bearer <token>`.
@@ -234,7 +284,9 @@ docker run ... -v ./hooks:/scripts:ro -e Hooks__OnReceived=/scripts/on_received.
 3. *Listeners*: create a listener (port 6619 for TLS), assign the identity and the server certificate.
 4. *Partners*: add the partner with its SSID/SFID codes, the password it sends to you, host and port, and, for a
    mainframe partner, the character set conversion.
-5. *Send queue*: add a file (path on the server) addressed to the partner.
+5. *Partners*: if the partner requires file level security, assign its certificate and switch on signing,
+   compression or encryption; *Settings* holds our own certificate used for it.
+6. *Send queue*: add a file (path on the server) addressed to the partner.
 
 ## Tests
 

@@ -29,6 +29,12 @@ public sealed class OftpSessionOptions
     /// <summary>Proposed credit (number of DATA buffers sent before waiting for CDT). The smaller of both proposals is used.</summary>
     public int Credit { get; init; } = 64;
 
+    /// <summary>
+    /// Require secure authentication (SSIDAUTH). Both sides have to require it, otherwise the session is aborted;
+    /// for a responder the requirement of the identified partner (<see cref="OftpAuthenticationResult"/>) wins.
+    /// </summary>
+    public bool SecureAuthentication { get; init; }
+
     /// <summary>Send / receive capability announced in SSID.</summary>
     public string SendReceive { get; init; } = SendReceiveCapabilities.Both;
 

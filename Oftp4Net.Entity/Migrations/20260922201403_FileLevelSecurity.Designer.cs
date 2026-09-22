@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oftp4Net.Entity;
@@ -11,9 +12,11 @@ using Oftp4Net.Entity;
 namespace Oftp4Net.Entity.Migrations
 {
     [DbContext(typeof(O4NDbContext))]
-    partial class O4NDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260922201403_FileLevelSecurity")]
+    partial class FileLevelSecurity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -272,9 +275,6 @@ namespace Oftp4Net.Entity.Migrations
                         .IsRequired()
                         .HasMaxLength(25)
                         .HasColumnType("character varying(25)");
-
-                    b.Property<bool>("SecureAuthentication")
-                        .HasColumnType("boolean");
 
                     b.Property<int?>("SecurityCertificateId")
                         .HasColumnType("integer");

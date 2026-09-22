@@ -14,12 +14,16 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
 
     public string LocalSfid => localCode;
     public ConcurrentDictionary<string, byte[]> ReceivedFiles { get; } = new();
+    public ConcurrentDictionary<string, SFID> ReceivedHeaders { get; } = new();
     public List<string> SentFiles { get; } = [];
     public List<(string DatasetName, OftpAnswer Answer)> RefusedFiles { get; } = [];
     public List<OftpCommand> ReceivedEndResponses { get; } = [];
     public List<string> RefuseDatasetNames { get; } = [];
 
-    public void Enqueue(string datasetName, byte[] content, string destination)
+    public void Enqueue(string datasetName, byte[] content, string destination,
+        string securityLevel = SecurityLevels.None, string cipherSuite = CipherSuites.None,
+        string compression = FileCompressionAlgorithms.None, string enveloping = FileEnvelopingFormats.None,
+        bool signedEerpRequested = false, long? originalSize = null)
     {
         var (date, time) = OftpOutgoingFile.CreateTimestamp(DateTime.Now);
         _outgoing.Enqueue(new OftpOutgoingFile
@@ -29,8 +33,44 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
             Destination = destination,
             Date = date,
             Time = time,
+            SecurityLevel = securityLevel,
+            CipherSuite = cipherSuite,
+            Compression = compression,
+            Enveloping = enveloping,
+            SignedEerpRequested = signedEerpRequested,
+            OriginalSize = originalSize,
             OpenAsync = _ => ValueTask.FromResult<Stream>(new MemoryStream(content)),
         });
+    }
+
+    /// <summary>Secure authentication is required with the peer (SSIDAUTH answered by a responder).</summary>
+    public bool? SecureAuthentication { get; set; }
+
+    /// <summary>Challenges we encrypted for the peer and challenges we decrypted, in the order they were handled.</summary>
+    public List<byte[]> EncryptedChallenges { get; } = [];
+    public List<byte[]> DecryptedChallenges { get; } = [];
+
+    /// <summary>Breaks the answer to the peer's challenge, as a peer without the right private key would.</summary>
+    public bool AnswerChallengeWrongly { get; set; }
+
+    /// <summary>Stands in for CMS enveloping: the challenge is only masked, which is enough to drive the protocol.</summary>
+    private static byte[] Mask(byte[] value) => value.Select(b => (byte)(b ^ 0x5A)).ToArray();
+
+    public override ValueTask<byte[]> EncryptChallengeAsync(byte[] challenge, CancellationToken cancellationToken)
+    {
+        EncryptedChallenges.Add(challenge);
+        return ValueTask.FromResult(Mask(challenge));
+    }
+
+    public override ValueTask<byte[]> DecryptChallengeAsync(byte[] challenge, CancellationToken cancellationToken)
+    {
+        var decrypted = Mask(challenge);
+        DecryptedChallenges.Add(decrypted);
+
+        if (AnswerChallengeWrongly)
+            decrypted[0] ^= 0xFF;
+
+        return ValueTask.FromResult(decrypted);
     }
 
     public override ValueTask<OftpAuthenticationResult> AuthenticateAsync(SSID remote, CancellationToken cancellationToken)
@@ -40,7 +80,8 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
         if (remote.Password != remotePassword)
             return ValueTask.FromResult(OftpAuthenticationResult.Reject(ReasonCodes.InvalidPassword, "Invalid password"));
 
-        return ValueTask.FromResult(OftpAuthenticationResult.Accept(localCode, localPassword));
+        return ValueTask.FromResult(OftpAuthenticationResult.Accept(localCode, localPassword,
+            secureAuthentication: SecureAuthentication));
     }
 
     public override ValueTask<OftpOutgoingFile?> GetNextFileAsync(CancellationToken cancellationToken) =>
@@ -63,6 +104,7 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
         if (RefuseDatasetNames.Contains(header.DatasetName))
             return ValueTask.FromResult(OftpStartFileDecision.Reject(AnswerReasonCodes.DuplicateFile, "Duplicate", retryLater: true));
 
+        ReceivedHeaders[header.DatasetName] = header;
         var stream = new CapturingStream();
         return ValueTask.FromResult(OftpStartFileDecision.Accept(stream, (header, stream)));
     }

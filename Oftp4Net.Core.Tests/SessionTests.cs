@@ -27,7 +27,8 @@ public class SessionTests
         TestSessionHandler client, TestSessionHandler server,
         int bufferSize = 4096, int credit = 64,
         string clientPassword = ClientPassword,
-        OftpTlsOptions? serverTls = null, OftpTlsOptions? clientTls = null)
+        OftpTlsOptions? serverTls = null, OftpTlsOptions? clientTls = null,
+        bool secureAuthentication = false)
     {
         using var cts = new CancellationTokenSource(TestTimeout);
         var serverDone = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -38,7 +39,13 @@ public class SessionTests
                 try
                 {
                     var session = new OftpSession(transport,
-                        new OftpSessionOptions { Role = OftpRole.Responder, ExchangeBufferSize = bufferSize, Credit = credit },
+                        new OftpSessionOptions
+                        {
+                            Role = OftpRole.Responder,
+                            ExchangeBufferSize = bufferSize,
+                            Credit = credit,
+                            SecureAuthentication = secureAuthentication,
+                        },
                         server, NullLogger.Instance);
                     await session.RunAsync(ct);
                     serverDone.TrySetResult(null);
@@ -61,6 +68,7 @@ public class SessionTests
                 LocalPassword = clientPassword,
                 ExchangeBufferSize = bufferSize,
                 Credit = credit,
+                SecureAuthentication = secureAuthentication,
             }, client, NullLogger.Instance);
             await session.RunAsync(cts.Token);
         }
@@ -94,6 +102,87 @@ public class SessionTests
         var eerps = client.ReceivedEndResponses.Cast<EERP>().ToList();
         Assert.Equal(2, eerps.Count);
         Assert.Contains(eerps, e => e is { DatasetName: "LARGE", Destination: ClientCode, Originator: ServerCode });
+    }
+
+    [Fact]
+    public async Task SecureAuthenticationChallengesBothSides()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        client.Enqueue("AUTHED", "content"u8.ToArray(), ServerCode);
+
+        var (clientError, serverError) = await RunAsync(client, server, secureAuthentication: true);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        // Each side challenges the other once and answers the challenge it received.
+        Assert.Single(client.EncryptedChallenges);
+        Assert.Single(client.DecryptedChallenges);
+        Assert.Equal(client.EncryptedChallenges[0], server.DecryptedChallenges[0]);
+        Assert.Equal(server.EncryptedChallenges[0], client.DecryptedChallenges[0]);
+        Assert.Equal(SecureAuthentication.ChallengeLength, client.EncryptedChallenges[0].Length);
+        // The session continues with the file transfer.
+        Assert.Equal("content"u8.ToArray(), server.ReceivedFiles["AUTHED"]);
+    }
+
+    [Fact]
+    public async Task WrongAnswerToTheChallengeEndsSessionWithReasonCode11()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        client.AnswerChallengeWrongly = true;
+
+        var (clientError, serverError) = await RunAsync(client, server, secureAuthentication: true);
+
+        Assert.Equal(ReasonCodes.InvalidChallengeResponse, Assert.IsType<OftpProtocolException>(serverError).ReasonCode);
+        Assert.NotNull(clientError);
+    }
+
+    [Fact]
+    public async Task DifferentAuthenticationRequirementsEndSessionWithReasonCode12()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        // The partner is configured without secure authentication on the responder side.
+        server.SecureAuthentication = false;
+
+        var (clientError, serverError) = await RunAsync(client, server, secureAuthentication: true);
+
+        Assert.Equal(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
+            Assert.IsType<OftpProtocolException>(serverError).ReasonCode);
+        Assert.NotNull(clientError);
+    }
+
+    [Fact]
+    public async Task FileSecurityAttributesAreTransferredInStartFile()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        // Content the application already signed, compressed and encrypted; the session only announces it.
+        var secured = RandomNumberGenerator.GetBytes(3000);
+        client.Enqueue("SECURED", secured, ServerCode,
+            securityLevel: SecurityLevels.EncryptedAndSigned,
+            cipherSuite: CipherSuites.Aes256Sha256,
+            compression: FileCompressionAlgorithms.Zlib,
+            enveloping: FileEnvelopingFormats.Cms,
+            signedEerpRequested: true,
+            originalSize: 10_000);
+
+        var (clientError, serverError) = await RunAsync(client, server);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal(secured, server.ReceivedFiles["SECURED"]);
+
+        var header = server.ReceivedHeaders["SECURED"];
+        Assert.Equal(SecurityLevels.EncryptedAndSigned, header.SecurityLevel);
+        Assert.Equal(CipherSuites.Aes256Sha256, header.CipherSuite);
+        Assert.Equal(FileCompressionAlgorithms.Zlib, header.Compression);
+        Assert.Equal(FileEnvelopingFormats.Cms, header.Enveloping);
+        Assert.True(header.SignedEerpRequested);
+        // Sizes are announced in 1K blocks, rounded up.
+        Assert.Equal(3, header.FileSize);
+        Assert.Equal(10, header.OriginalFileSize);
     }
 
     [Fact]

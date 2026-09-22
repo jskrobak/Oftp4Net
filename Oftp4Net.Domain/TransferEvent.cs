@@ -43,6 +43,7 @@ public enum TransferEventType
     HookFailed,
     WebhookDelivered,
     WebhookFailed,
+    EndResponseSignatureInvalid,
 }
 
 /// <summary>

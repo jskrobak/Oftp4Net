@@ -44,4 +44,14 @@ public class SendQueueItem: BaseQueueItem
 
     public DateTime? SentDate { get; set; }
     public DateTime? DeliveredDate { get; set; }
+
+    /// <summary>Hash of the transferred content (EERPHSH), verified against a signed End to End Response.</summary>
+    public byte[]? ContentHash { get; set; }
+
+    /// <summary>Cipher suite the file was secured with (SFIDCIPH), empty when it was sent unsecured.</summary>
+    [StringLength(2)]
+    public string? CipherSuite { get; set; }
+
+    /// <summary>A signed End to End Response was requested for the last transfer (SFIDSIGN).</summary>
+    public bool SignedResponseRequested { get; set; }
 }

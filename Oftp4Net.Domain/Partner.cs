@@ -44,4 +44,36 @@ public class Partner: BaseParty
     /// <summary>EBCDIC code page of the partner.</summary>
     [Range(1, 65535)]
     public int EbcdicCodePage { get; set; } = 500;
+
+    /// <summary>Compresses the content of sent files (SFIDCOMP, CMS CompressedData with zlib).</summary>
+    public bool CompressFiles { get; set; }
+
+    /// <summary>Signs the content of sent files with our file security certificate (SFIDSEC).</summary>
+    public bool SignFiles { get; set; }
+
+    /// <summary>Encrypts the content of sent files for <see cref="SecurityCertificate"/> (SFIDSEC).</summary>
+    public bool EncryptFiles { get; set; }
+
+    /// <summary>
+    /// Requires secure authentication (SSIDAUTH): after the SSID exchange both sides prove that they hold the
+    /// private key of the certificate the other one knows. Both sides have to be configured the same way.
+    /// </summary>
+    public bool SecureAuthentication { get; set; }
+
+    /// <summary>Asks the partner to sign the End to End Response of our files (SFIDSIGN).</summary>
+    public bool RequestSignedEndResponse { get; set; }
+
+    /// <summary>
+    /// Cipher suite used for signing, encryption and hashes exchanged with this partner (SFIDCIPH).
+    /// Suites 01 (3DES) and 02 (AES-256) are supported by every OFTP2 node.
+    /// </summary>
+    [StringLength(2)]
+    public string FileCipherSuite { get; set; } = "02";
+
+    /// <summary>
+    /// The partner's certificate (without private key): files are encrypted for it and signatures of the partner,
+    /// including signed End to End Responses, are verified against it.
+    /// </summary>
+    public int? SecurityCertificateId { get; set; }
+    public Certificate? SecurityCertificate { get; set; }
 }

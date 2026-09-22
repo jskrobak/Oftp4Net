@@ -51,4 +51,21 @@ public class ReceivedFile
 
     [StringLength(2000)]
     public string? LastError { get; set; }
+
+    /// <summary>Security of the transferred content as announced in SFIDSEC.</summary>
+    [StringLength(2)]
+    public string? SecurityLevel { get; set; }
+
+    /// <summary>Cipher suite of the transferred content (SFIDCIPH).</summary>
+    [StringLength(2)]
+    public string? CipherSuite { get; set; }
+
+    /// <summary>The content was compressed in transfer (SFIDCOMP).</summary>
+    public bool Compressed { get; set; }
+
+    /// <summary>The partner asked for a signed End to End Response of this file (SFIDSIGN).</summary>
+    public bool SignedResponseRequested { get; set; }
+
+    /// <summary>Hash of the transferred content, sent back in EERPHSH.</summary>
+    public byte[]? ContentHash { get; set; }
 }

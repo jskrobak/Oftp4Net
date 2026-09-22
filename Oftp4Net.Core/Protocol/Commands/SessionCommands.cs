@@ -147,9 +147,10 @@ public sealed class AURP : OftpCommand
     public const char Id = 'S';
     public override char Indicator => Id;
 
-    public string Response { get; init; } = "";
+    /// <summary>The decrypted challenge, 20 octets (AURPRSP).</summary>
+    public byte[] Response { get; init; } = [];
 
-    internal override void Write(CommandWriter writer) => writer.Alpha(Response, 20);
+    internal override void Write(CommandWriter writer) => writer.Raw(Response);
 
-    internal static AURP Read(CommandReader reader) => new() { Response = reader.Alpha(20) };
+    internal static AURP Read(CommandReader reader) => new() { Response = reader.Binary(SecureAuthentication.ChallengeLength) };
 }

@@ -32,6 +32,25 @@ public partial class Partners : ComponentBase
     private bool ConversionConfigured =>
         currentPartner.OutgoingEncoding == FileCharacterEncoding.EBCDIC || currentPartner.ConvertIncomingEbcdicToAnsi;
 
+    /// <summary>The cipher suite and the certificate are only relevant when something is secured.</summary>
+    private bool FileSecurityConfigured =>
+        currentPartner.SignFiles || currentPartner.EncryptFiles || currentPartner.RequestSignedEndResponse ||
+        currentPartner.SecureAuthentication;
+
+    private static string SecurityDescription(Partner partner)
+    {
+        var applied = new[]
+        {
+            partner.SignFiles ? "signed" : null,
+            partner.CompressFiles ? "compressed" : null,
+            partner.EncryptFiles ? "encrypted" : null,
+            partner.RequestSignedEndResponse ? "signed EERP" : null,
+            partner.SecureAuthentication ? "authenticated" : null,
+        }.Where(a => a is not null).ToList();
+
+        return applied.Count == 0 ? "-" : string.Join(", ", applied);
+    }
+
     private static string EncodingDescription(Partner partner) =>
         partner.ConvertIncomingEbcdicToAnsi
             ? $"sent as {partner.OutgoingEncoding}, received EBCDIC → ANSI"

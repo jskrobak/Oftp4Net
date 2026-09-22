@@ -16,6 +16,22 @@ public abstract class OftpSessionHandler
     public abstract ValueTask<OftpAuthenticationResult> AuthenticateAsync(SSID remote, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Secure authentication: encrypts a challenge for the peer, normally as a CMS envelope for the peer's
+    /// certificate (AUCHCHAL). Throw an <see cref="OftpProtocolException"/> when the peer cannot be challenged.
+    /// </summary>
+    public virtual ValueTask<byte[]> EncryptChallengeAsync(byte[] challenge, CancellationToken cancellationToken) =>
+        throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
+            "Secure authentication is not supported by the application.");
+
+    /// <summary>
+    /// Secure authentication: decrypts a challenge received from the peer with our own private key.
+    /// Throw an <see cref="OftpProtocolException"/> when it cannot be decrypted.
+    /// </summary>
+    public virtual ValueTask<byte[]> DecryptChallengeAsync(byte[] challenge, CancellationToken cancellationToken) =>
+        throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
+            "Secure authentication is not supported by the application.");
+
+    /// <summary>
     /// Returns the next file to send while this side is the speaker, or <c>null</c> when there is nothing to send.
     /// Must not return the same file twice within one session.
     /// </summary>
@@ -84,8 +100,22 @@ public sealed class OftpAuthenticationResult
     /// <summary>Arbitrary application state, available as <see cref="OftpSession.State"/>.</summary>
     public object? State { get; private init; }
 
-    public static OftpAuthenticationResult Accept(string? localCode = null, string? localPassword = null, object? state = null) =>
-        new() { Success = true, LocalCode = localCode, LocalPassword = localPassword, State = state };
+    /// <summary>
+    /// Responder only: whether secure authentication is required with the identified peer. When not set, the
+    /// requirement from <see cref="OftpSessionOptions.SecureAuthentication"/> is used.
+    /// </summary>
+    public bool? SecureAuthentication { get; private init; }
+
+    public static OftpAuthenticationResult Accept(string? localCode = null, string? localPassword = null, object? state = null,
+        bool? secureAuthentication = null) =>
+        new()
+        {
+            Success = true,
+            LocalCode = localCode,
+            LocalPassword = localPassword,
+            State = state,
+            SecureAuthentication = secureAuthentication,
+        };
 
     public static OftpAuthenticationResult Reject(string reasonCode, string reasonText) =>
         new() { Success = false, ReasonCode = reasonCode, ReasonText = reasonText };
@@ -145,6 +175,27 @@ public sealed class OftpOutgoingFile
     public string UserData { get; init; } = "";
     public string Description { get; init; } = "";
     public string Format { get; init; } = FileFormats.Unstructured;
+
+    /// <summary>Security of the transferred content (SFIDSEC), see <see cref="SecurityLevels"/>.</summary>
+    public string SecurityLevel { get; init; } = SecurityLevels.None;
+
+    /// <summary>Cipher suite used for signing, encryption and the requested signed EERP (SFIDCIPH).</summary>
+    public string CipherSuite { get; init; } = CipherSuites.None;
+
+    /// <summary>Compression of the transferred content (SFIDCOMP).</summary>
+    public string Compression { get; init; } = FileCompressionAlgorithms.None;
+
+    /// <summary>Enveloping format of the transferred content (SFIDENV).</summary>
+    public string Enveloping { get; init; } = FileEnvelopingFormats.None;
+
+    /// <summary>Ask the partner to sign the End to End Response of this file (SFIDSIGN).</summary>
+    public bool SignedEerpRequested { get; init; }
+
+    /// <summary>
+    /// Size of the file before signing, compression and encryption (SFIDOSIZ).
+    /// When not set, the size of the transferred content is used.
+    /// </summary>
+    public long? OriginalSize { get; init; }
 
     /// <summary>Opens the content of the file. The session disposes the stream.</summary>
     public required Func<CancellationToken, ValueTask<Stream>> OpenAsync { get; init; }

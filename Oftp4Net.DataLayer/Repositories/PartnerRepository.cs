@@ -49,6 +49,7 @@ public class PartnerRepository(
     {
         return await Data
             .Include(i => i.TrustedCertificate)
+            .Include(i => i.SecurityCertificate)
             .FirstOrDefaultAsync(i => i.SSID == ssid, cancellationToken);
     }
 }

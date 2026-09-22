@@ -36,6 +36,9 @@ internal sealed class CommandReader(byte[] buffer)
         return Encoding.UTF8.GetString(Take(length));
     }
 
+    /// <summary>Reads a binary field of a fixed length (e.g. AURPRSP).</summary>
+    public byte[] Binary(int length) => Take(length).ToArray();
+
     public byte[] BinaryWithLength()
     {
         var header = Take(2);

@@ -2,6 +2,7 @@ using Havit.Data.Patterns.UnitOfWorks;
 using Havit.Services.TimeServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Oftp4Net.Core;
 using Oftp4Net.Core.Protocol;
 using Oftp4Net.Core.Protocol.Commands;
 using Oftp4Net.Core.Session;
@@ -11,6 +12,7 @@ using System.Diagnostics;
 using Oftp4Net.Services.Api;
 using Oftp4Net.Services.Encodings;
 using Oftp4Net.Services.Hooks;
+using Oftp4Net.Services.Security;
 using Oftp4Net.Services.TransferEvents;
 
 namespace Oftp4Net.Services.Oftp;
@@ -35,6 +37,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private readonly ITransferEventLog _events;
     private readonly IWebhookDispatcher _webhooks;
     private readonly ApiTokenService _apiTokens;
+    private readonly SessionFileSecurity _fileSecurity;
     private readonly string _remoteEndPoint;
     private readonly Stopwatch _fileStopwatch = new();
     private readonly ILogger _logger;
@@ -60,6 +63,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _events = scopedServices.GetRequiredService<ITransferEventLog>();
         _webhooks = scopedServices.GetRequiredService<IWebhookDispatcher>();
         _apiTokens = scopedServices.GetRequiredService<ApiTokenService>();
+        _fileSecurity = new SessionFileSecurity(scopedServices.GetRequiredService<ICertificateRepository>(), settings);
         _remoteEndPoint = remoteEndPoint;
         _settings = settings;
         _settingsService = scopedServices.GetRequiredService<GlobalSettingsService>();
@@ -149,7 +153,48 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         }
 
         Partner = partner;
-        return OftpAuthenticationResult.Accept(_listener.Identity.SSID, _listener.Identity.Password ?? "");
+        return OftpAuthenticationResult.Accept(_listener.Identity.SSID, _listener.Identity.Password ?? "",
+            secureAuthentication: partner.SecureAuthentication);
+    }
+
+    /// <summary>
+    /// Secure authentication: encrypts the challenge for the partner's certificate. Without that certificate the
+    /// partner cannot be challenged and the session is aborted.
+    /// </summary>
+    public override async ValueTask<byte[]> EncryptChallengeAsync(byte[] challenge, CancellationToken cancellationToken)
+    {
+        var certificate = await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken)
+            ?? throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
+                $"Partner {Partner!.Name} has no certificate configured to authenticate it with.");
+
+        try
+        {
+            return FileSecurity.EncryptChallenge(challenge, certificate,
+                CipherSuite.Get(Partner!.FileCipherSuite) ?? CipherSuite.Default);
+        }
+        catch (FileSecurityException ex)
+        {
+            throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
+                $"The authentication challenge for {Partner!.Name} could not be encrypted: {ex.Message}");
+        }
+    }
+
+    /// <summary>Secure authentication: decrypts the challenge of the partner with our own private key.</summary>
+    public override async ValueTask<byte[]> DecryptChallengeAsync(byte[] challenge, CancellationToken cancellationToken)
+    {
+        var certificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken)
+            ?? throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
+                "No certificate for file security is configured (setting FileSecurityCertificateId).");
+
+        try
+        {
+            return FileSecurity.DecryptChallenge(challenge, certificate);
+        }
+        catch (FileSecurityException ex)
+        {
+            throw new OftpProtocolException(ReasonCodes.InvalidChallengeResponse,
+                $"The authentication challenge of {Partner!.Name} could not be decrypted: {ex.Message}");
+        }
     }
 
     private static bool CheckPassword(SSID remote, Partner partner) =>
@@ -182,6 +227,19 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             var (date, time) = OftpOutgoingFile.CreateTimestamp(_timeService.GetCurrentTime());
             item.FileDate = date;
             item.FileTime = time;
+
+            SecuredContent content;
+            try
+            {
+                content = await SecureAsync(item, cancellationToken);
+            }
+            catch (FileSecurityException ex)
+            {
+                _logger.LogError(ex, "Securing {VirtualFileName} for {Partner} failed", item.VirtualFileName, Partner!.Name);
+                await MarkFailedAsync(item, ex.Message, retry: false);
+                continue;
+            }
+
             _inFlight = item;
             FileTransferStarted = true;
             _fileStopwatch.Restart();
@@ -195,9 +253,15 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 Time = time,
                 Description = item.Description ?? "",
                 State = item,
-                // The content is converted to the encoding configured for the partner while it is read.
-                OpenAsync = _ => ValueTask.FromResult(PartnerEncoding.ForSending(Partner!,
-                    new FileStream(item.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))),
+                SecurityLevel = content.Settings.SecurityLevel,
+                CipherSuite = content.Settings.Any || item.SignedResponseRequested
+                    ? content.Settings.Suite.Code
+                    : CipherSuites.None,
+                Compression = content.Settings.Compression,
+                Enveloping = content.Settings.Enveloping,
+                SignedEerpRequested = item.SignedResponseRequested,
+                OriginalSize = content.OriginalSize,
+                OpenAsync = content.OpenAsync,
             };
         }
 
@@ -299,6 +363,68 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         DispatchItemWebhook(item, "file.send_failed");
     }
 
+    /// <summary>Content of an outgoing file after signing, compression and encryption were applied to it.</summary>
+    private sealed record SecuredContent(
+        FileSecuritySettings Settings, long OriginalSize, Func<CancellationToken, ValueTask<Stream>> OpenAsync);
+
+    /// <summary>
+    /// Applies the file level security configured for the partner to the content of <paramref name="item"/> and
+    /// remembers the hash sent back in the End to End Response. Secured content is prepared in memory, so files
+    /// above the configured limit are refused here instead of being sent unprotected.
+    /// </summary>
+    private async Task<SecuredContent> SecureAsync(SendQueueItem item, CancellationToken cancellationToken)
+    {
+        var partner = Partner!;
+        var settings = await _fileSecurity.ForSendingAsync(partner, cancellationToken);
+        var originalSize = new FileInfo(item.FilePath).Length;
+
+        item.SignedResponseRequested = partner.RequestSignedEndResponse;
+        item.CipherSuite = settings.Any ? settings.Suite.Code : null;
+        item.ContentHash = null;
+
+        // The content is converted to the encoding configured for the partner before it is secured.
+        Stream OpenContent() => PartnerEncoding.ForSending(partner,
+            new FileStream(item.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true));
+
+        if (!settings.Any)
+        {
+            // Nothing is applied to the content; the hash is still needed when we ask for a signed response.
+            if (item.SignedResponseRequested)
+            {
+                await using var content = OpenContent();
+                item.ContentHash = await settings.Suite.ComputeHashAsync(content, cancellationToken);
+            }
+
+            return new SecuredContent(settings, originalSize, _ => ValueTask.FromResult(OpenContent()));
+        }
+
+        if (originalSize > _fileSecurity.MaxSecuredFileSize)
+            throw new FileSecurityException(
+                $"The file has {originalSize / 1024 / 1024} MB, files secured for a partner are processed in memory " +
+                $"and must not be larger than {_fileSecurity.MaxSecuredFileSizeText} (setting MaxSecuredFileSizeMb).");
+
+        byte[] plain;
+        await using (var content = OpenContent())
+        {
+            using var buffer = new MemoryStream();
+            await content.CopyToAsync(buffer, cancellationToken);
+            plain = buffer.ToArray();
+        }
+
+        var secured = FileSecurity.Protect(plain, settings);
+        item.ContentHash = FileSecurity.ComputeHash(secured, settings.Suite);
+
+        _logger.LogInformation("File {VirtualFileName} for {Partner} secured ({Applied}): {Original} B -> {Secured} B",
+            item.VirtualFileName, partner.Name, Applied(settings), plain.Length, secured.Length);
+
+        return new SecuredContent(settings, originalSize,
+            _ => ValueTask.FromResult<Stream>(new MemoryStream(secured, writable: false)));
+    }
+
+    private static string Applied(FileSecuritySettings settings) => string.Join(", ",
+        new[] { settings.Sign ? "signed" : null, settings.Compress ? "compressed" : null, settings.Encrypt ? "encrypted" : null }
+            .Where(a => a is not null));
+
     #endregion
 
     #region Receiving
@@ -317,6 +443,10 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         if (await _receivedFiles.ExistsAsync(partner.Id, header.DatasetName, header.Date, header.Time, cancellationToken))
             return OftpStartFileDecision.Reject(AnswerReasonCodes.DuplicateFile, "File was already received.");
 
+        var security = FileSecurityDescriptor.From(header);
+        if (await CheckIncomingSecurityAsync(header, security, cancellationToken) is { } refusal)
+            return refusal;
+
         var directory = Path.Combine(_settingsService.ResolvePath(_settings.ReceiveDirectory), SafeFileName(partner.SSID));
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"{SafeFileName(header.DatasetName)}_{header.Date}{header.Time}");
@@ -334,14 +464,19 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             Description = header.Description,
             FilePath = path,
             Status = ReceiveStatus.RECEIVING,
+            SecurityLevel = header.SecurityLevel,
+            CipherSuite = security.Any || header.SignedEerpRequested ? header.CipherSuite : null,
+            Compressed = security.Compressed,
+            SignedResponseRequested = header.SignedEerpRequested,
         };
 
         Stream stream;
         try
         {
-            // The content is converted from EBCDIC to ANSI while it is written when the partner is configured so.
-            stream = PartnerEncoding.ForReceiving(partner,
-                new FileStream(path + ".part", FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true));
+            var file = new FileStream(path + ".part", FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            // Secured content is stored as received and unpacked (and converted) when the transfer is complete;
+            // plain content is converted from EBCDIC to ANSI while it is written when the partner is configured so.
+            stream = security.Any ? file : PartnerEncoding.ForReceiving(partner, file);
         }
         catch (IOException ex)
         {
@@ -374,7 +509,13 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         var record = (ReceivedFile)file.State!;
         try
         {
-            File.Move(record.FilePath + ".part", record.FilePath, overwrite: true);
+            await StoreContentAsync(file.Header, record, cancellationToken);
+        }
+        catch (FileSecurityException ex)
+        {
+            _logger.LogError(ex, "Unpacking {VirtualFileName} from {Partner} failed", record.VirtualFileName, Partner?.Name);
+            await MarkReceiveFailedAsync(record, ex.Message);
+            return OftpAnswer.Reject(ex.ReasonCode, ex.Message);
         }
         catch (IOException ex)
         {
@@ -382,7 +523,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             return OftpAnswer.Reject(AnswerReasonCodes.AccessMethodFailure, "Cannot store the file.");
         }
 
-        record.Size = file.BytesReceived;
+        record.Size = new FileInfo(record.FilePath).Length;
         record.Status = ReceiveStatus.RECEIVED;
         FilesReceived++;
         await SaveAsync(record);
@@ -421,6 +562,93 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _hooks.Dispatch(HookEvent.OnReceiveFailed, parameters);
     }
 
+    /// <summary>
+    /// Refuses a file whose security we cannot handle before it is transferred, with the reason code that tells
+    /// the partner what is wrong (RFC 5024, section 5.3.4).
+    /// </summary>
+    private async Task<OftpStartFileDecision?> CheckIncomingSecurityAsync(SFID header, FileSecurityDescriptor security,
+        CancellationToken cancellationToken)
+    {
+        if (!security.Any && !header.SignedEerpRequested)
+            return null;
+
+        if (CipherSuite.Get(header.CipherSuite) is null && (security.Encrypted || security.Signed || header.SignedEerpRequested))
+            return OftpStartFileDecision.Reject(AnswerReasonCodes.CipherSuiteNotSupported,
+                $"Cipher suite '{header.CipherSuite}' is not supported.");
+
+        if (security.Compressed && header.Compression != FileCompressionAlgorithms.Zlib)
+            return OftpStartFileDecision.Reject(AnswerReasonCodes.CompressionNotAllowed,
+                $"Compression algorithm '{header.Compression}' is not supported.");
+
+        var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken);
+
+        if ((security.Encrypted || header.SignedEerpRequested) && ownCertificate is null)
+            return OftpStartFileDecision.Reject(
+                security.Encrypted ? AnswerReasonCodes.FileDecryptionFailure : AnswerReasonCodes.UnspecifiedReason,
+                "No certificate for file security is configured (setting FileSecurityCertificateId).");
+
+        if (security.Signed && await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken) is null)
+            return OftpStartFileDecision.Reject(AnswerReasonCodes.InvalidFileSignature,
+                $"Partner {Partner!.Name} has no certificate configured to verify file signatures with.");
+
+        // Unpacking is done in memory. SFIDFSIZ is in 1K blocks and only an estimate, the real size is checked again.
+        if (security.Any && header.FileSize * 1024 > _fileSecurity.MaxSecuredFileSize)
+            return OftpStartFileDecision.Reject(AnswerReasonCodes.FileSizeTooBig,
+                $"Secured files must not be larger than {_fileSecurity.MaxSecuredFileSizeText} (setting MaxSecuredFileSizeMb).");
+
+        return null;
+    }
+
+    /// <summary>
+    /// Moves the received content to its final place: secured content is hashed for the End to End Response,
+    /// then decrypted, decompressed, signature checked and converted to the local encoding.
+    /// </summary>
+    private async Task StoreContentAsync(SFID header, ReceivedFile record, CancellationToken cancellationToken)
+    {
+        var security = FileSecurityDescriptor.From(header);
+        var partial = record.FilePath + ".part";
+
+        if (!security.Any && !header.SignedEerpRequested)
+        {
+            File.Move(partial, record.FilePath, overwrite: true);
+            return;
+        }
+
+        var transferred = new FileInfo(partial).Length;
+        if (transferred > _fileSecurity.MaxSecuredFileSize)
+            throw new FileSecurityException(AnswerReasonCodes.FileSizeTooBig,
+                $"The file has {transferred / 1024 / 1024} MB, secured files are processed in memory and must not be " +
+                $"larger than {_fileSecurity.MaxSecuredFileSizeText} (setting MaxSecuredFileSizeMb).");
+
+        var content = await File.ReadAllBytesAsync(partial, cancellationToken);
+
+        // The hash of the transferred (still secured) content is what the partner asked us to sign in the EERP.
+        var suite = CipherSuite.Get(header.CipherSuite) ?? CipherSuite.Default;
+        if (header.SignedEerpRequested)
+            record.ContentHash = FileSecurity.ComputeHash(content, suite);
+
+        if (!security.Any)
+        {
+            File.Move(partial, record.FilePath, overwrite: true);
+            return;
+        }
+
+        var plain = FileSecurity.Unprotect(content, security,
+            await _fileSecurity.GetOwnCertificateAsync(cancellationToken),
+            await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken));
+
+        await using (var destination = PartnerEncoding.ForReceiving(Partner!,
+                         new FileStream(record.FilePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true)))
+        {
+            await destination.WriteAsync(plain, cancellationToken);
+        }
+
+        File.Delete(partial);
+
+        _logger.LogInformation("File {VirtualFileName} from {Partner} unpacked: {Transferred} B -> {Plain} B",
+            record.VirtualFileName, Partner?.Name, content.Length, plain.Length);
+    }
+
     private static string SafeFileName(string value)
     {
         var invalid = Path.GetInvalidFileNameChars();
@@ -443,7 +671,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 continue;
             _claimed.Add(claim);
 
-            _pendingResponses.Add(new EERP
+            var response = new EERP
             {
                 DatasetName = record.VirtualFileName,
                 Date = record.FileDate,
@@ -451,10 +679,51 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 UserData = record.UserData,
                 Destination = record.Originator,
                 Originator = record.Destination,
-            }, record);
+                Hash = record.ContentHash ?? [],
+            };
+
+            _pendingResponses.Add(await SignResponseAsync(response, record, cancellationToken), record);
         }
 
         return _pendingResponses.Keys.ToList();
+    }
+
+    /// <summary>
+    /// Signs the End to End Response when the partner asked for it (SFIDSIGN). A response that cannot be signed is
+    /// still sent unsigned: the file was delivered and the partner decides whether it accepts that.
+    /// </summary>
+    private async Task<EERP> SignResponseAsync(EERP response, ReceivedFile record, CancellationToken cancellationToken)
+    {
+        if (!record.SignedResponseRequested)
+            return response;
+
+        try
+        {
+            var certificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken)
+                ?? throw new FileSecurityException("No certificate for file security is configured (setting FileSecurityCertificateId).");
+            var suite = CipherSuite.Get(record.CipherSuite) ?? CipherSuite.Default;
+
+            return new EERP
+            {
+                DatasetName = response.DatasetName,
+                Date = response.Date,
+                Time = response.Time,
+                UserData = response.UserData,
+                Destination = response.Destination,
+                Originator = response.Originator,
+                Hash = response.Hash,
+                Signature = FileSecurity.SignEndResponse(EndResponseSignature.GetSignedContent(response), certificate, suite),
+            };
+        }
+        catch (FileSecurityException ex)
+        {
+            _logger.LogWarning(ex, "EERP for {VirtualFileName} requested by {Partner} cannot be signed",
+                record.VirtualFileName, Partner?.Name);
+            Record(TransferEventCategory.EndResponse, TransferEventType.EndResponseSignatureInvalid, TransferEventLevel.Warning,
+                $"EERP for {record.VirtualFileName} is sent unsigned although {Partner?.Name} asked for a signature: {ex.Message}",
+                e => Describe(e, record, null));
+            return response;
+        }
     }
 
     public override async ValueTask OnEndResponseSentAsync(OftpCommand response, CancellationToken cancellationToken)
@@ -494,6 +763,20 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             return;
         }
 
+        if (await VerifyResponseAsync(response, item, cancellationToken) is { } invalid)
+        {
+            // The file was answered, but the answer does not prove anything: keep it as sent and report the problem.
+            item.LastError = invalid;
+            item.LastErrorDate = _timeService.GetCurrentTime();
+            await SaveAsync(item);
+            _logger.LogWarning("Signature of the {Response} for {VirtualFileName} from {Partner} is not valid: {Error}",
+                response.Name, item.VirtualFileName, Partner?.Name, invalid);
+            Record(TransferEventCategory.EndResponse, TransferEventType.EndResponseSignatureInvalid, TransferEventLevel.Error,
+                $"Signature of the {response.Name} for {item.VirtualFileName} from {Partner?.Name} is not valid: {invalid}",
+                e => Describe(e, item, null));
+            return;
+        }
+
         if (response is NERP nerpResponse)
         {
             item.Status = SendStatus.NOT_DELIVERED;
@@ -527,6 +810,42 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 $"EERP for {item.VirtualFileName} received from {Partner?.Name}", e => Describe(e, item, null));
             _hooks.Dispatch(HookEvent.OnDelivered, parameters);
             DispatchItemWebhook(item, "file.delivered");
+        }
+    }
+
+    /// <summary>
+    /// Checks the signature of an End to End Response we asked to be signed: the signature has to be made by the
+    /// partner's certificate and the hash has to be the one of the content we sent. Returns the problem, or
+    /// <c>null</c> when the response is acceptable.
+    /// </summary>
+    private async Task<string?> VerifyResponseAsync(OftpCommand response, SendQueueItem item, CancellationToken cancellationToken)
+    {
+        if (!item.SignedResponseRequested)
+            return null;
+
+        var (hash, signature, signedContent) = response switch
+        {
+            EERP eerp => (eerp.Hash, eerp.Signature, EndResponseSignature.GetSignedContent(eerp)),
+            NERP nerp => (nerp.Hash, nerp.Signature, EndResponseSignature.GetSignedContent(nerp)),
+            _ => ([], [], [])
+        };
+
+        if (signature.Length == 0)
+            return "the response is not signed although a signature was requested";
+
+        if (item.ContentHash is { } expected && hash.Length > 0 && !hash.SequenceEqual(expected))
+            return "the hash of the file in the response differs from the hash of the content we sent";
+
+        try
+        {
+            var certificate = await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken)
+                ?? throw new FileSecurityException($"partner {Partner!.Name} has no certificate configured");
+            FileSecurity.VerifyEndResponse(signature, signedContent, certificate);
+            return null;
+        }
+        catch (FileSecurityException ex)
+        {
+            return ex.Message;
         }
     }
 
@@ -703,6 +1022,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
     public void Dispose()
     {
+        _fileSecurity.Dispose();
+
         foreach (var claim in _claimed)
             _claims.Release(claim);
         _claimed.Clear();

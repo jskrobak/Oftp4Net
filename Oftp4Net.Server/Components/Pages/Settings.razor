@@ -41,6 +41,25 @@
                     </div>
 
                     <div class="col-md-6">
+                        <HxSelect TItem="Certificate"
+                                  TValue="int?"
+                                  Label="File security certificate"
+                                  Hint="Signs outgoing files and end responses and decrypts incoming files. Give its public part to your partners."
+                                  Data="availableCertificates"
+                                  @bind-Value="@settings.FileSecurityCertificateId"
+                                  TextSelector="@(c => $"{c.Name} (valid to {c.ValidTo:d})")"
+                                  ValueSelector="@(c => c.Id)"
+                                  Nullable="true"
+                                  NullText="-none-" />
+                    </div>
+
+                    <div class="col-md-6">
+                        <HxInputNumber Label="Maximum size of a secured file (MB)"
+                                       Hint="Signing, compression and encryption are done in memory; larger files are not transferred."
+                                       Decimals="0" @bind-Value="@settings.MaxSecuredFileSizeMb" />
+                    </div>
+
+                    <div class="col-md-6">
                         <HxInputNumber Label="Send queue interval (seconds)" Decimals="0" @bind-Value="@settings.SendIntervalSeconds" />
                     </div>
                     <div class="col-md-6">

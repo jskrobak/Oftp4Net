@@ -43,6 +43,21 @@ public class GlobalSettings
     [Range(1, 3650)]
     public int ArchiveEventsAfterDays { get; set; } = 90;
 
+    /// <summary>
+    /// Certificate with private key used for file level security: outgoing files and End to End Responses are
+    /// signed with it, incoming ones are decrypted with it. Give its public part to your partners.
+    /// </summary>
+    [SettingsItem]
+    public int? FileSecurityCertificateId { get; set; } = null;
+
+    /// <summary>
+    /// Signing, compression and encryption of files is done in memory, so files larger than this are not
+    /// secured and their transfer fails with an error.
+    /// </summary>
+    [SettingsItem]
+    [Range(1, 4096)]
+    public int MaxSecuredFileSizeMb { get; set; } = 100;
+
     /// <summary>Seconds to wait for a response from the partner.</summary>
     [SettingsItem]
     [Range(10, 3600)]

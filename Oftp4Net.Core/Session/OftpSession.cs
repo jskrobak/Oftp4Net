@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
 using Oftp4Net.Core.Protocol;
 using Oftp4Net.Core.Protocol.Commands;
 
@@ -11,8 +12,10 @@ namespace Oftp4Net.Core.Session;
 /// The session follows the speaker / listener model: only the speaker sends SFID, DATA, EFID, EERP and NERP.
 /// A speaker with nothing (more) to send hands over with CD. When a side becomes the speaker right after
 /// receiving CD and has nothing to send, it ends the session with ESID.
-/// Not supported: secure authentication, restart, buffer compression when sending, file level security
-/// (CMS encryption, signing, compression) and signed EERP.
+/// File level security (signing, compression, encryption) is not handled here: the session only carries the
+/// attributes of SFID, the application decides what it accepts and processes the content. Secure authentication
+/// is driven here, the encryption of the challenge is done by the application.
+/// Not supported: restart and buffer compression when sending.
 /// </remarks>
 public sealed class OftpSession
 {
@@ -31,6 +34,9 @@ public sealed class OftpSession
         _options = options;
         _handler = handler;
         _logger = logger;
+        // The initiator announces its own requirement in SSID; for a responder the requirement of the identified
+        // partner replaces it before its SSID is sent.
+        SecureAuthenticationAgreed = options.SecureAuthentication;
     }
 
     /// <summary>SSID received from the peer, available once the session has started.</summary>
@@ -44,6 +50,9 @@ public sealed class OftpSession
 
     /// <summary>State returned by <see cref="OftpSessionHandler.AuthenticateAsync"/>.</summary>
     public object? State { get; private set; }
+
+    /// <summary>Both sides require secure authentication (SSIDAUTH), so the session runs the SECD/AUCH/AURP phase.</summary>
+    public bool SecureAuthenticationAgreed { get; private set; }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -122,8 +131,12 @@ public sealed class OftpSession
         }
 
         _logger.LogInformation(
-            "OFTP session started with {Code} as {Role}, buffer size {BufferSize}, credit {Credit}",
-            RemoteSsid!.Code, _options.Role, ExchangeBufferSize, Credit);
+            "OFTP session started with {Code} as {Role}, buffer size {BufferSize}, credit {Credit}{Authentication}",
+            RemoteSsid!.Code, _options.Role, ExchangeBufferSize, Credit,
+            SecureAuthenticationAgreed ? ", secure authentication" : "");
+
+        if (SecureAuthenticationAgreed)
+            await AuthenticateSecurelyAsync(cancellationToken);
     }
 
     private SSID CreateSsid(string code, string password, int bufferSize, int credit) => new()
@@ -136,7 +149,7 @@ public sealed class OftpSession
         BufferCompression = false,
         Restart = false,
         SpecialLogic = false,
-        SecureAuthentication = false,
+        SecureAuthentication = SecureAuthenticationAgreed,
     };
 
     private async Task<OftpAuthenticationResult> AcceptRemoteSsidAsync(SSID remote, CancellationToken cancellationToken)
@@ -146,10 +159,6 @@ public sealed class OftpSession
         if (remote.Level != SSID.Oftp2Level)
             throw new OftpProtocolException(ReasonCodes.ModeOrCapabilitiesIncompatible,
                 $"Protocol release level {remote.Level} is not supported, only OFTP 2.0 (5).");
-
-        if (remote.SecureAuthentication)
-            throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
-                "Secure authentication is not supported.");
 
         if (remote.ExchangeBufferSize < OftpSessionOptions.MinExchangeBufferSize)
             throw new OftpProtocolException(ReasonCodes.ExchangeBufferSizeError,
@@ -179,7 +188,70 @@ public sealed class OftpSession
         State = auth.State;
         ExchangeBufferSize = Math.Min(_options.ExchangeBufferSize, remote.ExchangeBufferSize);
         Credit = Math.Min(_options.Credit, remote.Credit);
+
+        // Secure authentication is not negotiated: both sides have to require it (RFC 5024, section 5.3.2).
+        // A responder learns the requirement of the peer together with its identity.
+        SecureAuthenticationAgreed = auth.SecureAuthentication ?? _options.SecureAuthentication;
+        if (SecureAuthenticationAgreed != remote.SecureAuthentication)
+            throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
+                SecureAuthenticationAgreed
+                    ? $"Secure authentication is required, but {remote.Code} does not use it."
+                    : $"{remote.Code} requires secure authentication, which is not configured for it here.");
+
         return auth;
+    }
+
+    /// <summary>
+    /// Secure authentication (RFC 5024, section 4.2.3): each side proves that it holds the private key of the
+    /// certificate the other side knows. The initiator is challenged first.
+    /// </summary>
+    private async Task AuthenticateSecurelyAsync(CancellationToken cancellationToken)
+    {
+        if (_options.Role == OftpRole.Initiator)
+        {
+            await SendAsync(new SECD(), cancellationToken);
+            await AnswerChallengeAsync(cancellationToken);
+
+            await ReceiveAsync<SECD>(cancellationToken);
+            await ChallengePeerAsync(cancellationToken);
+        }
+        else
+        {
+            await ReceiveAsync<SECD>(cancellationToken);
+            await ChallengePeerAsync(cancellationToken);
+
+            await SendAsync(new SECD(), cancellationToken);
+            await AnswerChallengeAsync(cancellationToken);
+        }
+
+        _logger.LogInformation("Secure authentication with {Code} succeeded", RemoteSsid!.Code);
+    }
+
+    /// <summary>Sends a fresh challenge encrypted for the peer and checks that it comes back decrypted.</summary>
+    private async Task ChallengePeerAsync(CancellationToken cancellationToken)
+    {
+        var challenge = SecureAuthentication.CreateChallenge();
+
+        await SendAsync(new AUCH { Challenge = await _handler.EncryptChallengeAsync(challenge, cancellationToken) },
+            cancellationToken);
+
+        var response = await ReceiveAsync<AURP>(cancellationToken);
+        if (!CryptographicOperations.FixedTimeEquals(response.Response, challenge))
+            throw new OftpProtocolException(ReasonCodes.InvalidChallengeResponse,
+                $"{RemoteSsid!.Code} did not answer the authentication challenge correctly.");
+    }
+
+    /// <summary>Decrypts the challenge of the peer and sends it back.</summary>
+    private async Task AnswerChallengeAsync(CancellationToken cancellationToken)
+    {
+        var challenge = await ReceiveAsync<AUCH>(cancellationToken);
+        var decrypted = await _handler.DecryptChallengeAsync(challenge.Challenge, cancellationToken);
+
+        if (decrypted.Length != SecureAuthentication.ChallengeLength)
+            throw new OftpProtocolException(ReasonCodes.InvalidChallengeResponse,
+                $"The decrypted challenge has {decrypted.Length} octets, expected {SecureAuthentication.ChallengeLength}.");
+
+        await SendAsync(new AURP { Response = decrypted }, cancellationToken);
     }
 
     #endregion
@@ -220,7 +292,8 @@ public sealed class OftpSession
     private async Task<bool> SendFileAsync(OftpOutgoingFile file, CancellationToken cancellationToken)
     {
         await using var content = await file.OpenAsync(cancellationToken);
-        var sizeInBlocks = content.CanSeek ? (content.Length + 1023) / 1024 : 0;
+        var sizeInBlocks = content.CanSeek ? ToBlocks(content.Length) : 0;
+        var originalSizeInBlocks = file.OriginalSize is { } originalSize ? ToBlocks(originalSize) : sizeInBlocks;
 
         await SendAsync(new SFID
         {
@@ -233,8 +306,13 @@ public sealed class OftpSession
             Format = file.Format,
             MaxRecordSize = 0,
             FileSize = sizeInBlocks,
-            OriginalFileSize = sizeInBlocks,
+            OriginalFileSize = originalSizeInBlocks,
             RestartPosition = 0,
+            SecurityLevel = file.SecurityLevel,
+            CipherSuite = file.CipherSuite,
+            Compression = file.Compression,
+            Enveloping = file.Enveloping,
+            SignedEerpRequested = file.SignedEerpRequested,
             Description = file.Description,
         }, cancellationToken);
 
@@ -336,10 +414,7 @@ public sealed class OftpSession
 
     private async Task ReceiveFileAsync(SFID sfid, CancellationToken cancellationToken)
     {
-        var refusal = CheckSupported(sfid);
-        var decision = refusal is null
-            ? await _handler.OnStartFileAsync(sfid, cancellationToken)
-            : OftpStartFileDecision.Reject(refusal.ReasonCode, refusal.ReasonText);
+        var decision = await _handler.OnStartFileAsync(sfid, cancellationToken);
 
         if (decision.Destination is null)
         {
@@ -425,23 +500,6 @@ public sealed class OftpSession
         await SendAsync(new EFPA { ChangeDirection = false }, cancellationToken);
     }
 
-    private static OftpAnswer? CheckSupported(SFID sfid)
-    {
-        if (sfid.Format is not (FileFormats.Unstructured or FileFormats.Text or FileFormats.Fixed or FileFormats.Variable))
-            return OftpAnswer.Reject(AnswerReasonCodes.StorageRecordFormatNotSupported, $"File format '{sfid.Format}' is not supported.");
-        if (sfid.SecurityLevel is SecurityLevels.Encrypted or SecurityLevels.EncryptedAndSigned)
-            return OftpAnswer.Reject(AnswerReasonCodes.EncryptedFileNotAllowed, "Encrypted files are not supported.");
-        if (sfid.SecurityLevel == SecurityLevels.Signed)
-            return OftpAnswer.Reject(AnswerReasonCodes.SignedFileNotAllowed, "Signed files are not supported.");
-        if (sfid.Compression != FileCompressionAlgorithms.None)
-            return OftpAnswer.Reject(AnswerReasonCodes.CompressionNotAllowed, "Compressed files are not supported.");
-        if (sfid.Enveloping != FileEnvelopingFormats.None)
-            return OftpAnswer.Reject(AnswerReasonCodes.UnspecifiedReason, "Enveloped files are not supported.");
-        if (sfid.SignedEerpRequested)
-            return OftpAnswer.Reject(AnswerReasonCodes.UnspecifiedReason, "Signed EERP is not supported.");
-        return null;
-    }
-
     #endregion
 
     #region Transport helpers
@@ -524,6 +582,8 @@ public sealed class OftpSession
 
     private static OftpProtocolException Unexpected(OftpCommand command, string expected) =>
         new(ReasonCodes.ProtocolViolation, $"Unexpected command {command.Name}, expected {expected}.");
+
+    private static long ToBlocks(long sizeInBytes) => (sizeInBytes + 1023) / 1024;
 
     private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
 
