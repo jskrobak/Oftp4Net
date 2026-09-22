@@ -66,6 +66,12 @@ public class ReceivedFile
     /// <summary>The partner asked for a signed End to End Response of this file (SFIDSIGN).</summary>
     public bool SignedResponseRequested { get; set; }
 
+    /// <summary>
+    /// Position (in 1K blocks) the transfer was continued from after an interruption, zero when the file
+    /// arrived in one go.
+    /// </summary>
+    public long RestartedFrom { get; set; }
+
     /// <summary>Hash of the transferred content, sent back in EERPHSH.</summary>
     public byte[]? ContentHash { get; set; }
 }

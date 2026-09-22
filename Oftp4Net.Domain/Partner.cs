@@ -45,6 +45,18 @@ public class Partner: BaseParty
     [Range(1, 65535)]
     public int EbcdicCodePage { get; set; } = 500;
 
+    /// <summary>
+    /// Offers ODETTE-FTP buffer compression (SSIDCMPR): runs of equal octets are compressed in the data exchange
+    /// buffers. Used only when the partner offers it too; buffers from the partner are always accepted compressed.
+    /// </summary>
+    public bool BufferCompression { get; set; }
+
+    /// <summary>
+    /// Offers restart of interrupted transfers (SSIDREST): an interrupted file continues at the last complete
+    /// 1K block instead of being sent again. Used only when the partner offers it too.
+    /// </summary>
+    public bool Restart { get; set; }
+
     /// <summary>Compresses the content of sent files (SFIDCOMP, CMS CompressedData with zlib).</summary>
     public bool CompressFiles { get; set; }
 

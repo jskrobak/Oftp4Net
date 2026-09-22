@@ -23,9 +23,16 @@ public sealed class DATA : OftpCommand
     internal override void Write(CommandWriter writer) => writer.Raw(Subrecords);
 
     /// <summary>
-    /// Splits the payload into subrecords. Buffer compression is not used when sending.
+    /// A run of equal octets is worth compressing from this length on: it costs two octets on the wire
+    /// (header and value) instead of one octet per repetition.
     /// </summary>
-    public static DATA FromPayload(ReadOnlySpan<byte> payload)
+    private const int MinCompressibleRun = 3;
+
+    /// <summary>
+    /// Splits the payload into subrecords, optionally using ODETTE-FTP buffer compression, which replaces a run
+    /// of equal octets by a single one (SSIDCMPR, only when both sides agreed on it).
+    /// </summary>
+    public static DATA FromPayload(ReadOnlySpan<byte> payload, bool compress = false)
     {
         var subrecordCount = (payload.Length + MaxSubrecordLength - 1) / MaxSubrecordLength;
         var buffer = new byte[payload.Length + subrecordCount];
@@ -33,14 +40,48 @@ public sealed class DATA : OftpCommand
         var position = 0;
         while (!payload.IsEmpty)
         {
-            var chunk = payload[..Math.Min(MaxSubrecordLength, payload.Length)];
-            buffer[position++] = (byte)chunk.Length;
-            chunk.CopyTo(buffer.AsSpan(position));
-            position += chunk.Length;
-            payload = payload[chunk.Length..];
+            var run = compress ? RunLength(payload) : 0;
+            if (run >= MinCompressibleRun)
+            {
+                buffer[position++] = (byte)(CompressedFlag | run);
+                buffer[position++] = payload[0];
+                payload = payload[run..];
+                continue;
+            }
+
+            // Literal octets up to the next run worth compressing.
+            var length = compress ? LiteralLength(payload) : Math.Min(MaxSubrecordLength, payload.Length);
+            buffer[position++] = (byte)length;
+            payload[..length].CopyTo(buffer.AsSpan(position));
+            position += length;
+            payload = payload[length..];
         }
 
-        return new DATA { Subrecords = buffer };
+        return new DATA { Subrecords = position == buffer.Length ? buffer : buffer[..position] };
+    }
+
+    /// <summary>Number of equal octets at the start of <paramref name="payload"/>, at most a subrecord.</summary>
+    private static int RunLength(ReadOnlySpan<byte> payload)
+    {
+        var value = payload[0];
+        var length = 1;
+        while (length < payload.Length && length < MaxSubrecordLength && payload[length] == value)
+            length++;
+
+        return length;
+    }
+
+    /// <summary>Number of octets to send uncompressed, i.e. up to the next run worth compressing.</summary>
+    private static int LiteralLength(ReadOnlySpan<byte> payload)
+    {
+        var limit = Math.Min(MaxSubrecordLength, payload.Length);
+        for (var length = 1; length < limit; length++)
+        {
+            if (RunLength(payload[length..]) >= MinCompressibleRun)
+                return length;
+        }
+
+        return limit;
     }
 
     /// <summary>

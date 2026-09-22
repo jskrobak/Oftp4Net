@@ -35,6 +35,18 @@ public sealed class OftpSessionOptions
     /// </summary>
     public bool SecureAuthentication { get; init; }
 
+    /// <summary>
+    /// Offer ODETTE-FTP buffer compression (SSIDCMPR). Runs of equal octets are compressed in the data exchange
+    /// buffers when both sides offer it. Receiving compressed buffers is always supported.
+    /// </summary>
+    public bool BufferCompression { get; init; }
+
+    /// <summary>
+    /// Offer restart of interrupted transfers (SSIDREST). Used only when both sides offer it; the speaker then
+    /// proposes a restart position in SFID and the listener answers with the position it really has.
+    /// </summary>
+    public bool Restart { get; init; }
+
     /// <summary>Send / receive capability announced in SSID.</summary>
     public string SendReceive { get; init; } = SendReceiveCapabilities.Both;
 

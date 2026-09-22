@@ -28,7 +28,7 @@ public class SessionTests
         int bufferSize = 4096, int credit = 64,
         string clientPassword = ClientPassword,
         OftpTlsOptions? serverTls = null, OftpTlsOptions? clientTls = null,
-        bool secureAuthentication = false)
+        bool secureAuthentication = false, bool bufferCompression = false, bool restart = false)
     {
         using var cts = new CancellationTokenSource(TestTimeout);
         var serverDone = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -45,6 +45,8 @@ public class SessionTests
                             ExchangeBufferSize = bufferSize,
                             Credit = credit,
                             SecureAuthentication = secureAuthentication,
+                            BufferCompression = bufferCompression,
+                            Restart = restart,
                         },
                         server, NullLogger.Instance);
                     await session.RunAsync(ct);
@@ -69,6 +71,8 @@ public class SessionTests
                 ExchangeBufferSize = bufferSize,
                 Credit = credit,
                 SecureAuthentication = secureAuthentication,
+                BufferCompression = bufferCompression,
+                Restart = restart,
             }, client, NullLogger.Instance);
             await session.RunAsync(cts.Token);
         }
@@ -102,6 +106,62 @@ public class SessionTests
         var eerps = client.ReceivedEndResponses.Cast<EERP>().ToList();
         Assert.Equal(2, eerps.Count);
         Assert.Contains(eerps, e => e is { DatasetName: "LARGE", Destination: ClientCode, Originator: ServerCode });
+    }
+
+    [Fact]
+    public async Task InterruptedTransferContinuesAtTheAgreedBlock()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        var content = RandomNumberGenerator.GetBytes(3 * OftpSession.RestartBlockSize + 100);
+        // The sender believes two blocks arrived last time, the receiver really has one and a half.
+        client.Enqueue("PARTIAL", content, ServerCode, restartPosition: 2);
+        server.PartiallyReceived["PARTIAL"] = content[..(OftpSession.RestartBlockSize + 500)];
+
+        var (clientError, serverError) = await RunAsync(client, server, bufferSize: 512, credit: 2, restart: true);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        // The receiver kept one complete block, so the transfer continued there and the file is complete.
+        Assert.Equal(2, server.ReceivedHeaders["PARTIAL"].RestartPosition);
+        Assert.Equal(("PARTIAL", 1L), Assert.Single(client.SentFilesWithRestart));
+        Assert.Equal(content, server.ReceivedFiles["PARTIAL"]);
+    }
+
+    [Fact]
+    public async Task RestartPositionIsIgnoredWhenRestartIsNotAgreed()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        var content = RandomNumberGenerator.GetBytes(2 * OftpSession.RestartBlockSize);
+        client.Enqueue("FULL", content, ServerCode, restartPosition: 1);
+        server.PartiallyReceived["FULL"] = content[..OftpSession.RestartBlockSize];
+
+        var (clientError, serverError) = await RunAsync(client, server);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal(0, server.ReceivedHeaders["FULL"].RestartPosition);
+        Assert.Equal(("FULL", 0L), Assert.Single(client.SentFilesWithRestart));
+        Assert.Equal(content, server.ReceivedFiles["FULL"]);
+    }
+
+    [Fact]
+    public async Task CompressedBuffersCarryTheSameContent()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        // Content with long runs of equal octets, which is what buffer compression is for.
+        var content = new byte[50_000];
+        Array.Fill(content, (byte)' ', 0, 40_000);
+        RandomNumberGenerator.Fill(content.AsSpan(40_000));
+        client.Enqueue("PADDED", content, ServerCode);
+
+        var (clientError, serverError) = await RunAsync(client, server, bufferSize: 512, credit: 4, bufferCompression: true);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal(content, server.ReceivedFiles["PADDED"]);
     }
 
     [Fact]

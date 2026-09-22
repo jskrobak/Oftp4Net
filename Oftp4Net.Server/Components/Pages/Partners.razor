@@ -54,6 +54,14 @@
                                    EmptyText="-select SSL versions-" />
 
 
+                    <HxCheckbox Label="Enable buffer compression"
+                                Hint="Runs of equal octets are compressed in the data exchange buffers when the partner offers it too."
+                                @bind-Value="@currentPartner.BufferCompression" />
+
+                    <HxCheckbox Label="Enable restart of interrupted transfers"
+                                Hint="An interrupted file continues at the last complete 1K block instead of being sent again. Not used for signed, compressed or encrypted files."
+                                @bind-Value="@currentPartner.Restart" />
+
                     <HxSelect TItem="FileCharacterEncoding"
                               TValue="FileCharacterEncoding"
                               Label="Encoding of outgoing files"

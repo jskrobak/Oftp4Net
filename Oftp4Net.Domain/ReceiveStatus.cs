@@ -13,4 +13,10 @@ public enum ReceiveStatus
 
     /// <summary>Transfer did not complete.</summary>
     FAILED = 3,
+
+    /// <summary>
+    /// Transfer did not complete, but what was received is kept so that the partner can continue it
+    /// (restart, SSIDREST).
+    /// </summary>
+    INTERRUPTED = 4,
 }

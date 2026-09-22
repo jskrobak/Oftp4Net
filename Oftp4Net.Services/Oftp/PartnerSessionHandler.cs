@@ -48,6 +48,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private readonly Dictionary<OftpCommand, ReceivedFile> _pendingResponses = new(ReferenceEqualityComparer.Instance);
     private Queue<SendQueueItem>? _outgoing;
     private SendQueueItem? _inFlight;
+    private OftpOutgoingFile? _inFlightFile;
 
     private PartnerSessionHandler(IServiceProvider scopedServices, GlobalSettings settings, ILogger logger,
         Partner? partner, Identity? identity, Listener? listener, string remoteEndPoint)
@@ -154,7 +155,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
         Partner = partner;
         return OftpAuthenticationResult.Accept(_listener.Identity.SSID, _listener.Identity.Password ?? "",
-            secureAuthentication: partner.SecureAuthentication);
+            secureAuthentication: partner.SecureAuthentication,
+            bufferCompression: partner.BufferCompression,
+            restart: partner.Restart);
     }
 
     /// <summary>
@@ -224,7 +227,11 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 continue;
             }
 
-            var (date, time) = OftpOutgoingFile.CreateTimestamp(_timeService.GetCurrentTime());
+            // A continued transfer must keep the virtual file date and time: together with the name they identify
+            // the file the partner has a part of.
+            var (date, time) = item is { RestartPosition: > 0, FileDate: { Length: > 0 } lastDate, FileTime: { Length: > 0 } lastTime }
+                ? (lastDate, lastTime)
+                : OftpOutgoingFile.CreateTimestamp(_timeService.GetCurrentTime());
             item.FileDate = date;
             item.FileTime = time;
 
@@ -244,7 +251,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             FileTransferStarted = true;
             _fileStopwatch.Restart();
 
-            return new OftpOutgoingFile
+            return _inFlightFile = new OftpOutgoingFile
             {
                 DatasetName = item.VirtualFileName,
                 Originator = item.Identity.SFID,
@@ -261,6 +268,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 Enveloping = content.Settings.Enveloping,
                 SignedEerpRequested = item.SignedResponseRequested,
                 OriginalSize = content.OriginalSize,
+                // Secured content is built anew for every attempt (encryption is randomised), so only a file sent
+                // as it is stored can be continued where the previous attempt stopped.
+                RestartPosition = content.Settings.Any ? 0 : item.RestartPosition,
                 OpenAsync = content.OpenAsync,
             };
         }
@@ -274,7 +284,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         item.Status = SendStatus.SENT;
         item.SentDate = _timeService.GetCurrentTime();
         item.LastError = null;
+        item.RestartPosition = 0;
         _inFlight = null;
+        _inFlightFile = null;
         FilesSent++;
         await SaveAsync(item);
         Record(TransferEventCategory.Outgoing, TransferEventType.FileSent, TransferEventLevel.Information,
@@ -287,6 +299,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     {
         var item = (SendQueueItem)file.State!;
         _inFlight = null;
+        _inFlightFile = null;
+        // A refused file is discarded by the partner, so the next attempt starts from the beginning.
+        item.RestartPosition = 0;
         await MarkFailedAsync(item, $"Refused by partner ({answer.ReasonCode}): {answer.ReasonText}", answer.RetryLater,
             answer.ReasonCode, answer.ReasonText);
     }
@@ -299,8 +314,18 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     {
         if (_inFlight is not null)
         {
+            // The partner keeps what it received, so the next attempt offers to continue there.
+            _inFlight.RestartPosition = Partner is { Restart: true } && _inFlightFile is { } sent && !IsSecured(sent)
+                ? sent.BytesSent / OftpSession.RestartBlockSize
+                : 0;
+
+            if (_inFlight.RestartPosition > 0)
+                _logger.LogInformation("Transfer of {VirtualFileName} to {Partner} stopped after {Blocks} complete blocks",
+                    _inFlight.VirtualFileName, Partner?.Name, _inFlight.RestartPosition);
+
             await MarkFailedAsync(_inFlight, exception.Message, retry: true);
             _inFlight = null;
+            _inFlightFile = null;
         }
 
         if (!includeUnattempted || Partner is null)
@@ -421,6 +446,12 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             _ => ValueTask.FromResult<Stream>(new MemoryStream(secured, writable: false)));
     }
 
+    /// <summary>The content of the file was signed, compressed or encrypted, so it cannot be continued.</summary>
+    private static bool IsSecured(OftpOutgoingFile file) =>
+        file.SecurityLevel != SecurityLevels.None ||
+        file.Compression != FileCompressionAlgorithms.None ||
+        file.Enveloping != FileEnvelopingFormats.None;
+
     private static string Applied(FileSecuritySettings settings) => string.Join(", ",
         new[] { settings.Sign ? "signed" : null, settings.Compress ? "compressed" : null, settings.Encrypt ? "encrypted" : null }
             .Where(a => a is not null));
@@ -451,29 +482,36 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, $"{SafeFileName(header.DatasetName)}_{header.Date}{header.Time}");
 
-        var record = new ReceivedFile
-        {
-            Created = _timeService.GetCurrentTime(),
-            PartnerId = partner.Id,
-            VirtualFileName = header.DatasetName,
-            FileDate = header.Date,
-            FileTime = header.Time,
-            UserData = header.UserData,
-            Originator = header.Originator,
-            Destination = header.Destination,
-            Description = header.Description,
-            FilePath = path,
-            Status = ReceiveStatus.RECEIVING,
-            SecurityLevel = header.SecurityLevel,
-            CipherSuite = security.Any || header.SignedEerpRequested ? header.CipherSuite : null,
-            Compressed = security.Compressed,
-            SignedResponseRequested = header.SignedEerpRequested,
-        };
+        // A file we already have a part of is either continued or received again, but always under the same record.
+        // Secured content is sent anew every time, so only a file stored as it arrives can be continued.
+        var interrupted = await _receivedFiles.FindInterruptedAsync(partner.Id, header.DatasetName, header.Date, header.Time,
+            cancellationToken);
+        var canContinue = interrupted is not null && partner.Restart && !security.Any && header.RestartPosition > 0;
+
+        var record = interrupted ?? new ReceivedFile { Created = _timeService.GetCurrentTime(), FilePath = path };
+        record.PartnerId = partner.Id;
+        record.VirtualFileName = header.DatasetName;
+        record.FileDate = header.Date;
+        record.FileTime = header.Time;
+        record.UserData = header.UserData;
+        record.Originator = header.Originator;
+        record.Destination = header.Destination;
+        record.Description = header.Description;
+        record.SecurityLevel = header.SecurityLevel;
+        record.CipherSuite = security.Any || header.SignedEerpRequested ? header.CipherSuite : null;
+        record.Compressed = security.Compressed;
+        record.SignedResponseRequested = header.SignedEerpRequested;
+        record.Status = ReceiveStatus.RECEIVING;
+        record.LastError = null;
 
         Stream stream;
+        long restartPosition;
         try
         {
-            var file = new FileStream(path + ".part", FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            restartPosition = canContinue ? KeepCompleteBlocks(record.FilePath + ".part", header.RestartPosition) : 0;
+
+            var file = new FileStream(record.FilePath + ".part",
+                restartPosition > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
             // Secured content is stored as received and unpacked (and converted) when the transfer is complete;
             // plain content is converted from EBCDIC to ANSI while it is written when the partner is configured so.
             stream = security.Any ? file : PartnerEncoding.ForReceiving(partner, file);
@@ -484,11 +522,40 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             return OftpStartFileDecision.Reject(AnswerReasonCodes.AccessMethodFailure, "Cannot store the file.", retryLater: true);
         }
 
-        _unitOfWork.AddForInsert(record);
+        if (interrupted is null)
+            _unitOfWork.AddForInsert(record);
+        else
+            _unitOfWork.AddForUpdate(record);
         await _unitOfWork.CommitAsync(cancellationToken);
 
+        if (restartPosition > 0)
+            _logger.LogInformation("Receiving {VirtualFileName} from {Partner} continues at block {Block}",
+                record.VirtualFileName, partner.Name, restartPosition);
+
         _fileStopwatch.Restart();
-        return OftpStartFileDecision.Accept(stream, record);
+        return OftpStartFileDecision.Accept(stream, record, restartPosition);
+    }
+
+    /// <summary>
+    /// Trims a partially received file to complete 1K blocks, at most to the position offered by the partner,
+    /// and returns the number of blocks that are kept. An incomplete last block is dropped, because the partner
+    /// counts in whole blocks.
+    /// </summary>
+    private static long KeepCompleteBlocks(string path, long offeredBlocks)
+    {
+        if (!File.Exists(path))
+            return 0;
+
+        var blocks = Math.Min(offeredBlocks, new FileInfo(path).Length / OftpSession.RestartBlockSize);
+        if (blocks <= 0)
+        {
+            File.Delete(path);
+            return 0;
+        }
+
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None);
+        file.SetLength(blocks * OftpSession.RestartBlockSize);
+        return blocks;
     }
 
     public override ValueTask OnStartFileRefusedAsync(SFID header, OftpAnswer answer, CancellationToken cancellationToken)
@@ -524,6 +591,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         }
 
         record.Size = new FileInfo(record.FilePath).Length;
+        record.RestartedFrom = file.RestartPosition;
         record.Status = ReceiveStatus.RECEIVED;
         FilesReceived++;
         await SaveAsync(record);
@@ -536,26 +604,44 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
     public override async ValueTask OnFileReceiveFailedAsync(OftpIncomingFile file, string reason, CancellationToken cancellationToken)
     {
-        await MarkReceiveFailedAsync((ReceivedFile)file.State!, reason);
+        // What arrived is kept only when the partner can continue the transfer later.
+        var keepPartial = Partner is { Restart: true } && file.TotalBytes >= OftpSession.RestartBlockSize &&
+                          !FileSecurityDescriptor.From(file.Header).Any;
+
+        await MarkReceiveFailedAsync((ReceivedFile)file.State!, reason, keepPartial, file.TotalBytes);
     }
 
-    private async Task MarkReceiveFailedAsync(ReceivedFile record, string reason)
+    private async Task MarkReceiveFailedAsync(ReceivedFile record, string reason,
+        bool keepPartial = false, long receivedBytes = 0)
     {
-        try
+        if (!keepPartial)
         {
-            File.Delete(record.FilePath + ".part");
+            try
+            {
+                File.Delete(record.FilePath + ".part");
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Cannot delete partial file {Path}", record.FilePath);
+            }
         }
-        catch (IOException ex)
+        else
         {
-            _logger.LogWarning(ex, "Cannot delete partial file {Path}", record.FilePath);
+            record.Size = receivedBytes;
+            _logger.LogInformation("{Bytes} octets of {VirtualFileName} are kept for a restart by {Partner}",
+                receivedBytes, record.VirtualFileName, Partner?.Name);
         }
 
-        record.Status = ReceiveStatus.FAILED;
+        record.Status = keepPartial ? ReceiveStatus.INTERRUPTED : ReceiveStatus.FAILED;
         record.LastError = reason.Length > 2000 ? reason[..2000] : reason;
         await SaveAsync(record);
 
-        Record(TransferEventCategory.Incoming, TransferEventType.FileReceiveFailed, TransferEventLevel.Error,
-            $"Receiving {record.VirtualFileName} failed: {reason}", e => Describe(e, record, null));
+        Record(TransferEventCategory.Incoming, TransferEventType.FileReceiveFailed,
+            keepPartial ? TransferEventLevel.Warning : TransferEventLevel.Error,
+            keepPartial
+                ? $"Receiving {record.VirtualFileName} was interrupted after {receivedBytes} octets, which are kept for a restart: {reason}"
+                : $"Receiving {record.VirtualFileName} failed: {reason}",
+            e => Describe(e, record, null));
 
         var parameters = ReceiveHookParameters(record);
         parameters["error"] = reason;

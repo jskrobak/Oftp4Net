@@ -45,6 +45,12 @@ public class SendQueueItem: BaseQueueItem
     public DateTime? SentDate { get; set; }
     public DateTime? DeliveredDate { get; set; }
 
+    /// <summary>
+    /// Complete 1K blocks the partner is believed to have from an interrupted transfer. The next attempt offers
+    /// this position in SFID and the partner lowers it to what it really has.
+    /// </summary>
+    public long RestartPosition { get; set; }
+
     /// <summary>Hash of the transferred content (EERPHSH), verified against a signed End to End Response.</summary>
     public byte[]? ContentHash { get; set; }
 

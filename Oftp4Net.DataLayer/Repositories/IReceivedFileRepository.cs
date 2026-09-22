@@ -24,4 +24,8 @@ public interface IReceivedFileRepository: IRepository<ReceivedFile, int>
 
     Task<bool> ExistsAsync(int partnerId, string virtualFileName, string fileDate, string fileTime,
         CancellationToken cancellationToken = default);
+
+    /// <summary>The interrupted transfer of this file, which the partner may continue (restart).</summary>
+    Task<ReceivedFile?> FindInterruptedAsync(int partnerId, string virtualFileName, string fileDate, string fileTime,
+        CancellationToken cancellationToken = default);
 }

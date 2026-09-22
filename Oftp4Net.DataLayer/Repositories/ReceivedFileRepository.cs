@@ -81,6 +81,20 @@ public class ReceivedFileRepository(
                                         && i.VirtualFileName == virtualFileName
                                         && i.FileDate == fileDate
                                         && i.FileTime == fileTime
-                                        && i.Status != ReceiveStatus.FAILED, cancellationToken);
+                                        && i.Status != ReceiveStatus.FAILED
+                                        && i.Status != ReceiveStatus.INTERRUPTED, cancellationToken);
+    }
+
+    public async Task<ReceivedFile?> FindInterruptedAsync(int partnerId, string virtualFileName, string fileDate, string fileTime,
+        CancellationToken cancellationToken = default)
+    {
+        return await Data
+            .Where(i => i.PartnerId == partnerId
+                        && i.VirtualFileName == virtualFileName
+                        && i.FileDate == fileDate
+                        && i.FileTime == fileTime
+                        && i.Status == ReceiveStatus.INTERRUPTED)
+            .OrderByDescending(i => i.Id)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 }

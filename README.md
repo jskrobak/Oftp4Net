@@ -15,9 +15,8 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Character set conversion per partner: files are sent in ANSI or EBCDIC and received EBCDIC content is converted to ANSI
 - File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses
 - Secure authentication (SSIDAUTH with SECD/AUCH/AURP): both sides prove they hold the private key of their certificate
+- Restart of interrupted transfers and ODETTE-FTP buffer compression, both negotiated per partner
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
-
-Not supported yet: restart of interrupted transfers and buffer compression when sending.
 
 ## Solution structure
 
@@ -182,6 +181,26 @@ Files that cannot be unpacked are refused with the reason code that says what is
 decryption failure, invalid file signature, …). Signing, compression and encryption are done in memory, so files
 larger than *Maximum size of a secured file (MB)* (setting, default 100) are not transferred to partners with file
 security and the error is written to the transfer log.
+
+## Buffer compression and restart
+
+Two session capabilities are offered per partner (on the *Partners* page) and used only when the partner offers
+them as well; what the partner sends is always accepted.
+
+| Setting | Meaning |
+|---|---|
+| *Enable buffer compression* | runs of equal octets are compressed in the data exchange buffers (SSIDCMPR) |
+| *Enable restart of interrupted transfers* | an interrupted file continues where it stopped (SSIDREST) |
+
+Buffer compression is the compression of ODETTE-FTP itself: a run of up to 63 equal octets is sent as a single
+one. It helps with padded records and costs nothing on content that does not repeat. It is independent of the file
+compression of file level security, which compresses the whole file with zlib.
+
+A transfer that is interrupted (connection loss, shutdown) leaves the received part on disk, the file keeps the
+state *INTERRUPTED* and the queue item remembers how far it got. The next attempt offers that position in SFID,
+the receiver answers in SFPA with the position it really has (complete 1K blocks only) and the transfer continues
+there, keeping the original virtual file date and time, which identify the file for the partner. Signed, compressed
+or encrypted files are always sent from the beginning, because their content is built anew for every attempt.
 
 ## Secure authentication
 

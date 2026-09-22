@@ -106,8 +106,20 @@ public sealed class OftpAuthenticationResult
     /// </summary>
     public bool? SecureAuthentication { get; private init; }
 
+    /// <summary>
+    /// Responder only: whether buffer compression is offered to the identified peer. When not set,
+    /// <see cref="OftpSessionOptions.BufferCompression"/> is used.
+    /// </summary>
+    public bool? BufferCompression { get; private init; }
+
+    /// <summary>
+    /// Responder only: whether restart is offered to the identified peer. When not set,
+    /// <see cref="OftpSessionOptions.Restart"/> is used.
+    /// </summary>
+    public bool? Restart { get; private init; }
+
     public static OftpAuthenticationResult Accept(string? localCode = null, string? localPassword = null, object? state = null,
-        bool? secureAuthentication = null) =>
+        bool? secureAuthentication = null, bool? bufferCompression = null, bool? restart = null) =>
         new()
         {
             Success = true,
@@ -115,6 +127,8 @@ public sealed class OftpAuthenticationResult
             LocalPassword = localPassword,
             State = state,
             SecureAuthentication = secureAuthentication,
+            BufferCompression = bufferCompression,
+            Restart = restart,
         };
 
     public static OftpAuthenticationResult Reject(string reasonCode, string reasonText) =>
@@ -145,8 +159,15 @@ public sealed class OftpStartFileDecision
     /// <summary>Arbitrary application state, available as <see cref="OftpIncomingFile.State"/>.</summary>
     public object? State { get; private init; }
 
-    public static OftpStartFileDecision Accept(Stream destination, object? state = null) =>
-        new() { Destination = destination, State = state };
+    /// <summary>
+    /// Restart position answered in SFPA: how many complete 1K blocks of the file are already stored and are not
+    /// to be sent again. It must not be higher than the position offered by the speaker in SFID and the
+    /// destination stream must be positioned behind them.
+    /// </summary>
+    public long RestartPosition { get; private init; }
+
+    public static OftpStartFileDecision Accept(Stream destination, object? state = null, long restartPosition = 0) =>
+        new() { Destination = destination, State = state, RestartPosition = restartPosition };
 
     public static OftpStartFileDecision Reject(string reasonCode, string reasonText, bool retryLater = false) =>
         new() { Answer = OftpAnswer.Reject(reasonCode, reasonText, retryLater) };
@@ -156,7 +177,15 @@ public sealed class OftpIncomingFile
 {
     public required SFID Header { get; init; }
     public object? State { get; init; }
+
+    /// <summary>Octets received in this transfer, i.e. without the part received before a restart.</summary>
     public long BytesReceived { get; internal set; }
+
+    /// <summary>Position (in 1K blocks) the transfer was restarted from, zero for a complete transfer.</summary>
+    public long RestartPosition { get; internal set; }
+
+    /// <summary>Size of the whole file, including the part received before a restart.</summary>
+    public long TotalBytes => RestartPosition * OftpSession.RestartBlockSize + BytesReceived;
 }
 
 /// <summary>A virtual file to be sent to the peer.</summary>
@@ -196,6 +225,18 @@ public sealed class OftpOutgoingFile
     /// When not set, the size of the transferred content is used.
     /// </summary>
     public long? OriginalSize { get; init; }
+
+    /// <summary>
+    /// Restart position offered in SFID: how many complete 1K blocks of this file the peer is believed to have
+    /// from an interrupted transfer. Ignored when restart was not agreed for the session.
+    /// </summary>
+    public long RestartPosition { get; init; }
+
+    /// <summary>Position (in 1K blocks) the transfer really started from, answered by the peer in SFPA.</summary>
+    public long RestartedFrom { get; internal set; }
+
+    /// <summary>Octets of the content handed to the transport so far, used to restart an interrupted transfer.</summary>
+    public long BytesSent { get; internal set; }
 
     /// <summary>Opens the content of the file. The session disposes the stream.</summary>
     public required Func<CancellationToken, ValueTask<Stream>> OpenAsync { get; init; }

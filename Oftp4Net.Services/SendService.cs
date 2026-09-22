@@ -157,6 +157,8 @@ public class SendService(ILogger<SendService> logger,
                 ExchangeBufferSize = settings.ExchangeBufferSize,
                 Credit = settings.Credit,
                 SecureAuthentication = partner.SecureAuthentication,
+                BufferCompression = partner.BufferCompression,
+                Restart = partner.Restart,
                 ResponseTimeout = TimeSpan.FromSeconds(settings.ResponseTimeoutSeconds),
             }, handler, logger);
 

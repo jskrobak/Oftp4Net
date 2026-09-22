@@ -15,7 +15,7 @@ namespace Oftp4Net.Core.Session;
 /// File level security (signing, compression, encryption) is not handled here: the session only carries the
 /// attributes of SFID, the application decides what it accepts and processes the content. Secure authentication
 /// is driven here, the encryption of the challenge is done by the application.
-/// Not supported: restart and buffer compression when sending.
+/// Buffer compression and restart of interrupted transfers are used when both sides offer them in SSID.
 /// </remarks>
 public sealed class OftpSession
 {
@@ -34,9 +34,11 @@ public sealed class OftpSession
         _options = options;
         _handler = handler;
         _logger = logger;
-        // The initiator announces its own requirement in SSID; for a responder the requirement of the identified
-        // partner replaces it before its SSID is sent.
+        // The initiator announces its own capabilities in SSID; for a responder those of the identified partner
+        // replace them before its SSID is sent.
         SecureAuthenticationAgreed = options.SecureAuthentication;
+        BufferCompressionAgreed = options.BufferCompression;
+        RestartAgreed = options.Restart;
     }
 
     /// <summary>SSID received from the peer, available once the session has started.</summary>
@@ -53,6 +55,15 @@ public sealed class OftpSession
 
     /// <summary>Both sides require secure authentication (SSIDAUTH), so the session runs the SECD/AUCH/AURP phase.</summary>
     public bool SecureAuthenticationAgreed { get; private set; }
+
+    /// <summary>Both sides offered buffer compression (SSIDCMPR), so data exchange buffers are compressed when sending.</summary>
+    public bool BufferCompressionAgreed { get; private set; }
+
+    /// <summary>Both sides offered restart (SSIDREST), so interrupted transfers may be continued.</summary>
+    public bool RestartAgreed { get; private set; }
+
+    /// <summary>Unit of the restart position of an unstructured file (SFIDREST), see RFC 5024, section 5.3.3.</summary>
+    public const int RestartBlockSize = 1024;
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -131,9 +142,11 @@ public sealed class OftpSession
         }
 
         _logger.LogInformation(
-            "OFTP session started with {Code} as {Role}, buffer size {BufferSize}, credit {Credit}{Authentication}",
-            RemoteSsid!.Code, _options.Role, ExchangeBufferSize, Credit,
-            SecureAuthenticationAgreed ? ", secure authentication" : "");
+            "OFTP session started with {Code} as {Role}, buffer size {BufferSize}, credit {Credit}{Features}",
+            RemoteSsid!.Code, _options.Role, ExchangeBufferSize, Credit, string.Concat(
+                SecureAuthenticationAgreed ? ", secure authentication" : "",
+                BufferCompressionAgreed ? ", buffer compression" : "",
+                RestartAgreed ? ", restart" : ""));
 
         if (SecureAuthenticationAgreed)
             await AuthenticateSecurelyAsync(cancellationToken);
@@ -146,8 +159,8 @@ public sealed class OftpSession
         ExchangeBufferSize = bufferSize,
         Credit = credit,
         SendReceive = _options.SendReceive,
-        BufferCompression = false,
-        Restart = false,
+        BufferCompression = BufferCompressionAgreed,
+        Restart = RestartAgreed,
         SpecialLogic = false,
         SecureAuthentication = SecureAuthenticationAgreed,
     };
@@ -188,6 +201,10 @@ public sealed class OftpSession
         State = auth.State;
         ExchangeBufferSize = Math.Min(_options.ExchangeBufferSize, remote.ExchangeBufferSize);
         Credit = Math.Min(_options.Credit, remote.Credit);
+
+        // Buffer compression and restart are used only when both sides offer them.
+        BufferCompressionAgreed = (auth.BufferCompression ?? _options.BufferCompression) && remote.BufferCompression;
+        RestartAgreed = (auth.Restart ?? _options.Restart) && remote.Restart;
 
         // Secure authentication is not negotiated: both sides have to require it (RFC 5024, section 5.3.2).
         // A responder learns the requirement of the peer together with its identity.
@@ -307,7 +324,7 @@ public sealed class OftpSession
             MaxRecordSize = 0,
             FileSize = sizeInBlocks,
             OriginalFileSize = originalSizeInBlocks,
-            RestartPosition = 0,
+            RestartPosition = RestartAgreed ? file.RestartPosition : 0,
             SecurityLevel = file.SecurityLevel,
             CipherSuite = file.CipherSuite,
             Compression = file.Compression,
@@ -325,18 +342,30 @@ public sealed class OftpSession
                 await _handler.OnFileRefusedAsync(file, OftpAnswer.Reject(sfna.ReasonCode, sfna.ReasonText, sfna.RetryLater),
                     cancellationToken);
                 return false;
-            case SFPA { AnswerCount: not 0 } sfpa:
+            case SFPA sfpa when sfpa.AnswerCount > (RestartAgreed ? file.RestartPosition : 0):
                 throw new OftpProtocolException(ReasonCodes.ProtocolViolation,
-                    $"SFPA answer count {sfpa.AnswerCount} does not match requested restart position 0.");
-            case SFPA:
+                    $"SFPA answer count {sfpa.AnswerCount} is higher than the offered restart position {file.RestartPosition}.");
+            case SFPA sfpa:
+                file.RestartedFrom = sfpa.AnswerCount;
                 break;
             default:
                 throw Unexpected(startAnswer, "SFPA or SFNA");
         }
 
+        // The listener keeps what it already has; the rest of the content follows (RFC 5024, section 4.3.3).
+        var skipped = file.RestartedFrom * RestartBlockSize;
+        if (skipped > 0)
+        {
+            _logger.LogInformation("File {DatasetName} is restarted at block {Block} ({Bytes} octets already received)",
+                file.DatasetName, file.RestartedFrom, skipped);
+            await SkipAsync(content, skipped, cancellationToken);
+        }
+
         var payload = new byte[DATA.MaxPayloadLength(ExchangeBufferSize)];
         var credit = Credit;
-        long unitCount = 0;
+        // The unit count of EFID is the size of the whole file, even for a restarted transfer.
+        var unitCount = skipped;
+        file.BytesSent = skipped;
 
         while (true)
         {
@@ -350,9 +379,11 @@ public sealed class OftpSession
                 credit = Credit;
             }
 
-            await _transport.WriteAsync(DATA.FromPayload(payload.AsSpan(0, length)).Encode(), cancellationToken);
+            await _transport.WriteAsync(
+                DATA.FromPayload(payload.AsSpan(0, length), BufferCompressionAgreed).Encode(), cancellationToken);
             credit--;
             unitCount += length;
+            file.BytesSent = unitCount;
         }
 
         await SendAsync(new EFID { RecordCount = 0, UnitCount = unitCount }, cancellationToken);
@@ -371,7 +402,7 @@ public sealed class OftpSession
                     await _handler.OnFileRefusedAsync(file, OftpAnswer.Reject(efna.ReasonCode, efna.ReasonText), cancellationToken);
                     return false;
                 case EFPA efpa:
-                    _logger.LogInformation("File {DatasetName} sent to {Destination}, {Bytes} bytes",
+                    _logger.LogInformation("File {DatasetName} sent to {Destination}, {Bytes} bytes total",
                         file.DatasetName, file.Destination, unitCount);
                     await _handler.OnFileSentAsync(file, cancellationToken);
                     return efpa.ChangeDirection;
@@ -426,14 +457,23 @@ public sealed class OftpSession
             return;
         }
 
-        var file = new OftpIncomingFile { Header = sfid, State = decision.State };
+        var restartPosition = RestartAgreed ? decision.RestartPosition : 0;
+        if (restartPosition > sfid.RestartPosition)
+            throw new InvalidOperationException(
+                $"The restart position {restartPosition} is higher than the position {sfid.RestartPosition} offered by the speaker.");
+
+        var file = new OftpIncomingFile { Header = sfid, State = decision.State, RestartPosition = restartPosition };
         var destination = decision.Destination;
         EFID efid;
 
         try
         {
-            // Restart is not supported, the transfer always starts from the beginning.
-            await SendAsync(new SFPA { AnswerCount = 0 }, cancellationToken);
+            // The answer count tells the speaker how much of the file we keep from an interrupted transfer.
+            await SendAsync(new SFPA { AnswerCount = restartPosition }, cancellationToken);
+
+            if (restartPosition > 0)
+                _logger.LogInformation("File {DatasetName} from {Originator} continues at block {Block}",
+                    sfid.DatasetName, sfid.Originator, restartPosition);
 
             var credit = Credit;
             while (true)
@@ -480,9 +520,9 @@ public sealed class OftpSession
 
         await destination.DisposeAsync();
 
-        if (efid.UnitCount != file.BytesReceived)
+        if (efid.UnitCount != file.TotalBytes)
         {
-            var reason = $"Unit count {efid.UnitCount} does not match {file.BytesReceived} received octets.";
+            var reason = $"Unit count {efid.UnitCount} does not match {file.TotalBytes} received octets.";
             await _handler.OnFileReceiveFailedAsync(file, reason, cancellationToken);
             await SendAsync(new EFNA { ReasonCode = AnswerReasonCodes.InvalidByteCount, ReasonText = reason }, cancellationToken);
             return;
@@ -495,12 +535,32 @@ public sealed class OftpSession
             return;
         }
 
-        _logger.LogInformation("File {DatasetName} received from {Originator}, {Bytes} bytes",
-            sfid.DatasetName, sfid.Originator, file.BytesReceived);
+        _logger.LogInformation("File {DatasetName} received from {Originator}, {Bytes} bytes total",
+            sfid.DatasetName, sfid.Originator, file.TotalBytes);
         await SendAsync(new EFPA { ChangeDirection = false }, cancellationToken);
     }
 
     #endregion
+
+    /// <summary>Skips the part of the content the peer already has, by seeking when the stream allows it.</summary>
+    private static async Task SkipAsync(Stream content, long count, CancellationToken cancellationToken)
+    {
+        if (content.CanSeek)
+        {
+            content.Seek(count, SeekOrigin.Current);
+            return;
+        }
+
+        var buffer = new byte[81920];
+        while (count > 0)
+        {
+            var length = await content.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, count)), cancellationToken);
+            if (length == 0)
+                throw new OftpProtocolException(ReasonCodes.CommandContainedInvalidData,
+                    "The content is shorter than the restart position accepted by the peer.");
+            count -= length;
+        }
+    }
 
     #region Transport helpers
 

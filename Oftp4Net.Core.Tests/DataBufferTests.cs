@@ -32,6 +32,63 @@ public class DataBufferTests
     }
 
     [Fact]
+    public void Compression_ReplacesRunsOfEqualOctets()
+    {
+        // Two runs worth compressing with a literal octet between them.
+        var payload = new byte[] { 1, 1, 1, 1, 1, 9, 2, 2, 2 };
+
+        var encoded = DATA.FromPayload(payload, compress: true).Encode();
+
+        Assert.Equal(new byte[] { (byte)'D', 0x45, 1, 0x01, 9, 0x43, 2 }, encoded);
+    }
+
+    [Fact]
+    public void Compression_RoundTripsAnyContent()
+    {
+        var random = new Random(42);
+        for (var i = 0; i < 200; i++)
+        {
+            // Few distinct values, so runs appear by themselves.
+            var payload = Enumerable.Range(0, random.Next(0, 500)).Select(_ => (byte)random.Next(0, 3)).ToArray();
+            var data = Assert.IsType<DATA>(OftpCommand.Decode(DATA.FromPayload(payload, compress: true).Encode()));
+
+            using var output = new MemoryStream();
+            Assert.Equal(payload.Length, data.DecodeTo(output));
+            Assert.Equal(payload, output.ToArray());
+        }
+    }
+
+    [Fact]
+    public void Compression_NeverExceedsTheUncompressedBuffer()
+    {
+        var random = new Random(7);
+        for (var i = 0; i < 200; i++)
+        {
+            var payload = new byte[random.Next(1, 500)];
+            random.NextBytes(payload);
+            // Alternating single octets and short runs are the worst case for the subrecord headers.
+            for (var j = 0; j + 3 < payload.Length; j += 4)
+                payload[j + 1] = payload[j + 2] = payload[j + 3];
+
+            Assert.True(DATA.FromPayload(payload, compress: true).Encode().Length <=
+                        DATA.FromPayload(payload).Encode().Length);
+        }
+    }
+
+    [Fact]
+    public void Compression_ShrinksRepetitiveContent()
+    {
+        var payload = new byte[6300];
+        Array.Fill(payload, (byte)' ');
+
+        var compressed = DATA.FromPayload(payload, compress: true).Encode();
+
+        // 100 runs of 63 octets, two octets each.
+        Assert.Equal(1 + 200, compressed.Length);
+        Assert.True(compressed.Length < DATA.FromPayload(payload).Encode().Length / 30);
+    }
+
+    [Fact]
     public void Decode_ExpandsCompressedSubrecords()
     {
         // 0x45 = compressed flag + count 5, followed by the repeated octet; then 2 plain octets with end of record flag.

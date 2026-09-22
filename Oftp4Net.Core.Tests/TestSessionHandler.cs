@@ -23,7 +23,7 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
     public void Enqueue(string datasetName, byte[] content, string destination,
         string securityLevel = SecurityLevels.None, string cipherSuite = CipherSuites.None,
         string compression = FileCompressionAlgorithms.None, string enveloping = FileEnvelopingFormats.None,
-        bool signedEerpRequested = false, long? originalSize = null)
+        bool signedEerpRequested = false, long? originalSize = null, long restartPosition = 0)
     {
         var (date, time) = OftpOutgoingFile.CreateTimestamp(DateTime.Now);
         _outgoing.Enqueue(new OftpOutgoingFile
@@ -39,9 +39,16 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
             Enveloping = enveloping,
             SignedEerpRequested = signedEerpRequested,
             OriginalSize = originalSize,
+            RestartPosition = restartPosition,
             OpenAsync = _ => ValueTask.FromResult<Stream>(new MemoryStream(content)),
         });
     }
+
+    /// <summary>Beginning of a file left over from an interrupted transfer, by dataset name.</summary>
+    public Dictionary<string, byte[]> PartiallyReceived { get; } = [];
+
+    /// <summary>Files sent in this session, with the position they were restarted from.</summary>
+    public List<(string DatasetName, long RestartedFrom)> SentFilesWithRestart { get; } = [];
 
     /// <summary>Secure authentication is required with the peer (SSIDAUTH answered by a responder).</summary>
     public bool? SecureAuthentication { get; set; }
@@ -90,6 +97,7 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
     public override ValueTask OnFileSentAsync(OftpOutgoingFile file, CancellationToken cancellationToken)
     {
         SentFiles.Add(file.DatasetName);
+        SentFilesWithRestart.Add((file.DatasetName, file.RestartedFrom));
         return ValueTask.CompletedTask;
     }
 
@@ -106,7 +114,16 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
 
         ReceivedHeaders[header.DatasetName] = header;
         var stream = new CapturingStream();
-        return ValueTask.FromResult(OftpStartFileDecision.Accept(stream, (header, stream)));
+
+        // Continue an interrupted transfer: keep the complete blocks we have and ask for the rest.
+        var restartPosition = 0L;
+        if (PartiallyReceived.TryGetValue(header.DatasetName, out var partial))
+        {
+            restartPosition = Math.Min(header.RestartPosition, partial.Length / OftpSession.RestartBlockSize);
+            stream.Write(partial, 0, (int)(restartPosition * OftpSession.RestartBlockSize));
+        }
+
+        return ValueTask.FromResult(OftpStartFileDecision.Accept(stream, (header, stream), restartPosition));
     }
 
     public override ValueTask<OftpAnswer> OnFileReceivedAsync(OftpIncomingFile file, CancellationToken cancellationToken)
