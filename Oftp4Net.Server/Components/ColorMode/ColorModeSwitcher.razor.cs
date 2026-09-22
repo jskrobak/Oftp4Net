@@ -1,4 +1,3 @@
-using System.Drawing;
 using BitzArt.Blazor.Cookies;
 using Havit.Blazor.Components.Web;
 using Havit.Blazor.Components.Web.Bootstrap;
@@ -7,13 +6,15 @@ using Microsoft.JSInterop;
 
 namespace Oftp4Net.Server.Components.ColorMode;
 
+using ColorMode = Havit.Blazor.Components.Web.Bootstrap.ColorMode;
+
 public partial class ColorModeSwitcher : ComponentBase
 {
-    const string cookieName = "oftp4net-color-mode";
+    private static readonly ColorMode DefaultMode = ColorMode.Auto;
 
     protected string Tooltip = "";
     protected IconBase? Icon;
-    protected Havit.Blazor.Components.Web.Bootstrap.ColorMode ColorMode;
+    protected ColorMode ColorMode = ColorMode.Auto;
 
     protected override async Task OnInitializedAsync()
     {
@@ -32,41 +33,53 @@ public partial class ColorModeSwitcher : ComponentBase
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await base.OnAfterRenderAsync(firstRender);
-        //await ApplyModeAsync(await GetCurrentModeAsync());
+
+        // The page applies the stored mode already while loading (see App.razor); this covers the rest,
+        // for example an enhanced navigation that did not run the script.
+        if (firstRender)
+            await ApplyToDocumentAsync(ColorMode);
     }
 
-    private async Task<Havit.Blazor.Components.Web.Bootstrap.ColorMode> GetCurrentModeAsync()
+    private async Task<ColorMode> GetCurrentModeAsync()
     {
-        var cookie = await CookieService.GetAsync(cookieName);
+        var value = await UiPreferences.ReadAsync(CookieService, UiPreferences.ColorModeCookie);
 
-        if (cookie == null)
-            return Havit.Blazor.Components.Web.Bootstrap.ColorMode.Auto;
-		
-        if(!int.TryParse(cookie.Value, out int mode))
-            return Havit.Blazor.Components.Web.Bootstrap.ColorMode.Auto;
-		
-        return (Havit.Blazor.Components.Web.Bootstrap.ColorMode)mode;
+        if (string.IsNullOrEmpty(value))
+            return DefaultMode;
+
+        // The mode is stored by name; older cookies hold the numeric value of the enumeration.
+        if (Enum.TryParse<ColorMode>(value, ignoreCase: true, out var mode))
+            return mode;
+
+        return int.TryParse(value, out var number) && Enum.IsDefined(typeof(ColorMode), number)
+            ? (ColorMode)number
+            : DefaultMode;
     }
 	
-    private async Task ApplyModeAsync(Havit.Blazor.Components.Web.Bootstrap.ColorMode mode)
+    private async Task ApplyModeAsync(ColorMode mode)
     {
+        ColorMode = mode;
         Tooltip = GetTooltip(mode);
         Icon = GetIcon(mode);
-        
+
+        await ApplyToDocumentAsync(mode);
+        await UiPreferences.SaveAsync(CookieService, UiPreferences.ColorModeCookie, mode.ToString("g").ToLowerInvariant());
+    }
+
+    private async Task ApplyToDocumentAsync(ColorMode mode)
+    {
         await EnsureJsModule();
         await _jsModule!.InvokeVoidAsync("setColorMode", mode.ToString("g").ToLowerInvariant());
-        
-        await CookieService.SetAsync(cookieName, ((int)mode).ToString());
     }
     
     private async Task HandleClick()
     {
         var newColorMode = await GetCurrentModeAsync() switch
         {
-            Havit.Blazor.Components.Web.Bootstrap.ColorMode.Auto => Havit.Blazor.Components.Web.Bootstrap.ColorMode.Dark,
-            Havit.Blazor.Components.Web.Bootstrap.ColorMode.Dark => Havit.Blazor.Components.Web.Bootstrap.ColorMode.Light,
-            Havit.Blazor.Components.Web.Bootstrap.ColorMode.Light => Havit.Blazor.Components.Web.Bootstrap.ColorMode.Auto,
-            _ => Havit.Blazor.Components.Web.Bootstrap.ColorMode.Auto // fallback
+            ColorMode.Auto => ColorMode.Dark,
+            ColorMode.Dark => ColorMode.Light,
+            ColorMode.Light => ColorMode.Auto,
+            _ => ColorMode.Auto // fallback
         };
 
         await ApplyModeAsync(newColorMode);
@@ -77,24 +90,24 @@ public partial class ColorModeSwitcher : ComponentBase
         _jsModule ??= await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./Components/ColorMode/ColorModeSwitcher.razor.js");
     }
 
-    private static IconBase GetIcon(Havit.Blazor.Components.Web.Bootstrap.ColorMode mode)
+    private static IconBase GetIcon(ColorMode mode)
     {
         return mode switch
         {
-            Havit.Blazor.Components.Web.Bootstrap.ColorMode.Auto => BootstrapIcon.CircleHalf,
-            Havit.Blazor.Components.Web.Bootstrap.ColorMode.Light => BootstrapIcon.Sun,
-            Havit.Blazor.Components.Web.Bootstrap.ColorMode.Dark => BootstrapIcon.Moon,
+            ColorMode.Auto => BootstrapIcon.CircleHalf,
+            ColorMode.Light => BootstrapIcon.Sun,
+            ColorMode.Dark => BootstrapIcon.Moon,
             _ => throw new InvalidOperationException($"Unknown color mode")
         };
     }
 
-    private static string GetTooltip(Havit.Blazor.Components.Web.Bootstrap.ColorMode mode)
+    private static string GetTooltip(ColorMode mode)
     {
         return mode switch
         {
-            Havit.Blazor.Components.Web.Bootstrap.ColorMode.Auto => "Auto color mode (theme). Click to switch to Dark.",
-            Havit.Blazor.Components.Web.Bootstrap.ColorMode.Dark => "Dark color mode (theme). Click to switch to Light.",
-            Havit.Blazor.Components.Web.Bootstrap.ColorMode.Light => "Light color mode (theme). Click to switch to Auto.",
+            ColorMode.Auto => "Auto color mode (theme). Click to switch to Dark.",
+            ColorMode.Dark => "Dark color mode (theme). Click to switch to Light.",
+            ColorMode.Light => "Light color mode (theme). Click to switch to Auto.",
             _ => "Click to switch color mode (theme) to Auto." // fallback
         };
     }
