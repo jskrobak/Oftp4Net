@@ -85,6 +85,7 @@ public class SendQueueItemRepository(
                         && i.FileDate == fileDate
                         && i.FileTime == fileTime
                         && i.Status == SendStatus.SENT)
+            .Include(i => i.Identity)
             .FirstOrDefaultAsync(cancellationToken);
     }
 }

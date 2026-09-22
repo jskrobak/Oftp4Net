@@ -7,6 +7,7 @@ using Oftp4Net.Core.Protocol.Commands;
 using Oftp4Net.Core.Session;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
+using Oftp4Net.Services.Hooks;
 
 namespace Oftp4Net.Services.Oftp;
 
@@ -26,6 +27,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private readonly ITimeService _timeService;
     private readonly GlobalSettings _settings;
     private readonly GlobalSettingsService _settingsService;
+    private readonly IHookDispatcher _hooks;
     private readonly ILogger _logger;
 
     private readonly Identity? _identity;
@@ -45,6 +47,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _unitOfWork = scopedServices.GetRequiredService<IUnitOfWork>();
         _claims = scopedServices.GetRequiredService<TransferClaims>();
         _timeService = scopedServices.GetRequiredService<ITimeService>();
+        _hooks = scopedServices.GetRequiredService<IHookDispatcher>();
         _settings = settings;
         _settingsService = scopedServices.GetRequiredService<GlobalSettingsService>();
         _logger = logger;
@@ -170,13 +173,15 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _inFlight = null;
         FilesSent++;
         await SaveAsync(item);
+        _hooks.Dispatch(HookEvent.OnSent, SendHookParameters(item));
     }
 
     public override async ValueTask OnFileRefusedAsync(OftpOutgoingFile file, OftpAnswer answer, CancellationToken cancellationToken)
     {
         var item = (SendQueueItem)file.State!;
         _inFlight = null;
-        await MarkFailedAsync(item, $"Refused by partner ({answer.ReasonCode}): {answer.ReasonText}", answer.RetryLater);
+        await MarkFailedAsync(item, $"Refused by partner ({answer.ReasonCode}): {answer.ReasonText}", answer.RetryLater,
+            answer.ReasonCode, answer.ReasonText);
     }
 
     /// <summary>
@@ -207,7 +212,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         }
     }
 
-    private async Task MarkFailedAsync(SendQueueItem item, string error, bool retry)
+    private async Task MarkFailedAsync(SendQueueItem item, string error, bool retry,
+        string? reasonCode = null, string? reasonText = null)
     {
         var now = _timeService.GetCurrentTime();
         item.LastError = error;
@@ -231,6 +237,15 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         }
 
         await SaveAsync(item);
+
+        var parameters = SendHookParameters(item);
+        parameters["error"] = error;
+        parameters["reasonCode"] = reasonCode;
+        parameters["reasonText"] = reasonText;
+        parameters["willRetry"] = (item.Status == SendStatus.ERROR).ToString().ToLowerInvariant();
+        parameters["retryCount"] = item.RetryCount.ToString();
+        parameters["nextRetry"] = item.Status == SendStatus.ERROR ? item.NextRetry.ToString("O") : null;
+        _hooks.Dispatch(HookEvent.OnSendFailed, parameters);
     }
 
     #endregion
@@ -304,6 +319,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         record.Status = ReceiveStatus.RECEIVED;
         FilesReceived++;
         await SaveAsync(record);
+        _hooks.Dispatch(HookEvent.OnReceived, ReceiveHookParameters(record));
         return OftpAnswer.Accept();
     }
 
@@ -326,6 +342,10 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         record.Status = ReceiveStatus.FAILED;
         record.LastError = reason.Length > 2000 ? reason[..2000] : reason;
         await SaveAsync(record);
+
+        var parameters = ReceiveHookParameters(record);
+        parameters["error"] = reason;
+        _hooks.Dispatch(HookEvent.OnReceiveFailed, parameters);
     }
 
     private static string SafeFileName(string value)
@@ -406,6 +426,64 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         }
 
         await SaveAsync(item);
+
+        var parameters = SendHookParameters(item);
+        if (response is NERP negativeResponse)
+        {
+            parameters["reasonCode"] = negativeResponse.ReasonCode;
+            parameters["reasonText"] = negativeResponse.ReasonText;
+            parameters["creator"] = negativeResponse.Creator;
+            _hooks.Dispatch(HookEvent.OnNotDelivered, parameters);
+        }
+        else
+        {
+            _hooks.Dispatch(HookEvent.OnDelivered, parameters);
+        }
+    }
+
+    #endregion
+
+    #region Hook parameters
+
+    private Dictionary<string, string?> PartnerHookParameters() => new()
+    {
+        ["partnerName"] = Partner?.Name,
+        ["partnerSsid"] = Partner?.SSID,
+        ["partnerSfid"] = Partner?.SFID,
+    };
+
+    private Dictionary<string, string?> SendHookParameters(SendQueueItem item)
+    {
+        var parameters = PartnerHookParameters();
+        parameters["queueItemId"] = item.Id.ToString();
+        parameters["virtualFileName"] = item.VirtualFileName;
+        parameters["fileDate"] = item.FileDate;
+        parameters["fileTime"] = item.FileTime;
+        parameters["filePath"] = item.FilePath;
+        parameters["fileSize"] = File.Exists(item.FilePath) ? new FileInfo(item.FilePath).Length.ToString() : null;
+        parameters["description"] = item.Description;
+        parameters["identityName"] = item.Identity?.Name;
+        parameters["originator"] = item.Identity?.SFID;
+        parameters["destination"] = Partner?.SFID;
+        parameters["status"] = item.Status.ToString();
+        return parameters;
+    }
+
+    private Dictionary<string, string?> ReceiveHookParameters(ReceivedFile record)
+    {
+        var parameters = PartnerHookParameters();
+        parameters["receivedFileId"] = record.Id.ToString();
+        parameters["virtualFileName"] = record.VirtualFileName;
+        parameters["fileDate"] = record.FileDate;
+        parameters["fileTime"] = record.FileTime;
+        parameters["filePath"] = record.FilePath;
+        parameters["fileSize"] = record.Size.ToString();
+        parameters["description"] = record.Description;
+        parameters["userData"] = record.UserData;
+        parameters["originator"] = record.Originator;
+        parameters["destination"] = record.Destination;
+        parameters["status"] = record.Status.ToString();
+        return parameters;
     }
 
     #endregion

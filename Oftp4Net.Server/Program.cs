@@ -20,6 +20,7 @@ using Oftp4Net.Server.Components;
 using Oftp4Net.Server.Logging;
 using Oftp4Net.Services;
 using Oftp4Net.Services.Oftp;
+using Oftp4Net.Services.Hooks;
 using Serilog;
 
 System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
@@ -94,6 +95,9 @@ builder.Services.AddScoped<LoopbackSeedService>();
 builder.AddBlazorCookies();
 
 builder.Services.AddSingleton<TransferClaims>();
+builder.Services.AddSingleton<HookRunner>();
+builder.Services.AddSingleton<IHookDispatcher>(sp => sp.GetRequiredService<HookRunner>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<HookRunner>());
 builder.Services.AddSingleton<SendService>();
 builder.Services.AddHostedService(serviceCollection => serviceCollection.GetRequiredService<SendService>());
 builder.Services.AddSingleton<ListenerService>();

@@ -1,6 +1,8 @@
 @page "/Settings"
 @rendermode InteractiveServer
 @using Oftp4Net.Domain
+@using Oftp4Net.Services.Hooks
+@inject HookRunner HookRunner
 
 <HxCard>
     <HeaderTemplate>
@@ -60,5 +62,29 @@
                 </div>
             </EditForm>
         }
+    </BodyTemplate>
+</HxCard>
+
+<HxCard CssClass="mt-3">
+    <HeaderTemplate>
+        <h5 class="card-title">Hooks</h5>
+    </HeaderTemplate>
+    <BodyTemplate>
+        <p class="text-body-secondary small mb-2">
+            Scripts run on events are configured in the application configuration (section <code>Hooks</code>,
+            e.g. environment variable <code>Hooks__OnReceived=/scripts/on_received.sh</code>), not here,
+            so that they cannot be changed from the web interface.
+        </p>
+        <table class="table table-sm mb-0" style="max-width: 60rem;">
+            <tbody>
+            @foreach (var hookEvent in Enum.GetValues<HookEvent>())
+            {
+                <tr>
+                    <td style="width: 12rem;"><code>@hookEvent</code></td>
+                    <td>@(HookRunner.ConfiguredHooks.TryGetValue(hookEvent, out var command) ? command : "–")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
     </BodyTemplate>
 </HxCard>

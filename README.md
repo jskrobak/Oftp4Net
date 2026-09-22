@@ -111,6 +111,46 @@ To build the image locally:
 docker build -f Oftp4Net.Server/Dockerfile -t oftp4net-server .
 ```
 
+## Hooks
+
+A script or executable can be run on protocol events. Hooks are configured in the application configuration
+(not in the web UI), e.g. with environment variables:
+
+| Setting | Runs when |
+|---|---|
+| `Hooks:OnReceived` | a file was received and stored |
+| `Hooks:OnReceiveFailed` | receiving a file failed |
+| `Hooks:OnSent` | a file was transferred and the partner confirmed receipt (EFPA) |
+| `Hooks:OnSendFailed` | sending a file failed (`OFTP_WILL_RETRY` tells whether it will be retried) |
+| `Hooks:OnDelivered` | the partner confirmed delivery to the final destination (EERP) |
+| `Hooks:OnNotDelivered` | the partner reported that the file could not be delivered (NERP) |
+| `Hooks:TimeoutSeconds` | a script running longer is killed (default 60) |
+
+Parameters are passed as environment variables and, with the same names in camel case, as a JSON object on
+standard input:
+
+| Variable | Events | Content |
+|---|---|---|
+| `OFTP_EVENT`, `OFTP_TIMESTAMP` | all | event name, time (ISO 8601) |
+| `OFTP_PARTNER_NAME`, `OFTP_PARTNER_SSID`, `OFTP_PARTNER_SFID` | all | partner |
+| `OFTP_VIRTUAL_FILE_NAME`, `OFTP_FILE_DATE`, `OFTP_FILE_TIME` | all | virtual file identification |
+| `OFTP_ORIGINATOR`, `OFTP_DESTINATION` | all | SFID codes of the file's originator and destination |
+| `OFTP_FILE_PATH`, `OFTP_FILE_SIZE`, `OFTP_DESCRIPTION`, `OFTP_STATUS` | all | local file, size in bytes, description, new status |
+| `OFTP_RECEIVED_FILE_ID`, `OFTP_USER_DATA` | received | record id, user data field |
+| `OFTP_QUEUE_ITEM_ID`, `OFTP_IDENTITY_NAME` | sent, send failed, (not) delivered | send queue item, our identity |
+| `OFTP_ERROR` | failures | error message |
+| `OFTP_REASON_CODE`, `OFTP_REASON_TEXT` | send failed, not delivered | answer reason from SFNA / EFNA / NERP |
+| `OFTP_WILL_RETRY`, `OFTP_RETRY_COUNT`, `OFTP_NEXT_RETRY` | send failed | retry state |
+| `OFTP_CREATOR` | not delivered | node that created the NERP |
+
+Hooks run in the background one after another; a slow or failing script never affects the transfer. Their output and
+exit code are logged. See [`samples/hooks/on_received.sh`](samples/hooks/on_received.sh). In Docker, mount the
+scripts and point the configuration to them:
+
+```bash
+docker run ... -v ./hooks:/scripts:ro -e Hooks__OnReceived=/scripts/on_received.sh ghcr.io/jskrobak/oftp4net:latest
+```
+
 ## Setting up a partner
 
 1. *Identities*: create your own identity (SSID code, SFID code, password you send to partners).
