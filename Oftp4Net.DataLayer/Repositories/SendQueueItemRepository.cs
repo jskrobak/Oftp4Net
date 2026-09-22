@@ -77,6 +77,30 @@ public class SendQueueItemRepository(
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<DataFragment<SendQueueItem>> GetListAsync(SendQueueFilter filter, int skip, int take,
+        CancellationToken cancellationToken = default)
+    {
+        var filtered = filter.Apply(Data);
+        var count = await filtered.CountAsync(cancellationToken);
+        var items = await filtered
+            .OrderByDescending(i => i.Id)
+            .Skip(skip)
+            .Take(take)
+            .Include(i => i.Identity)
+            .Include(i => i.Partner)
+            .ToListAsync(cancellationToken);
+
+        return new DataFragment<SendQueueItem> { Data = items, TotalCount = count };
+    }
+
+    public async Task<SendQueueItem?> FindWithRefsAsync(int id, CancellationToken cancellationToken = default)
+    {
+        return await Data
+            .Include(i => i.Identity)
+            .Include(i => i.Partner)
+            .FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
+    }
+
     public async Task<SendQueueItem?> FindSentAsync(string virtualFileName, string fileDate, string fileTime,
         CancellationToken cancellationToken = default)
     {

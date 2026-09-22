@@ -38,6 +38,20 @@ public class TransferEventRepository(
         };
     }
 
+    public async Task<DataFragment<TransferEvent>> GetListAsync(TransferEventFilter filter, int skip, int take,
+        CancellationToken cancellationToken = default)
+    {
+        var filtered = filter.Apply(Data.AsNoTracking());
+        var count = await filtered.CountAsync(cancellationToken);
+        var items = await filtered
+            .OrderByDescending(e => e.Id)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+        return new DataFragment<TransferEvent> { Data = items, TotalCount = count };
+    }
+
     public async Task<int> ArchiveOlderThanAsync(DateTime cutoff, CancellationToken cancellationToken = default)
     {
         return await Data

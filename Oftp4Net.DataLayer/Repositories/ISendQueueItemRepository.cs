@@ -13,6 +13,12 @@ public interface ISendQueueItemRepository: IRepository<SendQueueItem, int>
     Task<List<SendQueueItem>> GetAllWithRefsAsync();
     Task<List<SendQueueItem>> GetAllToProcessAsync();
 
+    /// <summary>Filtered page of queue items, newest first (REST API).</summary>
+    Task<DataFragment<SendQueueItem>> GetListAsync(SendQueueFilter filter, int skip, int take,
+        CancellationToken cancellationToken = default);
+
+    Task<SendQueueItem?> FindWithRefsAsync(int id, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Items of the partner waiting to be sent, optionally only those sent under the given identity.
     /// </summary>

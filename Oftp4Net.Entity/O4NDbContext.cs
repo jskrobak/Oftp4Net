@@ -19,6 +19,7 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
     public DbSet<ReceivedFile> ReceivedFiles { get; init; }
     public DbSet<User> Users { get; init; }
     public DbSet<TransferEvent> TransferEvents { get; init; }
+    public DbSet<ApiToken> ApiTokens { get; init; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -89,6 +90,12 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
             entity.HasIndex(e => new { e.IsArchived, e.Timestamp });
         });
 
+        modelBuilder.Entity<ApiToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TokenHash).IsUnique();
+        });
+
         ConfigureSecrets(modelBuilder);
 
         modelBuilder.Entity<SettingsItem>(entity =>
@@ -107,5 +114,7 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
         modelBuilder.Entity<Partner>().Property(e => e.Password).HasMaxLength(1000).HasConversion((ValueConverter?)converter);
         modelBuilder.Entity<Identity>().Property(e => e.Password).HasMaxLength(1000).HasConversion((ValueConverter?)converter);
         modelBuilder.Entity<Certificate>().Property(e => e.Password).HasMaxLength(1000).HasConversion((ValueConverter?)converter);
+        modelBuilder.Entity<ApiToken>().Property(e => e.WebhookSecret).HasMaxLength(1000).HasConversion((ValueConverter?)converter);
+        modelBuilder.Entity<SendQueueItem>().Property(e => e.WebhookSecret).HasMaxLength(1000).HasConversion((ValueConverter?)converter);
     }
 }

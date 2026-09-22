@@ -8,6 +8,7 @@ using Oftp4Net.Core.Session;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using System.Diagnostics;
+using Oftp4Net.Services.Api;
 using Oftp4Net.Services.Hooks;
 using Oftp4Net.Services.TransferEvents;
 
@@ -31,6 +32,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private readonly GlobalSettingsService _settingsService;
     private readonly IHookDispatcher _hooks;
     private readonly ITransferEventLog _events;
+    private readonly IWebhookDispatcher _webhooks;
+    private readonly ApiTokenService _apiTokens;
     private readonly string _remoteEndPoint;
     private readonly Stopwatch _fileStopwatch = new();
     private readonly ILogger _logger;
@@ -54,6 +57,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _timeService = scopedServices.GetRequiredService<ITimeService>();
         _hooks = scopedServices.GetRequiredService<IHookDispatcher>();
         _events = scopedServices.GetRequiredService<ITransferEventLog>();
+        _webhooks = scopedServices.GetRequiredService<IWebhookDispatcher>();
+        _apiTokens = scopedServices.GetRequiredService<ApiTokenService>();
         _remoteEndPoint = remoteEndPoint;
         _settings = settings;
         _settingsService = scopedServices.GetRequiredService<GlobalSettingsService>();
@@ -209,6 +214,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         Record(TransferEventCategory.Outgoing, TransferEventType.FileSent, TransferEventLevel.Information,
             $"{item.VirtualFileName} sent to {Partner?.Name}", e => Describe(e, item, _fileStopwatch.ElapsedMilliseconds));
         _hooks.Dispatch(HookEvent.OnSent, SendHookParameters(item));
+        DispatchItemWebhook(item, "file.sent");
     }
 
     public override async ValueTask OnFileRefusedAsync(OftpOutgoingFile file, OftpAnswer answer, CancellationToken cancellationToken)
@@ -288,6 +294,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         parameters["retryCount"] = item.RetryCount.ToString();
         parameters["nextRetry"] = item.Status == SendStatus.ERROR ? item.NextRetry.ToString("O") : null;
         _hooks.Dispatch(HookEvent.OnSendFailed, parameters);
+        DispatchItemWebhook(item, "file.send_failed");
     }
 
     #endregion
@@ -378,6 +385,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         Record(TransferEventCategory.Incoming, TransferEventType.FileReceived, TransferEventLevel.Information,
             $"{record.VirtualFileName} received from {Partner?.Name}", e => Describe(e, record, _fileStopwatch.ElapsedMilliseconds));
         _hooks.Dispatch(HookEvent.OnReceived, ReceiveHookParameters(record));
+        await DispatchInboxWebhooksAsync(record, cancellationToken);
         return OftpAnswer.Accept();
     }
 
@@ -507,12 +515,66 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             Record(TransferEventCategory.EndResponse, TransferEventType.NerpReceived, TransferEventLevel.Warning,
                 $"NERP for {item.VirtualFileName} received from {Partner?.Name}: {item.LastError}", e => Describe(e, item, null));
             _hooks.Dispatch(HookEvent.OnNotDelivered, parameters);
+            DispatchItemWebhook(item, "file.not_delivered");
         }
         else
         {
             Record(TransferEventCategory.EndResponse, TransferEventType.EerpReceived, TransferEventLevel.Information,
                 $"EERP for {item.VirtualFileName} received from {Partner?.Name}", e => Describe(e, item, null));
             _hooks.Dispatch(HookEvent.OnDelivered, parameters);
+            DispatchItemWebhook(item, "file.delivered");
+        }
+    }
+
+    #endregion
+
+    #region Webhooks
+
+    /// <summary>Notifies the webhook registered with the file through the REST API.</summary>
+    private void DispatchItemWebhook(SendQueueItem item, string eventName)
+    {
+        if (string.IsNullOrEmpty(item.WebhookUrl))
+            return;
+
+        _webhooks.Dispatch(item.WebhookUrl, item.WebhookSecret, new WebhookPayload
+        {
+            Event = eventName,
+            QueueItemId = item.Id,
+            Reference = item.Reference,
+            VirtualFileName = item.VirtualFileName,
+            FileDate = item.FileDate,
+            FileTime = item.FileTime,
+            FileSize = File.Exists(item.FilePath) ? new FileInfo(item.FilePath).Length : null,
+            PartnerName = Partner?.Name,
+            PartnerSsid = Partner?.SSID,
+            Originator = item.Identity?.SFID,
+            Destination = Partner?.SFID,
+            Status = item.Status.ToString(),
+            Error = item.LastError,
+            SentDate = item.SentDate,
+            DeliveredDate = item.DeliveredDate,
+        });
+    }
+
+    /// <summary>Notifies webhooks registered with API tokens about a received file.</summary>
+    private async Task DispatchInboxWebhooksAsync(ReceivedFile record, CancellationToken cancellationToken)
+    {
+        foreach (var token in await _apiTokens.GetInboxWebhooksAsync(cancellationToken))
+        {
+            _webhooks.Dispatch(token.InboxWebhookUrl!, token.WebhookSecret, new WebhookPayload
+            {
+                Event = "file.received",
+                ReceivedFileId = record.Id,
+                VirtualFileName = record.VirtualFileName,
+                FileDate = record.FileDate,
+                FileTime = record.FileTime,
+                FileSize = record.Size,
+                PartnerName = Partner?.Name,
+                PartnerSsid = Partner?.SSID,
+                Originator = record.Originator,
+                Destination = record.Destination,
+                Status = record.Status.ToString(),
+            });
         }
     }
 

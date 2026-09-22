@@ -72,6 +72,12 @@ public static class ServiceCollectionExtensions
         services.TryAddTransient<IEntityKeyAccessor<ReceivedFile, int>, DbEntityKeyAccessor<ReceivedFile, int>>();
         services.TryAddSingleton<IRepositoryQueryProvider<ReceivedFile, int>, ReceivedFileDbRepositoryQueryProvider>();
         
+        //ApiToken
+        services.TryAddScoped<IApiTokenRepository, ApiTokenRepository>();
+        services.TryAddScoped<IRepository<ApiToken, int>>(sp => sp.GetRequiredService<IApiTokenRepository>());
+        services.TryAddTransient<IEntityKeyAccessor<ApiToken, int>, DbEntityKeyAccessor<ApiToken, int>>();
+        services.TryAddSingleton<IRepositoryQueryProvider<ApiToken, int>, ApiTokenDbRepositoryQueryProvider>();
+
         //TransferEvent
         services.TryAddScoped<ITransferEventRepository, TransferEventRepository>();
         services.TryAddScoped<IRepository<TransferEvent, int>>(sp => sp.GetRequiredService<ITransferEventRepository>());

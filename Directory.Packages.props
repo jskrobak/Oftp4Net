@@ -1,33 +1,31 @@
 <Project>
-    <!-- All package versions are managed here to keep EF Core and ASP.NET Core assemblies consistent. -->
-    <PropertyGroup>
-        <MicrosoftVersion>10.0.12</MicrosoftVersion>
-    </PropertyGroup>
-    <ItemGroup>
-        <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="$(MicrosoftVersion)" />
-        <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="$(MicrosoftVersion)" />
-        <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="$(MicrosoftVersion)" />
-        <PackageVersion Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="$(MicrosoftVersion)" />
-        <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftVersion)" />
-        <PackageVersion Include="Microsoft.Extensions.Configuration.FileExtensions" Version="$(MicrosoftVersion)" />
-        <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="$(MicrosoftVersion)" />
-        <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="$(MicrosoftVersion)" />
-        <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftVersion)" />
-        <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
-
-        <PackageVersion Include="Havit.Blazor.Components.Web.Bootstrap" Version="4.27.0" />
-        <PackageVersion Include="Havit.Data.EntityFrameworkCore" Version="2.10.3" />
-        <PackageVersion Include="Havit.Data.EntityFrameworkCore.Patterns" Version="2.10.4" />
-        <PackageVersion Include="Havit.Data.Patterns" Version="2.1.34" />
-
-        <PackageVersion Include="BitzArt.Blazor.Cookies.Server" Version="1.5.2" />
-        <PackageVersion Include="Serilog" Version="4.4.0" />
-        <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
-        <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
-
-        <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-        <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
-        <PackageVersion Include="xunit" Version="2.9.3" />
-        <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    </ItemGroup>
+  <!-- All package versions are managed here to keep EF Core and ASP.NET Core assemblies consistent. -->
+  <PropertyGroup>
+    <MicrosoftVersion>10.0.12</MicrosoftVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="$(MicrosoftVersion)" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="$(MicrosoftVersion)" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="$(MicrosoftVersion)" />
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="$(MicrosoftVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.FileExtensions" Version="$(MicrosoftVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="$(MicrosoftVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="$(MicrosoftVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftVersion)" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageVersion Include="Havit.Blazor.Components.Web.Bootstrap" Version="4.27.0" />
+    <PackageVersion Include="Havit.Data.EntityFrameworkCore" Version="2.10.3" />
+    <PackageVersion Include="Havit.Data.EntityFrameworkCore.Patterns" Version="2.10.4" />
+    <PackageVersion Include="Havit.Data.Patterns" Version="2.1.34" />
+    <PackageVersion Include="BitzArt.Blazor.Cookies.Server" Version="1.5.2" />
+    <PackageVersion Include="Serilog" Version="4.4.0" />
+    <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
 </Project>

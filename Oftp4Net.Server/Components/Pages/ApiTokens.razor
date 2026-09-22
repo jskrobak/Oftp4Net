@@ -1,0 +1,82 @@
+@page "/ApiTokens"
+@rendermode InteractiveServer
+@using Oftp4Net.Domain
+
+<HxCard>
+    <HeaderTemplate>
+        <div class="d-flex align-items-center">
+            <h5 class="card-title me-auto mb-0">API tokens</h5>
+            <HxButton Text="New token" Color="ThemeColor.Primary" Icon="BootstrapIcon.PlusLg" OnClick="ShowNewAsync" />
+        </div>
+    </HeaderTemplate>
+    <BodyTemplate>
+        <p class="text-body-secondary small">
+            Tokens authenticate the REST API (<code>Authorization: Bearer &lt;token&gt;</code>). Only their hash is stored,
+            so a token is shown once, right after it is created.
+        </p>
+
+        @if (createdToken is not null)
+        {
+            <HxAlert Color="ThemeColor.Success" CssClass="d-flex align-items-center gap-2">
+                <div class="me-auto">
+                    <div>Copy the token now, it cannot be shown again:</div>
+                    <code class="user-select-all">@createdToken</code>
+                </div>
+                <HxButton Icon="BootstrapIcon.X" Color="ThemeColor.None" OnClick="() => createdToken = null" />
+            </HxAlert>
+        }
+
+        <table class="table align-middle">
+            <thead>
+            <tr>
+                <th>Name</th>
+                <th>Token</th>
+                <th>Created</th>
+                <th>Last used</th>
+                <th>Expires</th>
+                <th>Inbox webhook</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var token in tokens)
+            {
+                <tr class="@(token.Enabled ? "" : "text-body-secondary")">
+                    <td>@token.Name</td>
+                    <td><code>@token.Prefix…</code></td>
+                    <td>@token.Created.ToString("g")</td>
+                    <td>@token.LastUsed?.ToString("g")</td>
+                    <td>
+                        @token.ExpiresAt?.ToString("d")
+                        @if (token.ExpiresAt < DateTime.Now)
+                        {
+                            <HxBadge Color="ThemeColor.Danger">expired</HxBadge>
+                        }
+                    </td>
+                    <td class="small">@token.InboxWebhookUrl</td>
+                    <td class="text-end text-nowrap">
+                        <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary"
+                                  Icon="@(token.Enabled ? BootstrapIcon.PauseFill : BootstrapIcon.PlayFill)"
+                                  Tooltip="@(token.Enabled ? "Disable" : "Enable")"
+                                  OnClick="() => ToggleAsync(token)" />
+                        <HxButton Size="ButtonSize.Small" Color="ThemeColor.Danger" Icon="BootstrapIcon.Trash"
+                                  Tooltip="Delete" OnClick="() => DeleteAsync(token)" />
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </BodyTemplate>
+</HxCard>
+
+<HxModal @ref="editModal" Title="New API token" ShowCloseButton="true">
+    <BodyTemplate>
+        <HxInputText Label="Name" @bind-Value="newName" MaxLength="50" />
+        <HxInputDate TValue="DateTime?" Label="Expires" Hint="Leave empty for a token without expiration." @bind-Value="newExpiresAt" />
+        <HxInputText Label="Inbox webhook URL" Hint="Optional: notified about files received from partners." @bind-Value="newWebhookUrl" />
+        <HxInputText Label="Webhook secret" Hint="Optional: requests are signed with HMAC-SHA256 in the X-Oftp4Net-Signature header." @bind-Value="newWebhookSecret" />
+    </BodyTemplate>
+    <FooterTemplate>
+        <HxButton Text="Create" Color="ThemeColor.Primary" OnClick="CreateAsync" />
+    </FooterTemplate>
+</HxModal>

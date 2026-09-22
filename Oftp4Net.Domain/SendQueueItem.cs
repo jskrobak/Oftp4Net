@@ -30,6 +30,18 @@ public class SendQueueItem: BaseQueueItem
     [StringLength(10)]
     public string? FileTime { get; set; }
 
+    /// <summary>Identification of the file in the calling system (REST API), for correlation.</summary>
+    [StringLength(100)]
+    public string? Reference { get; set; }
+
+    /// <summary>URL notified about the progress of this file (REST API).</summary>
+    [StringLength(500)]
+    public string? WebhookUrl { get; set; }
+
+    /// <summary>Secret used to sign the webhook request (header X-Oftp4Net-Signature).</summary>
+    [StringLength(200)]
+    public string? WebhookSecret { get; set; }
+
     public DateTime? SentDate { get; set; }
     public DateTime? DeliveredDate { get; set; }
 }

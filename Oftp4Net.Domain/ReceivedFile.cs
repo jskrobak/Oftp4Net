@@ -46,6 +46,9 @@ public class ReceivedFile
 
     public DateTime? ConfirmedDate { get; set; }
 
+    /// <summary>When the file was fetched through the REST API.</summary>
+    public DateTime? FetchedDate { get; set; }
+
     [StringLength(2000)]
     public string? LastError { get; set; }
 }
