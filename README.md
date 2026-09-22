@@ -12,6 +12,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Both directions within one session (speaker / listener with change direction)
 - End to End Responses: EERP is sent for received files and processed for sent files (status `DELIVERED`), NERP is handled
 - TLS with the system trust store, a custom CA or a pinned partner certificate; optional client certificates
+- Character set conversion per partner: files are sent in ANSI or EBCDIC and received EBCDIC content is converted to ANSI
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
 
 Not supported yet: secure authentication (AUCH/AURP), restart of interrupted transfers, buffer compression when sending,
@@ -126,6 +127,24 @@ file name, severity, period) and a detail of every record:
 Records older than *Archive transfer log after (days)* (setting, default 90) are archived: they are kept, but shown only
 when *Complete archive* is checked in the filter. *Log stream* remains the live technical log.
 
+## Character set conversion
+
+Mainframe partners exchange files in EBCDIC. Every partner therefore has (on the *Partners* page):
+
+| Setting | Meaning |
+|---|---|
+| *Encoding of outgoing files* | `ANSI` sends the file as it is stored, `EBCDIC` converts its content while it is sent |
+| *Convert incoming EBCDIC to ANSI* | converts the content of files received from the partner while they are stored |
+| *ANSI code page* | code page files are stored in on this server (default Windows-1252) |
+| *EBCDIC code page* | EBCDIC variant of the partner (default IBM500 International) |
+
+Both sides are single byte code pages, so the conversion maps octet to octet and does not change the size of the
+file. Characters the target code page does not contain are replaced by a question mark. The EBCDIC new line (0x15),
+which has no counterpart in the ANSI code pages, becomes a line feed when a received file is converted.
+
+The conversion is driven only by the setting: OFTP does not tell which character set the content of a virtual file
+uses, so *Convert incoming EBCDIC to ANSI* is to be set for partners that send EBCDIC.
+
 ## REST API
 
 Integrations can use a REST API authenticated with a bearer token: `Authorization: Bearer <token>`.
@@ -211,7 +230,8 @@ docker run ... -v ./hooks:/scripts:ro -e Hooks__OnReceived=/scripts/on_received.
 1. *Identities*: create your own identity (SSID code, SFID code, password you send to partners).
 2. *Certificates*: import the TLS server certificate with its private key (PFX) and, if needed, the partner's certificate or CA.
 3. *Listeners*: create a listener (port 6619 for TLS), assign the identity and the server certificate.
-4. *Partners*: add the partner with its SSID/SFID codes, the password it sends to you, host and port.
+4. *Partners*: add the partner with its SSID/SFID codes, the password it sends to you, host and port, and, for a
+   mainframe partner, the character set conversion.
 5. *Send queue*: add a file (path on the server) addressed to the partner.
 
 ## Tests

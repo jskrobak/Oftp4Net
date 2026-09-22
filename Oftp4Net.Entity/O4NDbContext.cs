@@ -66,6 +66,8 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
         modelBuilder.Entity<Partner>(entity =>
         {
             entity.HasOne(e => e.TrustedCertificate).WithMany().OnDelete(DeleteBehavior.SetNull);
+            // Stored as text so the table stays readable without the application.
+            entity.Property(e => e.OutgoingEncoding).HasConversion<string>().HasMaxLength(10);
         });
 
         modelBuilder.Entity<SendQueueItem>(entity =>
