@@ -1,5 +1,3 @@
-﻿export class Sidebar {
-  
+export function submitForm(formId) {
+    document.getElementById(formId)?.submit();
 }
-
-window.Sidebar = Sidebar;

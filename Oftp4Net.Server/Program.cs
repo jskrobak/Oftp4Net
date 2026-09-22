@@ -155,7 +155,8 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
-app.UseStaticFiles();
+// Fingerprinted static files (no stale CSS after an update); they are public, unlike the rest of the app.
+app.MapStaticAssets().AllowAnonymous();
 
 app.UseAuthentication();
 app.UseAuthorization();

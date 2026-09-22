@@ -12,8 +12,16 @@ public partial class ColorModeSwitcher : ComponentBase
 {
     private static readonly ColorMode DefaultMode = ColorMode.Auto;
 
-    protected string Tooltip = "";
-    protected IconBase? Icon;
+    /// <summary>CSS class of the button, so it can match the surrounding items.</summary>
+    [Parameter] public string? CssClass { get; set; }
+
+    /// <summary>Render the name of the mode next to the icon (hidden in a collapsed sidebar).</summary>
+    [Parameter] public bool ShowText { get; set; } = true;
+
+    protected string Tooltip = GetTooltip(DefaultMode);
+    protected string Text = GetText(DefaultMode);
+    // Set before the first render: HxIcon does not accept null.
+    protected IconBase Icon = GetIcon(DefaultMode);
     protected ColorMode ColorMode = ColorMode.Auto;
 
     protected override async Task OnInitializedAsync()
@@ -22,7 +30,7 @@ public partial class ColorModeSwitcher : ComponentBase
         
         Tooltip = GetTooltip(ColorMode);
         Icon = GetIcon(ColorMode);
-        
+        Text = GetText(ColorMode);
     }
 
     [Inject] ICookieService CookieService { get; set; } = null!;
@@ -61,6 +69,7 @@ public partial class ColorModeSwitcher : ComponentBase
         ColorMode = mode;
         Tooltip = GetTooltip(mode);
         Icon = GetIcon(mode);
+        Text = GetText(mode);
 
         await ApplyToDocumentAsync(mode);
         await UiPreferences.SaveAsync(CookieService, UiPreferences.ColorModeCookie, mode.ToString("g").ToLowerInvariant());
@@ -100,6 +109,14 @@ public partial class ColorModeSwitcher : ComponentBase
             _ => throw new InvalidOperationException($"Unknown color mode")
         };
     }
+
+    private static string GetText(ColorMode mode) => mode switch
+    {
+        ColorMode.Auto => "Auto theme",
+        ColorMode.Light => "Light theme",
+        ColorMode.Dark => "Dark theme",
+        _ => "Theme"
+    };
 
     private static string GetTooltip(ColorMode mode)
     {

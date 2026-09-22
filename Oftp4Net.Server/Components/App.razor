@@ -16,8 +16,8 @@
             document.documentElement.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
         })();
     </script>
-    <link rel="stylesheet" href="app.css" />
-    <link rel="stylesheet" href="Oftp4Net.Server.styles.css" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["Oftp4Net.Server.styles.css"]" />
     @((MarkupString)HxSetup.RenderBootstrapCssReference(BootstrapFlavor.PlainBootstrap))
     <HeadOutlet @rendermode="PageRenderMode"/>
 </head>

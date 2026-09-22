@@ -58,3 +58,38 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+/* Actions in the sidebar footer (change password, sign out, colour mode) look like sidebar items. */
+.sidebar-footer-actions {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.sidebar-action {
+    display: flex;
+    align-items: center;
+    gap: var(--hx-sidebar-item-content-gap);
+    width: 100%;
+    margin: var(--hx-sidebar-item-margin);
+    padding: var(--hx-sidebar-item-padding);
+    border: 0;
+    border-radius: var(--hx-sidebar-item-border-radius);
+    background: none;
+    color: var(--hx-sidebar-item-color);
+    font-size: var(--hx-sidebar-item-font-size);
+    text-align: start;
+    text-decoration: none;
+}
+
+.sidebar-action:hover {
+    background-color: rgba(var(--hx-sidebar-item-hover-background-color), var(--hx-sidebar-item-hover-background-opacity));
+    color: var(--hx-sidebar-item-hover-color);
+}
+
+.sidebar-action .sidebar-action-icon {
+    color: var(--hx-sidebar-item-icon-color);
+}
+
+.sidebar-action:hover .sidebar-action-icon {
+    color: var(--hx-sidebar-item-hover-icon-color);
+}

@@ -34,19 +34,31 @@
        
     </ItemsTemplate>
     <FooterTemplate>
-        <div class="d-flex align-items-center gap-2">
-            <Oftp4Net.Server.Components.ColorMode.ColorModeSwitcher/>
+        @* HxSidebarItem can only be used in ItemsTemplate, so the footer actions are built from the same styles. *@
+        <div class="sidebar-footer-actions">
             <AuthorizeView Context="auth">
-                <a href="ChangePassword" class="ms-auto btn btn-sm btn-link" title="Change password of @auth.User.Identity?.Name">
-                    <HxIcon Icon="BootstrapIcon.Key" />
+                <a href="ChangePassword" class="sidebar-action" title="@($"Change password of {auth.User.Identity?.Name}")">
+                    <HxIcon Icon="BootstrapIcon.Key" CssClass="sidebar-action-icon"/>
+                    @if (!isCollapsed)
+                    {
+                        <span>Change password</span>
+                    }
                 </a>
+
+                @* Signing out has to be a POST with an antiforgery token. *@
                 <form method="post" action="account/logout" data-enhance="false">
-                    <AntiforgeryToken />
-                    <button type="submit" class="btn btn-sm btn-link" title="Sign out @auth.User.Identity?.Name">
-                        <HxIcon Icon="BootstrapIcon.BoxArrowRight" />
+                    <AntiforgeryToken/>
+                    <button type="submit" class="sidebar-action" title="@($"Sign out {auth.User.Identity?.Name}")">
+                        <HxIcon Icon="BootstrapIcon.BoxArrowRight" CssClass="sidebar-action-icon"/>
+                        @if (!isCollapsed)
+                        {
+                            <span>Sign out</span>
+                        }
                     </button>
                 </form>
             </AuthorizeView>
+
+            <Oftp4Net.Server.Components.ColorMode.ColorModeSwitcher CssClass="sidebar-action" ShowText="@(!isCollapsed)"/>
         </div>
     </FooterTemplate>
 </HxSidebar>

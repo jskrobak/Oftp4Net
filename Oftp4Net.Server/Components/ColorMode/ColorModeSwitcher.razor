@@ -1,2 +1,9 @@
-﻿@rendermode InteractiveServer
-<div><HxButton Icon="@Icon" OnClick="HandleClick" TooltipPlacement="TooltipPlacement.Bottom" Tooltip="@Tooltip"/></div>
+@rendermode InteractiveServer
+
+<button type="button" class="@CssClass" title="@Tooltip" @onclick="HandleClick">
+    <HxIcon Icon="@Icon" CssClass="sidebar-action-icon"/>
+    @if (ShowText)
+    {
+        <span>@Text</span>
+    }
+</button>
