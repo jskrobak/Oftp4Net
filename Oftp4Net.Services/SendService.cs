@@ -138,6 +138,7 @@ public class SendService(ILogger<SendService> logger,
     {
         using var scope = serviceScopeFactory.CreateScope();
         using var handler = PartnerSessionHandler.ForInitiator(scope.ServiceProvider, settings, logger, partner, identity);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         try
         {
@@ -162,15 +163,18 @@ public class SendService(ILogger<SendService> logger,
 
             logger.LogInformation("Session with {Partner} finished: {Sent} file(s) sent, {Received} file(s) received",
                 partner.Name, handler.FilesSent, handler.FilesReceived);
+            handler.RecordSessionEnd(null, stopwatch.Elapsed);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
-            await handler.OnSessionFailedAsync(new OperationCanceledException("Service stopped."), includeUnattempted: false,
-                CancellationToken.None);
+            var stopped = new OperationCanceledException("Service stopped.");
+            handler.RecordSessionEnd(stopped, stopwatch.Elapsed);
+            await handler.OnSessionFailedAsync(stopped, includeUnattempted: false, CancellationToken.None);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Session with {Partner} failed", partner.Name);
+            handler.RecordSessionEnd(ex, stopwatch.Elapsed);
             // A failure before any file was offered (connection, TLS, authentication) affects all waiting files
             // of the partner, a failure during a transfer only the file being transferred.
             await handler.OnSessionFailedAsync(ex, includeUnattempted: !handler.FileTransferStarted, CancellationToken.None);

@@ -21,6 +21,7 @@ using Oftp4Net.Server.Logging;
 using Oftp4Net.Services;
 using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.Hooks;
+using Oftp4Net.Services.TransferEvents;
 using Serilog;
 
 System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
@@ -95,13 +96,18 @@ builder.Services.AddScoped<LoopbackSeedService>();
 builder.AddBlazorCookies();
 
 builder.Services.AddSingleton<TransferClaims>();
+builder.Services.AddSingleton<TransferEventLog>();
+builder.Services.AddSingleton<ITransferEventLog>(sp => sp.GetRequiredService<TransferEventLog>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TransferEventLog>());
 builder.Services.AddSingleton<HookRunner>();
 builder.Services.AddSingleton<IHookDispatcher>(sp => sp.GetRequiredService<HookRunner>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<HookRunner>());
-builder.Services.AddSingleton<SendService>();
-builder.Services.AddHostedService(serviceCollection => serviceCollection.GetRequiredService<SendService>());
+// Hosted services start in registration order: listeners first, so the send queue can reach a local listener
+// (e.g. the development loopback partner) right away.
 builder.Services.AddSingleton<ListenerService>();
 builder.Services.AddHostedService(serviceCollection => serviceCollection.GetRequiredService<ListenerService>());
+builder.Services.AddSingleton<SendService>();
+builder.Services.AddHostedService(serviceCollection => serviceCollection.GetRequiredService<SendService>());
 
 builder.Services.AddResponseCompression(opts =>
 {

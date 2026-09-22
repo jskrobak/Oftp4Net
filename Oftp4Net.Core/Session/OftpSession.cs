@@ -345,6 +345,7 @@ public sealed class OftpSession
         {
             var answer = decision.Answer;
             _logger.LogWarning("Refusing file {DatasetName} from {Originator}: {Answer}", sfid.DatasetName, sfid.Originator, answer);
+            await _handler.OnStartFileRefusedAsync(sfid, answer, cancellationToken);
             await SendAsync(new SFNA { ReasonCode = answer.ReasonCode, ReasonText = answer.ReasonText, RetryLater = answer.RetryLater },
                 cancellationToken);
             return;

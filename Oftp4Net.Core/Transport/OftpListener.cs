@@ -41,6 +41,11 @@ public sealed class OftpListener : IAsyncDisposable
         _logger = logger;
     }
 
+    /// <summary>
+    /// Raised when an accepted connection fails before it is handed over, e.g. when the TLS handshake fails.
+    /// </summary>
+    public event Action<EndPoint, Exception>? ConnectionFailed;
+
     /// <summary>The local end point, useful when listening on port 0.</summary>
     public IPEndPoint LocalEndPoint => (IPEndPoint)_listener.LocalEndpoint;
 
@@ -84,6 +89,7 @@ public sealed class OftpListener : IAsyncDisposable
         _logger.LogInformation("OFTP connection accepted from {RemoteEndPoint}", remote);
 
         OftpTransport? transport = null;
+        var handedOver = false;
         try
         {
             Stream stream = new NetworkStream(socket, ownsSocket: true);
@@ -111,6 +117,7 @@ public sealed class OftpListener : IAsyncDisposable
             }
 
             transport = new OftpTransport(stream);
+            handedOver = true;
             await _onConnection(transport, new OftpConnectionInfo
             {
                 RemoteEndPoint = remote,
@@ -123,6 +130,8 @@ public sealed class OftpListener : IAsyncDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "OFTP connection from {RemoteEndPoint} failed", remote);
+            if (!handedOver)
+                ConnectionFailed?.Invoke(remote, ex);
         }
         finally
         {

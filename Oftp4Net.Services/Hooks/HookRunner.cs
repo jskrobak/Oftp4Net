@@ -5,6 +5,8 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Oftp4Net.Domain;
+using Oftp4Net.Services.TransferEvents;
 
 namespace Oftp4Net.Services.Hooks;
 
@@ -68,7 +70,8 @@ public interface IHookDispatcher
 /// Runs hook scripts one after another in the background, so a slow or failing script never delays or breaks
 /// an OFTP session. Hooks still waiting when the application stops are not run.
 /// </summary>
-public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner> logger) : BackgroundService, IHookDispatcher
+public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner> logger, ITransferEventLog? transferEvents = null)
+    : BackgroundService, IHookDispatcher
 {
     private const int QueueCapacity = 1000;
 
@@ -124,6 +127,8 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
             catch (Exception ex)
             {
                 logger.LogError(ex, "Hook {Event} ({Command}) could not be started", hookEvent, command);
+                RecordRun(hookEvent, command, parameters, TransferEventLevel.Error,
+                    $"{hookEvent}: {command} could not be started: {ex.Message}", ex.ToString(), null);
             }
         }
     }
@@ -142,6 +147,7 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
         foreach (var (name, value) in parameters)
             startInfo.Environment[ToEnvironmentName(name)] = value ?? "";
 
+        var stopwatch = Stopwatch.StartNew();
         using var process = Process.Start(startInfo)
                             ?? throw new InvalidOperationException($"Process '{command}' did not start.");
 
@@ -171,6 +177,8 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
                 throw;
 
             logger.LogError("Hook {Event} ({Command}) was killed after {Timeout} seconds", hookEvent, command, timeout.TotalSeconds);
+            RecordRun(hookEvent, command, parameters, TransferEventLevel.Error,
+                $"{hookEvent}: {command} was killed after {timeout.TotalSeconds:0} seconds", null, stopwatch.ElapsedMilliseconds);
             return null;
         }
 
@@ -184,7 +192,40 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
             logger.LogError("Hook {Event} ({Command}) failed with exit code {ExitCode}: {Error}", hookEvent, command,
                 process.ExitCode, stderr.Length > 0 ? stderr : stdout);
 
+        var details = string.Join(Environment.NewLine + Environment.NewLine,
+            new[] { stdout.Length > 0 ? "Output:" + Environment.NewLine + stdout : null,
+                    stderr.Length > 0 ? "Errors:" + Environment.NewLine + stderr : null }.Where(t => t is not null));
+        RecordRun(hookEvent, command, parameters,
+            process.ExitCode == 0 ? TransferEventLevel.Information : TransferEventLevel.Error,
+            $"{hookEvent}: {command} exited with code {process.ExitCode}", details.Length > 0 ? details : null,
+            stopwatch.ElapsedMilliseconds);
+
         return process.ExitCode;
+    }
+
+    private void RecordRun(HookEvent hookEvent, string command, IReadOnlyDictionary<string, string?> parameters,
+        TransferEventLevel level, string message, string? details, long? durationMs)
+    {
+        if (transferEvents is null)
+            return;
+
+        parameters.TryGetValue("virtualFileName", out var virtualFileName);
+        parameters.TryGetValue("partnerName", out var partnerName);
+        parameters.TryGetValue("fileDate", out var fileDate);
+        parameters.TryGetValue("fileTime", out var fileTime);
+        transferEvents.Record(new TransferEvent
+        {
+            Category = TransferEventCategory.Hook,
+            Type = level == TransferEventLevel.Information ? TransferEventType.HookFinished : TransferEventType.HookFailed,
+            Level = level,
+            Message = message,
+            Details = details,
+            DurationMs = durationMs,
+            PartnerName = partnerName,
+            VirtualFileName = virtualFileName,
+            FileDate = fileDate,
+            FileTime = fileTime,
+        });
     }
 
     /// <summary>"virtualFileName" -> "OFTP_VIRTUAL_FILE_NAME".</summary>

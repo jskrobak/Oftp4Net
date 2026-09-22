@@ -38,6 +38,11 @@ public class GlobalSettings
     [Range(1, 999)]
     public int Credit { get; set; } = 64;
 
+    /// <summary>Transfer log records older than this are archived (hidden unless the complete archive is shown).</summary>
+    [SettingsItem]
+    [Range(1, 3650)]
+    public int ArchiveEventsAfterDays { get; set; } = 90;
+
     /// <summary>Seconds to wait for a response from the partner.</summary>
     [SettingsItem]
     [Range(10, 3600)]

@@ -111,6 +111,21 @@ To build the image locally:
 docker build -f Oftp4Net.Server/Dockerfile -t oftp4net-server .
 ```
 
+## Transfer log
+
+The *Logs* section shows the transfer history stored in the database, in four views with filters (partner, virtual
+file name, severity, period) and a detail of every record:
+
+| View | Records |
+|---|---|
+| Outgoing | connections we open (start, end, failures, rejected authentication) and sent files (sent, failed, retries) |
+| Incoming | connections partners open, including failed TLS handshakes, and received or refused files |
+| EERP / NERP | End to End Responses sent for received files and received for sent files |
+| Hooks | every hook run with exit code, duration and output |
+
+Records older than *Archive transfer log after (days)* (setting, default 90) are archived: they are kept, but shown only
+when *Complete archive* is checked in the filter. *Log stream* remains the live technical log.
+
 ## Hooks
 
 A script or executable can be run on protocol events. Hooks are configured in the application configuration

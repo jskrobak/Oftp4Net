@@ -1,0 +1,105 @@
+@page "/Logs/{Section}"
+@rendermode InteractiveServer
+@using Havit.Collections
+@using Oftp4Net.DataLayer.Filters
+@using Oftp4Net.Domain
+<style>
+    .scrollable-table-container {
+        overflow: auto;
+        height: calc(100vh - 160px);
+    }
+</style>
+
+<PageTitle>Oftp4Net | @Title</PageTitle>
+
+<HxModal @ref="detailModal" Title="@selected?.Message" Size="ModalSize.Large" ShowCloseButton="true">
+    <BodyTemplate>
+        @if (selected is not null)
+        {
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Time</dt><dd class="col-sm-9">@selected.Timestamp.ToString("G")</dd>
+                <dt class="col-sm-3">Event</dt><dd class="col-sm-9"><HxBadge Color="@GetColor(selected.Level)">@selected.Level</HxBadge> @selected.Type</dd>
+                @Row("Partner", selected.PartnerName)
+                @Row("Remote end point", selected.RemoteEndPoint)
+                @Row("Virtual file", selected.VirtualFileName)
+                @Row("File date / time", selected.FileDate is null ? null : $"{selected.FileDate} {selected.FileTime}")
+                @Row("Size", selected.FileSize?.ToString("N0") + (selected.FileSize is null ? null : " bytes"))
+                @Row("Duration", selected.DurationMs is null ? null : $"{selected.DurationMs:N0} ms")
+                @Row("Send queue item", selected.SendQueueItemId?.ToString())
+                @Row("Received file", selected.ReceivedFileId?.ToString())
+                @Row("Archived", selected.IsArchived ? "yes" : null)
+            </dl>
+            @if (!string.IsNullOrEmpty(selected.Details))
+            {
+                <pre class="bg-body-tertiary p-2 mt-3 small" style="white-space: pre-wrap; max-height: 50vh; overflow: auto;">@selected.Details</pre>
+            }
+        }
+    </BodyTemplate>
+</HxModal>
+
+<HxListLayout Title="@Title" TFilterModel="TransferEventFilter"
+              @bind-FilterModel="filterModel"
+              @bind-FilterModel:after="gridComponent.RefreshDataAsync">
+    <CommandsTemplate>
+        <HxButton Text="Refresh" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ArrowClockwise"
+                  OnClick="() => gridComponent.RefreshDataAsync()" />
+    </CommandsTemplate>
+    <FilterTemplate Context="filterContext">
+        <HxInputText Label="Partner" @bind-Value="filterContext.PartnerName" />
+        <HxInputText Label="Virtual file name" @bind-Value="filterContext.VirtualFileName" />
+        <HxSelect TItem="TransferEventLevel" TValue="TransferEventLevel?" Label="Severity"
+                  Data="levels" @bind-Value="filterContext.MinimumLevel"
+                  TextSelector="@(l => l == TransferEventLevel.Information ? "All" : l == TransferEventLevel.Warning ? "Warnings and errors" : "Errors")"
+                  ValueSelector="@(l => (TransferEventLevel?)l)"
+                  Nullable="true" NullText="All" />
+        <HxInputDate TValue="DateTime?" Label="From" @bind-Value="filterContext.From" />
+        <HxInputDate TValue="DateTime?" Label="To" @bind-Value="filterContext.To" />
+        <HxCheckbox Label="Complete archive" Hint="@($"Include records older than {archiveDays} days.")" @bind-Value="filterContext.IncludeArchive" />
+    </FilterTemplate>
+    <DataTemplate>
+        <HxGrid @ref="gridComponent"
+                ContentNavigationMode="GridContentNavigationMode.Pagination"
+                PageSize="100"
+                TableContainerCssClass="scrollable-table-container"
+                HeaderRowCssClass="sticky-top"
+                TItem="TransferEvent"
+                DataProvider="GetGridData"
+                SelectedDataItem="selected"
+                SelectedDataItemChanged="HandleSelectedAsync"
+                Responsive="true"
+                PreserveSelection="false">
+            <Columns>
+                <HxGridColumn HeaderText="Time"
+                              ItemTextSelector="@(e => e.Timestamp.ToString("G"))"
+                              SortKeySelector="e => e.Timestamp"
+                              IsDefaultSortColumn="true"
+                              SortDirection="SortDirection.Descending"
+                              ItemCssClass="text-nowrap" />
+                <HxGridColumn HeaderText="Event" SortKeySelector="e => e.Type" ItemCssClass="text-nowrap">
+                    <ItemTemplate Context="e">
+                        <HxBadge Color="@GetColor(e.Level)">@e.Level.ToString()[..1]</HxBadge>
+                        <span class="ms-1">@e.Type</span>
+                        @if (e.IsArchived)
+                        {
+                            <HxBadge Color="ThemeColor.Light" CssClass="ms-1">archived</HxBadge>
+                        }
+                    </ItemTemplate>
+                </HxGridColumn>
+                <HxGridColumn HeaderText="Partner" ItemTextSelector="@(e => e.PartnerName)" SortKeySelector="e => e.PartnerName" />
+                <HxGridColumn HeaderText="Virtual file" ItemTextSelector="@(e => e.VirtualFileName)" SortKeySelector="e => e.VirtualFileName" />
+                <HxGridColumn HeaderText="Message" ItemTextSelector="@(e => e.Message)" />
+            </Columns>
+        </HxGrid>
+    </DataTemplate>
+</HxListLayout>
+
+@code {
+    private static RenderFragment Row(string label, string? value) => __builder =>
+    {
+        if (!string.IsNullOrEmpty(value))
+        {
+            <dt class="col-sm-3">@label</dt>
+            <dd class="col-sm-9">@value</dd>
+        }
+    };
+}

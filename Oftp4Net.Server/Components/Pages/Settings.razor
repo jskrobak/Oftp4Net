@@ -47,6 +47,9 @@
                         <HxInputNumber Label="Maximum retry count" Decimals="0" @bind-Value="@settings.MaxRetryCount" />
                     </div>
                     <div class="col-md-6">
+                        <HxInputNumber Label="Archive transfer log after (days)" Hint="Older records are hidden unless the complete archive is shown." Decimals="0" @bind-Value="@settings.ArchiveEventsAfterDays" />
+                    </div>
+                    <div class="col-md-6">
                         <HxInputNumber Label="Response timeout (seconds)" Decimals="0" @bind-Value="@settings.ResponseTimeoutSeconds" />
                     </div>
                     <div class="col-md-6">

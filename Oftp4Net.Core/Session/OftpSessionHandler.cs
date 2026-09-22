@@ -37,6 +37,13 @@ public abstract class OftpSessionHandler
         ValueTask.FromResult(OftpStartFileDecision.Reject(AnswerReasonCodes.FileDirectionRefused, "Receiving files is not supported."));
 
     /// <summary>
+    /// An offered file was refused with SFNA, either by <see cref="OnStartFileAsync"/> or by the session itself
+    /// (unsupported format, encryption, compression, …).
+    /// </summary>
+    public virtual ValueTask OnStartFileRefusedAsync(SFID header, OftpAnswer answer, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    /// <summary>
     /// The complete file was received and its destination stream was closed. Returning a rejection sends EFNA.
     /// </summary>
     public virtual ValueTask<OftpAnswer> OnFileReceivedAsync(OftpIncomingFile file, CancellationToken cancellationToken) =>

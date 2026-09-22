@@ -9,6 +9,7 @@ using Oftp4Net.Core.Transport;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using Oftp4Net.Services.Oftp;
+using Oftp4Net.Services.TransferEvents;
 
 namespace Oftp4Net.Services;
 
@@ -20,7 +21,8 @@ public sealed record ListenerStatus(int ListenerId, string Name, string EndPoint
 public class ListenerService(
     ILogger<ListenerService> logger,
     IServiceScopeFactory serviceScopeFactory,
-    GlobalSettingsService globalSettingsService) : IHostedService, IAsyncDisposable
+    GlobalSettingsService globalSettingsService,
+    ITransferEventLog transferEvents) : IHostedService, IAsyncDisposable
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly List<OftpListener> _listeners = [];
@@ -141,6 +143,15 @@ public class ListenerService(
 
             var oftpListener = new OftpListener(new IPEndPoint(address, listener.Port), tls,
                 (transport, connection, ct) => HandleConnectionAsync(listener, transport, connection, ct), logger);
+            oftpListener.ConnectionFailed += (remote, exception) => transferEvents.Record(new TransferEvent
+            {
+                Category = TransferEventCategory.Incoming,
+                Type = TransferEventType.SessionFailed,
+                Level = TransferEventLevel.Warning,
+                RemoteEndPoint = remote.ToString(),
+                Message = $"Connection from {remote} to listener {listener.Name} failed before the OFTP session: {exception.Message}",
+                Details = exception.ToString(),
+            });
             oftpListener.Start();
             _listeners.Add(oftpListener);
             _status[listener.Id] = new ListenerStatus(listener.Id, listener.Name, endPoint, true, null, 0);
@@ -181,7 +192,9 @@ public class ListenerService(
             var settings = await globalSettingsService.GetGlobalSettingsAsync();
 
             using var scope = serviceScopeFactory.CreateScope();
-            using var handler = PartnerSessionHandler.ForResponder(scope.ServiceProvider, settings, logger, listener);
+            using var handler = PartnerSessionHandler.ForResponder(scope.ServiceProvider, settings, logger, listener,
+                connection.RemoteEndPoint.ToString() ?? "");
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             var session = new OftpSession(transport, new OftpSessionOptions
             {
@@ -196,11 +209,13 @@ public class ListenerService(
                 await session.RunAsync(linked.Token);
                 logger.LogInformation("Session with {Partner} ({RemoteEndPoint}) finished: {Received} file(s) received, {Sent} file(s) sent",
                     handler.Partner?.Name, connection.RemoteEndPoint, handler.FilesReceived, handler.FilesSent);
+                handler.RecordSessionEnd(null, stopwatch.Elapsed);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Session with {Partner} ({RemoteEndPoint}) failed",
                     handler.Partner?.Name ?? "unknown partner", connection.RemoteEndPoint);
+                handler.RecordSessionEnd(ex, stopwatch.Elapsed);
                 await handler.OnSessionFailedAsync(ex, includeUnattempted: false, CancellationToken.None);
             }
         }

@@ -18,6 +18,7 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
     public DbSet<SettingsItem> GlobalSettings { get; init; }
     public DbSet<ReceivedFile> ReceivedFiles { get; init; }
     public DbSet<User> Users { get; init; }
+    public DbSet<TransferEvent> TransferEvents { get; init; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -75,6 +76,17 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.UserName).IsUnique();
+        });
+
+        modelBuilder.Entity<TransferEvent>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            // Stored as text so the table stays readable without the application.
+            entity.Property(e => e.Category).HasConversion<string>().HasMaxLength(20);
+            entity.Property(e => e.Level).HasConversion<string>().HasMaxLength(20);
+            entity.Property(e => e.Type).HasConversion<string>().HasMaxLength(40);
+            entity.HasIndex(e => new { e.Category, e.IsArchived, e.Timestamp });
+            entity.HasIndex(e => new { e.IsArchived, e.Timestamp });
         });
 
         ConfigureSecrets(modelBuilder);

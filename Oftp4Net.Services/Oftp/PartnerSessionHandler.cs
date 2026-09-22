@@ -7,7 +7,9 @@ using Oftp4Net.Core.Protocol.Commands;
 using Oftp4Net.Core.Session;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
+using System.Diagnostics;
 using Oftp4Net.Services.Hooks;
+using Oftp4Net.Services.TransferEvents;
 
 namespace Oftp4Net.Services.Oftp;
 
@@ -28,6 +30,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private readonly GlobalSettings _settings;
     private readonly GlobalSettingsService _settingsService;
     private readonly IHookDispatcher _hooks;
+    private readonly ITransferEventLog _events;
+    private readonly string _remoteEndPoint;
+    private readonly Stopwatch _fileStopwatch = new();
     private readonly ILogger _logger;
 
     private readonly Identity? _identity;
@@ -38,7 +43,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private SendQueueItem? _inFlight;
 
     private PartnerSessionHandler(IServiceProvider scopedServices, GlobalSettings settings, ILogger logger,
-        Partner? partner, Identity? identity, Listener? listener)
+        Partner? partner, Identity? identity, Listener? listener, string remoteEndPoint)
     {
         _sendQueue = scopedServices.GetRequiredService<ISendQueueItemRepository>();
         _receivedFiles = scopedServices.GetRequiredService<IReceivedFileRepository>();
@@ -48,6 +53,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _claims = scopedServices.GetRequiredService<TransferClaims>();
         _timeService = scopedServices.GetRequiredService<ITimeService>();
         _hooks = scopedServices.GetRequiredService<IHookDispatcher>();
+        _events = scopedServices.GetRequiredService<ITransferEventLog>();
+        _remoteEndPoint = remoteEndPoint;
         _settings = settings;
         _settingsService = scopedServices.GetRequiredService<GlobalSettingsService>();
         _logger = logger;
@@ -59,12 +66,12 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     /// <summary>Handler for a session we open to <paramref name="partner"/> under <paramref name="identity"/>.</summary>
     public static PartnerSessionHandler ForInitiator(IServiceProvider scopedServices, GlobalSettings settings, ILogger logger,
         Partner partner, Identity identity) =>
-        new(scopedServices, settings, logger, partner, identity, listener: null);
+        new(scopedServices, settings, logger, partner, identity, listener: null, $"{partner.Host}:{partner.Port}");
 
     /// <summary>Handler for a session a partner opened to <paramref name="listener"/>.</summary>
     public static PartnerSessionHandler ForResponder(IServiceProvider scopedServices, GlobalSettings settings, ILogger logger,
-        Listener listener) =>
-        new(scopedServices, settings, logger, partner: null, identity: null, listener);
+        Listener listener, string remoteEndPoint) =>
+        new(scopedServices, settings, logger, partner: null, identity: null, listener, remoteEndPoint);
 
     /// <summary>The partner of the session; for a responder known after authentication.</summary>
     public Partner? Partner { get; private set; }
@@ -77,7 +84,32 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
     #region Authentication
 
+    /// <summary>Connection direction: sessions we open are outgoing, sessions partners open are incoming.</summary>
+    private TransferEventCategory ConnectionCategory =>
+        _listener is null ? TransferEventCategory.Outgoing : TransferEventCategory.Incoming;
+
     public override async ValueTask<OftpAuthenticationResult> AuthenticateAsync(SSID remote, CancellationToken cancellationToken)
+    {
+        var result = await AuthenticateCoreAsync(remote, cancellationToken);
+
+        if (result.Success)
+        {
+            Record(ConnectionCategory, TransferEventType.SessionStarted, TransferEventLevel.Information,
+                _listener is null
+                    ? $"Session started with {Partner!.Name} ({Partner.SSID})"
+                    : $"Session started by {Partner!.Name} ({Partner.SSID}) on listener {_listener.Name}");
+        }
+        else
+        {
+            Record(ConnectionCategory, TransferEventType.AuthenticationRejected, TransferEventLevel.Warning,
+                $"Authentication of {remote.Code} rejected ({result.ReasonCode}): {result.ReasonText}",
+                e => e.PartnerName ??= remote.Code);
+        }
+
+        return result;
+    }
+
+    private async Task<OftpAuthenticationResult> AuthenticateCoreAsync(SSID remote, CancellationToken cancellationToken)
     {
         if (_listener is null)
         {
@@ -146,6 +178,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             item.FileTime = time;
             _inFlight = item;
             FileTransferStarted = true;
+            _fileStopwatch.Restart();
 
             return new OftpOutgoingFile
             {
@@ -173,6 +206,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _inFlight = null;
         FilesSent++;
         await SaveAsync(item);
+        Record(TransferEventCategory.Outgoing, TransferEventType.FileSent, TransferEventLevel.Information,
+            $"{item.VirtualFileName} sent to {Partner?.Name}", e => Describe(e, item, _fileStopwatch.ElapsedMilliseconds));
         _hooks.Dispatch(HookEvent.OnSent, SendHookParameters(item));
     }
 
@@ -238,6 +273,13 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
         await SaveAsync(item);
 
+        Record(TransferEventCategory.Outgoing, TransferEventType.FileSendFailed,
+            item.Status == SendStatus.ERROR ? TransferEventLevel.Warning : TransferEventLevel.Error,
+            item.Status == SendStatus.ERROR
+                ? $"Sending {item.VirtualFileName} failed, retry {item.RetryCount} at {item.NextRetry:g}: {error}"
+                : $"Sending {item.VirtualFileName} failed permanently: {error}",
+            e => Describe(e, item, null));
+
         var parameters = SendHookParameters(item);
         parameters["error"] = error;
         parameters["reasonCode"] = reasonCode;
@@ -299,7 +341,21 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _unitOfWork.AddForInsert(record);
         await _unitOfWork.CommitAsync(cancellationToken);
 
+        _fileStopwatch.Restart();
         return OftpStartFileDecision.Accept(stream, record);
+    }
+
+    public override ValueTask OnStartFileRefusedAsync(SFID header, OftpAnswer answer, CancellationToken cancellationToken)
+    {
+        Record(TransferEventCategory.Incoming, TransferEventType.FileRefused, TransferEventLevel.Warning,
+            $"{header.DatasetName} from {header.Originator} refused ({answer.ReasonCode}): {answer.ReasonText}",
+            e =>
+            {
+                e.VirtualFileName = header.DatasetName;
+                e.FileDate = header.Date;
+                e.FileTime = header.Time;
+            });
+        return ValueTask.CompletedTask;
     }
 
     public override async ValueTask<OftpAnswer> OnFileReceivedAsync(OftpIncomingFile file, CancellationToken cancellationToken)
@@ -319,6 +375,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         record.Status = ReceiveStatus.RECEIVED;
         FilesReceived++;
         await SaveAsync(record);
+        Record(TransferEventCategory.Incoming, TransferEventType.FileReceived, TransferEventLevel.Information,
+            $"{record.VirtualFileName} received from {Partner?.Name}", e => Describe(e, record, _fileStopwatch.ElapsedMilliseconds));
         _hooks.Dispatch(HookEvent.OnReceived, ReceiveHookParameters(record));
         return OftpAnswer.Accept();
     }
@@ -342,6 +400,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         record.Status = ReceiveStatus.FAILED;
         record.LastError = reason.Length > 2000 ? reason[..2000] : reason;
         await SaveAsync(record);
+
+        Record(TransferEventCategory.Incoming, TransferEventType.FileReceiveFailed, TransferEventLevel.Error,
+            $"Receiving {record.VirtualFileName} failed: {reason}", e => Describe(e, record, null));
 
         var parameters = ReceiveHookParameters(record);
         parameters["error"] = reason;
@@ -392,6 +453,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         record.Status = ReceiveStatus.CONFIRMED;
         record.ConfirmedDate = _timeService.GetCurrentTime();
         await SaveAsync(record);
+        Record(TransferEventCategory.EndResponse, TransferEventType.EerpSent, TransferEventLevel.Information,
+            $"EERP for {record.VirtualFileName} sent to {Partner?.Name}", e => Describe(e, record, null));
     }
 
     public override async ValueTask OnEndResponseReceivedAsync(OftpCommand response, CancellationToken cancellationToken)
@@ -408,6 +471,14 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         {
             _logger.LogWarning("Received {Response} for unknown file {VirtualFileName} {Date} {Time}",
                 response.Name, datasetName, date, time);
+            Record(TransferEventCategory.EndResponse, TransferEventType.UnknownEndResponse, TransferEventLevel.Warning,
+                $"{response.Name} for unknown file {datasetName} {date} {time} received from {Partner?.Name}",
+                e =>
+                {
+                    e.VirtualFileName = datasetName;
+                    e.FileDate = date;
+                    e.FileTime = time;
+                });
             return;
         }
 
@@ -433,12 +504,81 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             parameters["reasonCode"] = negativeResponse.ReasonCode;
             parameters["reasonText"] = negativeResponse.ReasonText;
             parameters["creator"] = negativeResponse.Creator;
+            Record(TransferEventCategory.EndResponse, TransferEventType.NerpReceived, TransferEventLevel.Warning,
+                $"NERP for {item.VirtualFileName} received from {Partner?.Name}: {item.LastError}", e => Describe(e, item, null));
             _hooks.Dispatch(HookEvent.OnNotDelivered, parameters);
         }
         else
         {
+            Record(TransferEventCategory.EndResponse, TransferEventType.EerpReceived, TransferEventLevel.Information,
+                $"EERP for {item.VirtualFileName} received from {Partner?.Name}", e => Describe(e, item, null));
             _hooks.Dispatch(HookEvent.OnDelivered, parameters);
         }
+    }
+
+    #endregion
+
+    #region Transfer events
+
+    /// <summary>Records the end of the session (called by the service running it).</summary>
+    public void RecordSessionEnd(Exception? exception, TimeSpan duration)
+    {
+        if (exception is null)
+        {
+            Record(ConnectionCategory, TransferEventType.SessionEnded, TransferEventLevel.Information,
+                $"Session with {Partner?.Name} ended: {FilesSent} file(s) sent, {FilesReceived} file(s) received",
+                e => e.DurationMs = (long)duration.TotalMilliseconds);
+        }
+        else
+        {
+            Record(ConnectionCategory, TransferEventType.SessionFailed, TransferEventLevel.Error,
+                $"Session with {Partner?.Name ?? _remoteEndPoint} failed: {exception.Message}",
+                e =>
+                {
+                    e.DurationMs = (long)duration.TotalMilliseconds;
+                    e.Details = exception.ToString();
+                });
+        }
+    }
+
+    private void Record(TransferEventCategory category, TransferEventType type, TransferEventLevel level, string message,
+        Action<TransferEvent>? configure = null)
+    {
+        var transferEvent = new TransferEvent
+        {
+            Timestamp = _timeService.GetCurrentTime(),
+            Category = category,
+            Type = type,
+            Level = level,
+            Message = message,
+            PartnerId = Partner?.Id,
+            PartnerName = Partner?.Name,
+            RemoteEndPoint = _remoteEndPoint,
+        };
+        configure?.Invoke(transferEvent);
+        _events.Record(transferEvent);
+    }
+
+    private static void Describe(TransferEvent e, SendQueueItem item, long? durationMs)
+    {
+        e.SendQueueItemId = item.Id;
+        e.VirtualFileName = item.VirtualFileName;
+        e.FileDate = item.FileDate;
+        e.FileTime = item.FileTime;
+        e.FileSize = File.Exists(item.FilePath) ? new FileInfo(item.FilePath).Length : null;
+        e.DurationMs = durationMs;
+        e.Details = item.LastError;
+    }
+
+    private static void Describe(TransferEvent e, ReceivedFile record, long? durationMs)
+    {
+        e.ReceivedFileId = record.Id;
+        e.VirtualFileName = record.VirtualFileName;
+        e.FileDate = record.FileDate;
+        e.FileTime = record.FileTime;
+        e.FileSize = record.Size > 0 ? record.Size : null;
+        e.DurationMs = durationMs;
+        e.Details = record.LastError;
     }
 
     #endregion
