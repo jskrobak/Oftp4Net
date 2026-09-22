@@ -28,6 +28,15 @@ public partial class Partners : ComponentBase
         availableCertificates = await DataService.GetAllCertificatesAsync();
     }
     
+    /// <summary>Code pages are only relevant when the content is converted in at least one direction.</summary>
+    private bool ConversionConfigured =>
+        currentPartner.OutgoingEncoding == FileCharacterEncoding.EBCDIC || currentPartner.ConvertIncomingEbcdicToAnsi;
+
+    private static string EncodingDescription(Partner partner) =>
+        partner.ConvertIncomingEbcdicToAnsi
+            ? $"sent as {partner.OutgoingEncoding}, received EBCDIC → ANSI"
+            : $"sent as {partner.OutgoingEncoding}";
+
     private List<SslProtocols> GetTlsVersions()
     {
         return Enum.GetValues<SslProtocols>().ToList();

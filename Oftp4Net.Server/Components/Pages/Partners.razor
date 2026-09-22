@@ -4,6 +4,7 @@
 @using Oftp4Net.Core
 @using Oftp4Net.DataLayer.Filters
 @using Oftp4Net.Domain
+@using Oftp4Net.Services.Encodings
 <style>
     .scrollable-table-container {
         overflow: auto;
@@ -51,7 +52,46 @@
                                    NullDataText="Loading .."
                                    EmptyText="-select SSL versions-" />
 
-                
+
+                    <HxSelect TItem="FileCharacterEncoding"
+                              TValue="FileCharacterEncoding"
+                              Label="Encoding of outgoing files"
+                              Hint="Content of files sent to the partner is converted to this encoding."
+                              Data="Enum.GetValues<FileCharacterEncoding>()"
+                              @bind-Value="@currentPartner.OutgoingEncoding"
+                              TextSelector="@(e => e.ToString())"
+                              ValueSelector="@(e => e)"
+                              Nullable="false" />
+
+                    <HxCheckbox Label="Convert incoming EBCDIC to ANSI"
+                                Hint="Content of files received from the partner is converted from EBCDIC to ANSI."
+                                @bind-Value="@currentPartner.ConvertIncomingEbcdicToAnsi" />
+
+                    @if (ConversionConfigured)
+                    {
+                        <HxSelect TItem="CodePageInfo"
+                                  TValue="int"
+                                  Label="ANSI code page"
+                                  Hint="Encoding files are stored in on this server."
+                                  Data="CharacterEncodings.AnsiCodePages"
+                                  @bind-Value="@currentPartner.AnsiCodePage"
+                                  TextSelector="@(c => c.Name)"
+                                  ValueSelector="@(c => c.CodePage)"
+                                  SortKeySelector="@(c => c.CodePage)"
+                                  Nullable="false" />
+
+                        <HxSelect TItem="CodePageInfo"
+                                  TValue="int"
+                                  Label="EBCDIC code page"
+                                  Hint="EBCDIC variant used by the partner."
+                                  Data="CharacterEncodings.EbcdicCodePages"
+                                  @bind-Value="@currentPartner.EbcdicCodePage"
+                                  TextSelector="@(c => c.Name)"
+                                  ValueSelector="@(c => c.CodePage)"
+                                  SortKeySelector="@(c => c.CodePage)"
+                                  Nullable="false" />
+                    }
+
                     <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
 
                 </EditForm>
@@ -110,6 +150,9 @@
                 <HxGridColumn HeaderText="Host"
                               ItemTextSelector="@(d => d.Host)"
                               SortKeySelector="d => d.Host"/>
+                @* Not sortable: an enum sort key cannot be translated to SQL. *@
+                <HxGridColumn HeaderText="Encoding"
+                              ItemTextSelector="@(d => EncodingDescription(d))"/>
                 
                 <HxContextMenuGridColumn Context="currentPartner">
                     <HxContextMenu>

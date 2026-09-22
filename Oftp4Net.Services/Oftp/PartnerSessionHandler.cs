@@ -8,6 +8,7 @@ using Oftp4Net.Core.Session;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using System.Diagnostics;
+using Oftp4Net.Services.Encodings;
 using Oftp4Net.Services.Hooks;
 using Oftp4Net.Services.TransferEvents;
 
@@ -189,8 +190,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 Time = time,
                 Description = item.Description ?? "",
                 State = item,
-                OpenAsync = _ => ValueTask.FromResult<Stream>(new FileStream(item.FilePath, FileMode.Open,
-                    FileAccess.Read, FileShare.Read, 81920, useAsync: true)),
+                // The content is converted to the encoding configured for the partner while it is read.
+                OpenAsync = _ => ValueTask.FromResult(PartnerEncoding.ForSending(Partner!,
+                    new FileStream(item.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))),
             };
         }
 
@@ -327,10 +329,12 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             Status = ReceiveStatus.RECEIVING,
         };
 
-        FileStream stream;
+        Stream stream;
         try
         {
-            stream = new FileStream(path + ".part", FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            // The content is converted from EBCDIC to ANSI while it is written when the partner is configured so.
+            stream = PartnerEncoding.ForReceiving(partner,
+                new FileStream(path + ".part", FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true));
         }
         catch (IOException ex)
         {
