@@ -16,7 +16,34 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses
 - Secure authentication (SSIDAUTH with SECD/AUCH/AURP): both sides prove they hold the private key of their certificate
 - Restart of interrupted transfers and ODETTE-FTP buffer compression, both negotiated per partner
+- REST API with bearer tokens and webhooks, scripts run on transfer events, persistent transfer log
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
+
+## OFTP2 support
+
+What of RFC 5024 the implementation covers:
+
+| Area | State |
+|---|---|
+| Session: SSRM, SSID, ESID, CD, credit (CDT) | Protocol level 5 (OFTP 2.0) only, buffer size and credit negotiated |
+| Files: SFID, SFPA, SFNA, DATA, EFID, EFPA, EFNA | Both directions in one session, several files per session |
+| End to end responses: EERP, NERP, RTR | EERP is sent for received files and both are processed for sent ones |
+| Buffer compression (SSIDCMPR) | Sent compressed when agreed, always accepted from a partner |
+| Restart (SSIDREST, SFIDREST) | Interrupted transfers continue at the last complete 1K block |
+| Secure authentication (SSIDAUTH, SECD, AUCH, AURP) | Both directions, challenge in a CMS envelope |
+| File level security (SFIDSEC, SFIDCIPH, SFIDCOMP, SFIDENV) | Signing, zlib compression and encryption, cipher suites 01 – 06 |
+| Signed end responses (SFIDSIGN, EERPSIG, NERPSIG) | Requested, produced and verified, with the hash of the content |
+| Transport | TCP/IP, with TLS 1.2 / 1.3 and optional client certificates |
+
+Not implemented, because the deployments this server is built for do not use it:
+
+- Record structured virtual files: files are transferred as unstructured (SFIDFMT `U`), the record format of a
+  partner is accepted but records are not interpreted and no record count is reported in EFID
+- Generating NERP: a file that cannot be delivered is reported in the transfer log, the partner is not notified
+  (a NERP from a partner is processed and sets the state `NOT_DELIVERED`)
+- Broadcast and distribution to several destinations through an intermediate location
+- Special logic (SSIDSPEC) and the OFTP 1.x protocol levels
+- Transports other than TCP/IP (X.25, ISDN) and the mailbox operation of older OFTP versions
 
 ## Solution structure
 
