@@ -1,0 +1,100 @@
+@page "/Identities"
+@rendermode InteractiveServer
+@using Oftp4Net.DataLayer.Filters
+@using Oftp4Net.Domain
+<style>
+    .scrollable-table-container {
+        overflow: auto;
+        height: calc(100vh - 160px);
+    }
+</style>
+<HxModal @ref="identityEditModal" ShowCloseButton="true">
+    <HeaderTemplate>
+        Edit Oftp Identity
+    </HeaderTemplate>
+    <BodyTemplate>
+            @if (currentIdentity is not null)
+            {
+                <EditForm Model="@currentIdentity" OnValidSubmit="@(async() => { await SaveIdentity(); })">
+                    <DataAnnotationsValidator />
+
+                    <HxInputText Label="Name" @bind-Value="@currentIdentity.Name" />
+                    <HxInputText Label="Description" @bind-Value="@currentIdentity.Description" />
+                    <HxInputText Label="SSID" @bind-Value="@currentIdentity.SSID" />
+                    <HxInputText Label="SFID" @bind-Value="@currentIdentity.SFID" />
+                    <HxInputText Label="Password" Hint="Password we send in our SSID." Type="InputType.Password" @bind-Value="@currentIdentity.Password" />
+                
+                    <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
+
+                </EditForm>
+            }
+    </BodyTemplate>
+</HxModal>
+
+<HxListLayout Title="Identities" TFilterModel="IdentityFilter"
+              @bind-FilterModel="filterModel"
+              @bind-FilterModel:after="gridComponent.RefreshDataAsync">
+    <CommandsTemplate>
+        <HxButton Text="New identity"
+                  Color="ThemeColor.Primary"
+                  Icon="BootstrapIcon.PlusLg" OnClick="HandleNewItemClicked" />
+        <HxDropdownButtonGroup>
+            <HxDropdownToggleButton CssClass="contextDropdownToggleButton" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ThreeDots">
+            </HxDropdownToggleButton>
+            <HxDropdownMenu>
+                <HxDropdownItem Icon="BootstrapIcon.Trash" OnClick="HandleDeleteSelected">Delete selected</HxDropdownItem>
+            </HxDropdownMenu>
+        </HxDropdownButtonGroup>
+    </CommandsTemplate>
+    <FilterTemplate Context="filterContext">
+        <HxInputText Label="Name" @bind-Value="filterContext.Name" />
+    </FilterTemplate>
+    <DataTemplate>
+        <HxGrid @ref="gridComponent"
+                ContentNavigationMode="GridContentNavigationMode.Pagination"
+                PageSize="1000"
+                MultiSelectionEnabled="true"
+                @bind-SelectedDataItems="selectedItems"
+                TableContainerCssClass="scrollable-table-container"
+                HeaderRowCssClass="sticky-top"
+                FooterRowCssClass="sticky-bottom"
+                TItem="Identity"
+                DataProvider="GetGridData"
+                @bind-SelectedDataItem="currentIdentity"
+                @bind-SelectedDataItem:after="HandleSelectedDataItemChanged"
+                Responsive="true"
+                PreserveSelection="false">
+            <Columns>
+                
+                <HxGridColumn HeaderText="Name"
+                              ItemTextSelector="@(d => d.Name)"
+                              SortKeySelector="d => d.Name"
+                              IsDefaultSortColumn="true"/>
+                <HxGridColumn HeaderText="Description"
+                              ItemTextSelector="@(d => d.Description)"
+                              SortKeySelector="d => d.Description"/>
+                <HxGridColumn HeaderText="SSID"
+                              ItemTextSelector="@(d => d.SSID)"
+                              SortKeySelector="d => d.SSID"/>
+                <HxGridColumn HeaderText="SFID"
+                              ItemTextSelector="@(d => d.SFID)"
+                              SortKeySelector="d => d.SFID"/>
+                
+                <HxContextMenuGridColumn Context="currentIdentity">
+                    <HxContextMenu>
+                        <HxContextMenuItem Text="Edit"
+                                           Icon="BootstrapIcon.Pen"
+                                           OnClick="async () => await HandleEditClick(currentIdentity)" />
+
+                        <HxContextMenuItem Text="Delete"
+                                           Icon="BootstrapIcon.Trash"
+                                           OnClick="async () => await HandleDeleteClick(currentIdentity)"
+                                           ConfirmationQuestion="@($"Are you sure you really want to delete selected identitys? ({currentIdentity.Id})")"/>
+
+                    </HxContextMenu>
+                </HxContextMenuGridColumn>
+            </Columns>
+        </HxGrid>
+    </DataTemplate>
+ 
+</HxListLayout>

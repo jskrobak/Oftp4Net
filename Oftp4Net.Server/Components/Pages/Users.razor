@@ -1,0 +1,64 @@
+@page "/Users"
+@rendermode InteractiveServer
+@using Oftp4Net.Services
+
+<HxCard>
+    <HeaderTemplate>
+        <div class="d-flex align-items-center">
+            <h5 class="card-title me-auto mb-0">Users</h5>
+            <HxButton Text="New user" Color="ThemeColor.Primary" Icon="BootstrapIcon.PlusLg" OnClick="() => editModal.ShowAsync()" />
+        </div>
+    </HeaderTemplate>
+    <BodyTemplate>
+        <table class="table align-middle">
+            <thead>
+            <tr>
+                <th>User name</th>
+                <th>Created</th>
+                <th>Last sign in</th>
+                <th></th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var user in users)
+            {
+                <tr>
+                    <td>@user.UserName</td>
+                    <td>@user.Created.ToString("g")</td>
+                    <td>@user.LastLogin?.ToString("g")</td>
+                    <td>
+                        @if (user.MustChangePassword)
+                        {
+                            <HxBadge Color="ThemeColor.Warning">must change password</HxBadge>
+                        }
+                    </td>
+                    <td class="text-end">
+                        <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Key" Tooltip="Reset password"
+                                  OnClick="() => ShowResetAsync(user)" />
+                        @if (user.UserName != currentUserName)
+                        {
+                            <HxButton Size="ButtonSize.Small" Color="ThemeColor.Danger" Icon="BootstrapIcon.Trash" Tooltip="Delete"
+                                      OnClick="() => DeleteAsync(user)" />
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </BodyTemplate>
+</HxCard>
+
+<HxModal @ref="editModal" Title="@(resetUser is null ? "New user" : $"Reset password of {resetUser.UserName}")" ShowCloseButton="true" OnClosed="() => resetUser = null">
+    <BodyTemplate>
+        @if (resetUser is null)
+        {
+            <HxInputText Label="User name" @bind-Value="newUserName" MaxLength="50" />
+        }
+        <HxInputText Label="Password" Type="InputType.Password" @bind-Value="newPassword" Hint="@($"At least {UserService.MinPasswordLength} characters.")" />
+        <HxCheckbox Label="Must change the password at next sign in" @bind-Value="mustChangePassword" />
+    </BodyTemplate>
+    <FooterTemplate>
+        <HxButton Text="Save" Color="ThemeColor.Primary" OnClick="SaveAsync" />
+    </FooterTemplate>
+</HxModal>

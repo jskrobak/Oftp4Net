@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <ItemGroup>
+      <ProjectReference Include="..\Oftp4Net.Core\Oftp4Net.Core.csproj" />
+      <ProjectReference Include="..\Oftp4Net.DataLayer\Oftp4Net.DataLayer.csproj" />
+      <ProjectReference Include="..\Oftp4Net.Domain\Oftp4Net.Domain.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Havit.Blazor.Components.Web.Bootstrap" />
+    </ItemGroup>
+
+</Project>

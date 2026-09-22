@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.DotSettings.user
+.DS_Store
+appsettings.*.local.json
+appSettings.Entity.*.local.json
+/data/
+**/uploads/
+**/logs/
+TestResults/
+received/
+outbox/

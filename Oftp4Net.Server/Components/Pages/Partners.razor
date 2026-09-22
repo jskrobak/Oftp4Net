@@ -1,0 +1,131 @@
+@page "/Partners"
+@rendermode InteractiveServer
+@using System.Security.Authentication
+@using Oftp4Net.Core
+@using Oftp4Net.DataLayer.Filters
+@using Oftp4Net.Domain
+<style>
+    .scrollable-table-container {
+        overflow: auto;
+        height: calc(100vh - 160px);
+    }
+</style>
+<HxModal @ref="partnerEditModal" ShowCloseButton="true">
+    <HeaderTemplate>
+        Edit Oftp Partner
+    </HeaderTemplate>
+    <BodyTemplate>
+            @if (currentPartner is not null)
+            {
+                <EditForm Model="@currentPartner" OnValidSubmit="@(async() => { await SavePartner(); })">
+                    <DataAnnotationsValidator />
+
+                    <HxInputText Label="Name" @bind-Value="@currentPartner.Name" />
+                    <HxInputText Label="Description" @bind-Value="@currentPartner.Description" />
+                    <HxInputText Label="SSID" @bind-Value="@currentPartner.SSID" />
+                    <HxInputText Label="SFID" @bind-Value="@currentPartner.SFID" />
+                    <HxInputText Label="Password" Hint="Password the partner sends in its SSID. Leave empty to not check it." Type="InputType.Password" @bind-Value="@currentPartner.Password" />
+                    <HxInputText Label="Host" @bind-Value="@currentPartner.Host" />
+                    <HxInputNumber Decimals="0" Type="InputType.Number" Label="Port" @bind-Value="@currentPartner.Port" />
+
+                    <HxCheckbox Label="Use TLS" @bind-Value="@currentPartner.UseTls"></HxCheckbox>
+                
+                    <HxSelect TItem="Certificate"
+                              TValue="int?"
+                              Label="Trusted certificate"
+                              Hint="Partner's server certificate or its CA. Leave empty to use the system trust store."
+                              Data="availableCertificates"
+                              @bind-Value="@currentPartner.TrustedCertificateId"
+                              TextSelector="@(c => $"{c.Name} (valid to {c.ValidTo:d})")"
+                              ValueSelector="@(c => c.Id)"
+                              Nullable="true"
+                              NullText="-system trust store-" />
+
+                    <HxMultiSelect Label="Tls"
+                                   TItem="SslProtocols"
+                                   TValue="int"
+                                   Data="OftpDefaults.AllowedSslProtocols"
+                                   @bind-Value="SelectedTlsVersions"
+                                   TextSelector="@(p => p.ToString())"
+                                   ValueSelector="@(p => (int)p)"
+                                   NullDataText="Loading .."
+                                   EmptyText="-select SSL versions-" />
+
+                
+                    <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
+
+                </EditForm>
+            }
+    </BodyTemplate>
+</HxModal>
+
+<HxListLayout Title="Partners" TFilterModel="PartnerFilter"
+              @bind-FilterModel="filterModel"
+              @bind-FilterModel:after="gridComponent.RefreshDataAsync">
+    <CommandsTemplate>
+        <HxButton Text="New partner"
+                  Color="ThemeColor.Primary"
+                  Icon="BootstrapIcon.PlusLg" OnClick="HandleNewItemClicked" />
+        <HxDropdownButtonGroup>
+            <HxDropdownToggleButton CssClass="contextDropdownToggleButton" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ThreeDots">
+            </HxDropdownToggleButton>
+            <HxDropdownMenu>
+                <HxDropdownItem Icon="BootstrapIcon.Trash" OnClick="HandleDeleteSelected">Delete selected</HxDropdownItem>
+            </HxDropdownMenu>
+        </HxDropdownButtonGroup>
+    </CommandsTemplate>
+    <FilterTemplate Context="filterContext">
+        <HxInputText Label="Name" @bind-Value="filterContext.Name" />
+    </FilterTemplate>
+    <DataTemplate>
+        <HxGrid @ref="gridComponent"
+                ContentNavigationMode="GridContentNavigationMode.Pagination"
+                PageSize="1000"
+                MultiSelectionEnabled="true"
+                @bind-SelectedDataItems="selectedItems"
+                TableContainerCssClass="scrollable-table-container"
+                HeaderRowCssClass="sticky-top"
+                FooterRowCssClass="sticky-bottom"
+                TItem="Partner"
+                DataProvider="GetGridData"
+                @bind-SelectedDataItem="currentPartner"
+                @bind-SelectedDataItem:after="HandleSelectedDataItemChanged"
+                Responsive="true"
+                PreserveSelection="false">
+            <Columns>
+                
+                <HxGridColumn HeaderText="Name"
+                              ItemTextSelector="@(d => d.Name)"
+                              SortKeySelector="d => d.Name"
+                              IsDefaultSortColumn="true"/>
+                <HxGridColumn HeaderText="Description"
+                              ItemTextSelector="@(d => d.Description)"
+                              SortKeySelector="d => d.Description"/>
+                <HxGridColumn HeaderText="SSID"
+                              ItemTextSelector="@(d => d.SSID)"
+                              SortKeySelector="d => d.SSID"/>
+                <HxGridColumn HeaderText="SFID"
+                              ItemTextSelector="@(d => d.SFID)"
+                              SortKeySelector="d => d.SFID"/>
+                <HxGridColumn HeaderText="Host"
+                              ItemTextSelector="@(d => d.Host)"
+                              SortKeySelector="d => d.Host"/>
+                
+                <HxContextMenuGridColumn Context="currentPartner">
+                    <HxContextMenu>
+                        <HxContextMenuItem Text="Edit"
+                                           Icon="BootstrapIcon.Pen"
+                                           OnClick="async () => await HandleEditClick(currentPartner)" />
+
+                        <HxContextMenuItem Text="Delete"
+                                           Icon="BootstrapIcon.Trash"
+                                           OnClick="async () => await HandleDeleteClick(currentPartner)"
+                                           ConfirmationQuestion="@($"Are you sure you really want to delete selected partners? ({currentPartner.Id})")"/>
+
+                    </HxContextMenu>
+                </HxContextMenuGridColumn>
+            </Columns>
+        </HxGrid>
+    </DataTemplate>
+ 
+</HxListLayout>

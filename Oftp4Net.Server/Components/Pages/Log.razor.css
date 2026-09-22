@@ -1,0 +1,10 @@
+﻿.console {
+    font-family: Courier New, Courier, monospace;
+    font-size: 12px;
+    background-color: #303030;
+    color: #ffffffc7;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    overflow: auto;
+    height: calc(100vh - 200px);
+}

@@ -1,0 +1,64 @@
+@page "/Settings"
+@rendermode InteractiveServer
+@using Oftp4Net.Domain
+
+<HxCard>
+    <HeaderTemplate>
+        <h5 class="card-title">Settings</h5>
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (settings is not null)
+        {
+            <EditForm Model="@settings" OnValidSubmit="SaveAsync">
+                <DataAnnotationsValidator />
+
+                <div class="row g-3" style="max-width: 60rem;">
+                    <div class="col-12">
+                        <HxInputText Label="Receive directory"
+                                     Hint="Received files are stored in a sub-directory per partner. Relative paths are resolved against the application directory."
+                                     @bind-Value="@settings.ReceiveDirectory" />
+                    </div>
+
+                    <div class="col-12">
+                        <HxInputText Label="Outbox directory"
+                                     Hint="Files uploaded to the send queue are stored here."
+                                     @bind-Value="@settings.OutboxDirectory" />
+                    </div>
+
+                    <div class="col-md-6">
+                        <HxSelect TItem="Certificate"
+                                  TValue="int?"
+                                  Label="TLS client certificate"
+                                  Hint="Presented to partners that require client authentication."
+                                  Data="availableCertificates"
+                                  @bind-Value="@settings.OftpClientCertificateId"
+                                  TextSelector="@(c => $"{c.Name} (valid to {c.ValidTo:d})")"
+                                  ValueSelector="@(c => c.Id)"
+                                  Nullable="true"
+                                  NullText="-none-" />
+                    </div>
+
+                    <div class="col-md-6">
+                        <HxInputNumber Label="Send queue interval (seconds)" Decimals="0" @bind-Value="@settings.SendIntervalSeconds" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputNumber Label="Maximum retry count" Decimals="0" @bind-Value="@settings.MaxRetryCount" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputNumber Label="Response timeout (seconds)" Decimals="0" @bind-Value="@settings.ResponseTimeoutSeconds" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputNumber Label="Exchange buffer size (octets)" Hint="128 - 99999" Decimals="0" @bind-Value="@settings.ExchangeBufferSize" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputNumber Label="Credit" Hint="Number of DATA buffers sent before waiting for a new credit, 1 - 999" Decimals="0" @bind-Value="@settings.Credit" />
+                    </div>
+
+                    <div class="col-12">
+                        <HxSubmit Color="ThemeColor.Primary" Icon="BootstrapIcon.Save">Save</HxSubmit>
+                    </div>
+                </div>
+            </EditForm>
+        }
+    </BodyTemplate>
+</HxCard>

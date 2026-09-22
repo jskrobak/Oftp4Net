@@ -1,0 +1,45 @@
+using Oftp4Net.Core.Protocol;
+
+namespace Oftp4Net.Core.Session;
+
+public enum OftpRole
+{
+    /// <summary>The side that opened the network connection. It starts as the speaker.</summary>
+    Initiator,
+
+    /// <summary>The side that accepted the network connection.</summary>
+    Responder
+}
+
+public sealed class OftpSessionOptions
+{
+    public const int MinExchangeBufferSize = 128;
+
+    public required OftpRole Role { get; init; }
+
+    /// <summary>Initiator only: identification code (SSIDCODE) sent in the initiator's SSID.</summary>
+    public string LocalCode { get; init; } = "";
+
+    /// <summary>Initiator only: password (SSIDPSWD) sent in the initiator's SSID.</summary>
+    public string LocalPassword { get; init; } = "";
+
+    /// <summary>Proposed data exchange buffer size. The smaller of both proposals is used.</summary>
+    public int ExchangeBufferSize { get; init; } = 4096;
+
+    /// <summary>Proposed credit (number of DATA buffers sent before waiting for CDT). The smaller of both proposals is used.</summary>
+    public int Credit { get; init; } = 64;
+
+    /// <summary>Send / receive capability announced in SSID.</summary>
+    public string SendReceive { get; init; } = SendReceiveCapabilities.Both;
+
+    /// <summary>Maximum time to wait for the next command from the peer.</summary>
+    public TimeSpan ResponseTimeout { get; init; } = TimeSpan.FromMinutes(3);
+
+    internal void Validate()
+    {
+        if (ExchangeBufferSize is < MinExchangeBufferSize or > OftpTransport.MaxExchangeBufferSize)
+            throw new ArgumentOutOfRangeException(nameof(ExchangeBufferSize));
+        if (Credit is < 1 or > 999)
+            throw new ArgumentOutOfRangeException(nameof(Credit));
+    }
+}

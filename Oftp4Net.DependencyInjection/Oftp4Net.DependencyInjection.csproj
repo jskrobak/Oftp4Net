@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <ItemGroup>
+      <PackageReference Include="Havit.Data.Patterns" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore" />
+      <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+      <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Oftp4Net.DataLayer\Oftp4Net.DataLayer.csproj" />
+      <ProjectReference Include="..\Oftp4Net.Entity\Oftp4Net.Entity.csproj" />
+      <ProjectReference Include="..\Oftp4Net.Services\Oftp4Net.Services.csproj" />
+    </ItemGroup>
+
+</Project>

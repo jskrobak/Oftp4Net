@@ -1,0 +1,130 @@
+@page "/Certificates"
+@rendermode InteractiveServer
+@using System.Security.Authentication
+@using Oftp4Net.Core
+@using Oftp4Net.DataLayer.Filters
+@using Oftp4Net.Domain
+<style>
+    .scrollable-table-container {
+        overflow: auto;
+        height: calc(100vh - 160px);
+    }
+</style>
+<HxModal @ref="certificateEditModal" ShowCloseButton="true">
+    <HeaderTemplate>
+        Edit Certificate
+    </HeaderTemplate>
+    <BodyTemplate>
+            @if (currentCertificate is not null)
+            {
+                <EditForm Model="@currentCertificate" OnValidSubmit="@(async() => { await SaveCertificate(); })">
+                    <DataAnnotationsValidator />
+
+                    <HxInputText Label="Name" @bind-Value="@currentCertificate.Name" />
+                
+                    <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
+
+                </EditForm>
+            }
+    </BodyTemplate>
+</HxModal>
+
+
+<HxListLayout Title="Certificates" TFilterModel="CertificateFilter"
+              @bind-FilterModel="filterModel"
+              @bind-FilterModel:after="gridComponent.RefreshDataAsync">
+    <CommandsTemplate>
+        <HxButton Text="Import certificate"
+                  Color="ThemeColor.Primary"
+                  Icon="BootstrapIcon.Upload" OnClick="HandleNewItemClicked" />
+        <HxDropdownButtonGroup>
+            <HxDropdownToggleButton CssClass="contextDropdownToggleButton" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ThreeDots">
+            </HxDropdownToggleButton>
+            <HxDropdownMenu>
+                <HxDropdownItem Icon="BootstrapIcon.Trash" OnClick="HandleDeleteSelected">Delete selected</HxDropdownItem>
+            </HxDropdownMenu>
+        </HxDropdownButtonGroup>
+    </CommandsTemplate>
+    <FilterTemplate Context="filterContext">
+        <HxInputText Label="Name" @bind-Value="filterContext.Name" />
+    </FilterTemplate>
+    <DataTemplate>
+        <HxGrid @ref="gridComponent"
+                ContentNavigationMode="GridContentNavigationMode.Pagination"
+                PageSize="1000"
+                MultiSelectionEnabled="true"
+                @bind-SelectedDataItems="selectedItems"
+                TableContainerCssClass="scrollable-table-container"
+                HeaderRowCssClass="sticky-top"
+                FooterRowCssClass="sticky-bottom"
+                TItem="Certificate"
+                DataProvider="GetGridData"
+                @bind-SelectedDataItem="currentCertificate"
+                @bind-SelectedDataItem:after="HandleSelectedDataItemChanged"
+                Responsive="true"
+                PreserveSelection="false">
+            <Columns>
+                
+                <HxGridColumn HeaderText="Name"
+                              ItemTextSelector="@(d => d.Name)"
+                              SortKeySelector="d => d.Name"
+                              IsDefaultSortColumn="true"/>
+                <HxGridColumn HeaderText="Has private key"
+                              SortKeySelector="d => d.HasPrivateKey">
+                    <ItemTemplate Context="cert">
+                        @if (cert.HasPrivateKey)
+                        {
+                            <HxIcon Icon="BootstrapIcon.Key"/>
+                        }
+                    </ItemTemplate>
+                </HxGridColumn>
+                <HxGridColumn HeaderText="Valid from"
+                              ItemTextSelector="@(d => d.ValidFrom.ToString("d"))"
+                              SortKeySelector="d => d.ValidFrom"
+                              ItemCssClass="text-end"
+                              HeaderCssClass="text-end"/>
+                <HxGridColumn HeaderText="SFID"
+                              ItemTextSelector="@(d => d.ValidTo.ToString("d"))"
+                              SortKeySelector="d => d.ValidTo"
+                              ItemCssClass="text-end"
+                              HeaderCssClass="text-end"/>
+                
+                <HxContextMenuGridColumn Context="currentCertificate">
+                    <HxContextMenu>
+                        <HxContextMenuItem Text="Edit"
+                                           Icon="BootstrapIcon.Pen"
+                                           OnClick="async () => await HandleEditClick(currentCertificate)" />
+
+                        <HxContextMenuItem Text="Delete"
+                                           Icon="BootstrapIcon.Trash"
+                                           OnClick="async () => await HandleDeleteClick(currentCertificate)"
+                                           ConfirmationQuestion="@($"Are you sure you really want to delete selected certificates? ({currentCertificate.Id})")"/>
+
+                    </HxContextMenu>
+                </HxContextMenuGridColumn>
+            </Columns>
+        </HxGrid>
+    </DataTemplate>
+ 
+</HxListLayout>
+
+<HxOffcanvas @ref="importOffCanvasComponent" Title="Import certificate from file" Backdrop="OffcanvasBackdrop.Static">
+    <BodyTemplate>
+       
+        <HxInputFile @ref="inputFileComponent"
+                     Label="File"
+                     UploadUrl="/upload"
+                     OnFileUploaded="HandleFileUploaded"
+                     Accept="application/x-pkcs12,application/x-x509-ca-cert,application/x-x509-user-cert"
+                     Multiple="false"
+                     MaxFileSize="500000" />
+
+        <HxInputText @bind-Value="inputPassword" MaxLength="50" Label="Password" Type="InputType.Password" />
+    </BodyTemplate>
+    <FooterTemplate>
+        <HxButton Text="Import" 
+                  Color="ThemeColor.Primary" 
+                  Icon="BootstrapIcon.FiletypeKey" 
+                  OnClick="HandleImport" />
+    </FooterTemplate>
+</HxOffcanvas>

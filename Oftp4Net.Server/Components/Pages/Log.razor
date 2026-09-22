@@ -1,0 +1,22 @@
+@page "/Log"
+@rendermode InteractiveServer
+@using Oftp4Net.Server.Logging
+
+<PageTitle>Oftp4Net | Log</PageTitle>
+
+<div class="d-flex align-items-center mb-2 gap-2">
+    <h3 class="me-auto mb-0">Log</h3>
+    <HxSelect TItem="LogLevel" TValue="LogLevel" Data="levels" @bind-Value="minLevel" Nullable="false" InputSize="InputSize.Small" />
+    <HxButtonGroup>
+        <HxButton Color="ThemeColor.Primary" Tooltip="@(paused ? "Resume" : "Pause")" OnClick="() => paused = !paused"
+                  Icon="@(paused ? BootstrapIcon.Play : BootstrapIcon.Pause)" />
+        <HxButton Color="ThemeColor.Danger" Tooltip="Clear" OnClick="messages.Clear" Icon="BootstrapIcon.Trash3Fill" />
+    </HxButtonGroup>
+</div>
+
+<div class="console">
+    @foreach (var log in messages.Where(m => m.Level >= minLevel))
+    {
+        <div class="@GetCssClass(log.Level)">@log.Timestamp.ToString("HH:mm:ss.fff") @log.Level.ToString()[..4].ToUpperInvariant() @log.Message</div>
+    }
+</div>

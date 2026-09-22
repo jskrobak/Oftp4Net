@@ -1,0 +1,39 @@
+@page "/Login"
+@layout Layout.EmptyLayout
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@using Microsoft.AspNetCore.Authorization
+
+<PageTitle>Oftp4Net | Sign in</PageTitle>
+
+<div class="card shadow-sm" style="width: 22rem;">
+    <div class="card-body">
+        <h4 class="card-title mb-4">Oftp4Net</h4>
+
+        @if (Error is not null)
+        {
+            <div class="alert alert-danger py-2">@ErrorMessage</div>
+        }
+
+        <form method="post" action="account/login" data-enhance="false">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <div class="mb-3">
+                <label for="username" class="form-label">User name</label>
+                <input id="username" name="username" class="form-control" autocomplete="username" required autofocus />
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input id="password" name="password" type="password" class="form-control" autocomplete="current-password" required />
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Sign in</button>
+        </form>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery] private string? Error { get; set; }
+
+    private string ErrorMessage => "Invalid user name or password.";
+}

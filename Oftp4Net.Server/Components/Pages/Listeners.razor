@@ -1,0 +1,145 @@
+@page "/Listeners"
+@rendermode InteractiveServer
+@using System.Security.Authentication
+@using Oftp4Net.Core
+@using Oftp4Net.DataLayer.Filters
+@using Oftp4Net.Domain
+<style>
+    .scrollable-table-container {
+        overflow: auto;
+        height: calc(100vh - 160px);
+    }
+</style>
+<HxModal @ref="listenerEditModal" ShowCloseButton="true">
+    <HeaderTemplate>
+        Edit Listener
+    </HeaderTemplate>
+    <BodyTemplate>
+            @if (currentListener is not null)
+            {
+                <EditForm Model="@currentListener" OnValidSubmit="@(async() => { await SaveListener(); })">
+                    <DataAnnotationsValidator />
+
+                    <HxInputText Label="Name" @bind-Value="@currentListener.Name" />
+                    <HxCheckbox Label="Enabled" @bind-Value="@currentListener.Enabled" />
+                    <HxInputText Label="Listen IP address" Hint="0.0.0.0 = all IPv4 addresses, :: = all IPv6 addresses" @bind-Value="@currentListener.ListenIPAddress" />
+                    <HxInputNumber Decimals="0" Label="Port" Hint="6619 for OFTP over TLS, 3305 for plain TCP" @bind-Value="@currentListener.Port" />
+
+                    <HxSelect TItem="Identity"
+                              TValue="int?"
+                              Label="Identity"
+                              Hint="Presented to partners in the responder's SSID."
+                              Data="availableIdentities"
+                              @bind-Value="@currentListener.IdentityId"
+                              TextSelector="@(p => $"{p.Name} ({p.SSID})")"
+                              ValueSelector="@(p => p.Id)"
+                              Nullable="true"
+                              NullText="-select identity-" />
+
+                    <HxCheckbox Label="Use TLS" @bind-Value="@currentListener.UseTls" />
+
+                    @if (currentListener.UseTls)
+                    {
+                        <HxSelect TItem="Certificate"
+                                  TValue="int?"
+                                  Label="Server certificate"
+                                  Data="availableCertificates.Where(c => c.HasPrivateKey).ToList()"
+                                  @bind-Value="@currentListener.CertificateId"
+                                  TextSelector="@(c => $"{c.Name} (valid to {c.ValidTo:d})")"
+                                  ValueSelector="@(c => c.Id)"
+                                  Nullable="true"
+                                  NullText="-select certificate with private key-" />
+
+                        <HxMultiSelect Label="TLS versions"
+                                       TItem="SslProtocols"
+                                       TValue="int"
+                                       Data="OftpDefaults.AllowedSslProtocols"
+                                       @bind-Value="SelectedTlsVersions"
+                                       TextSelector="@(p => p.ToString())"
+                                       ValueSelector="@(p => (int)p)"
+                                       EmptyText="-select TLS versions-" />
+
+                        <HxCheckbox Label="Require client certificate" @bind-Value="@currentListener.RequireClientCertificate" />
+                    }
+
+                    <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
+                </EditForm>
+            }
+    </BodyTemplate>
+</HxModal>
+
+<HxListLayout Title="Listeners" TFilterModel="ListenerFilter"
+              @bind-FilterModel="filterModel"
+              @bind-FilterModel:after="gridComponent.RefreshDataAsync">
+    <CommandsTemplate>
+        <HxButton Text="New listener"
+                  Color="ThemeColor.Primary"
+                  Icon="BootstrapIcon.PlusLg" OnClick="HandleNewItemClicked" />
+        <HxButton Text="Restart listeners"
+                  Color="ThemeColor.Secondary"
+                  Icon="BootstrapIcon.ArrowClockwise" OnClick="HandleRestartClicked" />
+    </CommandsTemplate>
+    <FilterTemplate Context="filterContext">
+        <HxInputText Label="Name" @bind-Value="filterContext.Name" />
+    </FilterTemplate>
+    <DataTemplate>
+        <HxGrid @ref="gridComponent"
+                ContentNavigationMode="GridContentNavigationMode.Pagination"
+                PageSize="1000"
+                TableContainerCssClass="scrollable-table-container"
+                HeaderRowCssClass="sticky-top"
+                TItem="Listener"
+                DataProvider="GetGridData"
+                @bind-SelectedDataItem="currentListener"
+                @bind-SelectedDataItem:after="HandleSelectedDataItemChanged"
+                Responsive="true"
+                PreserveSelection="false">
+            <Columns>
+                <HxGridColumn HeaderText="Name"
+                              ItemTextSelector="@(d => d.Name)"
+                              SortKeySelector="d => d.Name"
+                              IsDefaultSortColumn="true"/>
+                <HxGridColumn HeaderText="End point"
+                              ItemTextSelector="@(d => $"{d.ListenIPAddress}:{d.Port}")"/>
+                <HxGridColumn HeaderText="Security"
+                              ItemTextSelector="@(d => d.UseTls ? "TLS" : "plain TCP")"/>
+                <HxGridColumn HeaderText="Identity"
+                              ItemTextSelector="@(d => d.Identity?.Name)"/>
+                <HxGridColumn HeaderText="Status">
+                    <ItemTemplate Context="listener">
+                        @{ var status = GetStatus(listener); }
+                        @if (!listener.Enabled)
+                        {
+                            <HxBadge Color="ThemeColor.Secondary">Disabled</HxBadge>
+                        }
+                        else if (status is { Running: true })
+                        {
+                            <HxBadge Color="ThemeColor.Success">Running</HxBadge>
+                            @if (status.ActiveSessions > 0)
+                            {
+                                <span class="ms-2">@status.ActiveSessions active session(s)</span>
+                            }
+                        }
+                        else
+                        {
+                            <HxBadge Color="ThemeColor.Danger">Stopped</HxBadge>
+                            <span class="ms-2 text-danger">@status?.Error</span>
+                        }
+                    </ItemTemplate>
+                </HxGridColumn>
+
+                <HxContextMenuGridColumn Context="listener">
+                    <HxContextMenu>
+                        <HxContextMenuItem Text="Edit"
+                                           Icon="BootstrapIcon.Pen"
+                                           OnClick="async () => await HandleEditClick(listener)" />
+                        <HxContextMenuItem Text="Delete"
+                                           Icon="BootstrapIcon.Trash"
+                                           OnClick="async () => await HandleDeleteClick(listener)"
+                                           ConfirmationQuestion="@($"Delete listener {listener.Name}?")"/>
+                    </HxContextMenu>
+                </HxContextMenuGridColumn>
+            </Columns>
+        </HxGrid>
+    </DataTemplate>
+</HxListLayout>

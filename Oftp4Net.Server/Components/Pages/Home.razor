@@ -1,0 +1,84 @@
+@page "/"
+@rendermode InteractiveServer
+<style>
+    .card-header {
+        background-color: var(--bs-card-bg);
+        padding-top: 15px !important;
+        padding-bottom: 15px !important;
+    }
+</style>
+
+<HxCard>
+    <HeaderTemplate>
+        <h5 class="card-title me-auto">Dashboard</h5>
+    </HeaderTemplate>
+    <BodyTemplate>
+        <div class="d-flex flex-wrap gap-3">
+            <HxCard style="width: 26rem;">
+                <HeaderTemplate>
+                    <HxCardTitle>Send service</HxCardTitle>
+                </HeaderTemplate>
+                <BodyTemplate>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            @if (!SendService.IsRunning)
+                            {
+                                <HxBadge Color="ThemeColor.Danger">Stopped</HxBadge>
+                            }
+                            else if (SendService.IsPaused)
+                            {
+                                <HxBadge Color="ThemeColor.Warning">Paused</HxBadge>
+                            }
+                            else
+                            {
+                                <HxBadge Color="ThemeColor.Success">Running</HxBadge>
+                            }
+                            <div class="small text-body-secondary mt-1">Last run: @(SendService.LastRun?.ToString("g") ?? "never")</div>
+                        </div>
+                        <HxButtonGroup>
+                            <HxButton Color="ThemeColor.Primary" Tooltip="Send now" OnClick="SendService.Trigger" Icon="BootstrapIcon.Send" />
+                            <HxButton Color="ThemeColor.Secondary" Tooltip="@(SendService.IsPaused ? "Resume" : "Pause")"
+                                      OnClick="ToggleSendService"
+                                      Icon="@(SendService.IsPaused ? BootstrapIcon.Play : BootstrapIcon.Pause)" />
+                        </HxButtonGroup>
+                    </div>
+                </BodyTemplate>
+            </HxCard>
+
+            <HxCard style="width: 32rem;">
+                <HeaderTemplate>
+                    <HxCardTitle>Listeners</HxCardTitle>
+                </HeaderTemplate>
+                <BodyTemplate>
+                    @if (ListenerService.Status.Count == 0)
+                    {
+                        <span class="text-body-secondary">No listener is enabled. <a href="Listeners">Configure listeners</a> to receive files.</span>
+                    }
+                    <HxListGroup>
+                        @foreach (var status in ListenerService.Status)
+                        {
+                            <HxListGroupItem CssClass="d-flex justify-content-between align-items-start">
+                                <div class="me-auto">
+                                    <div class="fw-bold">@status.Name</div>
+                                    <span class="small">@status.EndPoint</span>
+                                    @if (status.Error is not null)
+                                    {
+                                        <div class="small text-danger">@status.Error</div>
+                                    }
+                                </div>
+                                @if (status.Running)
+                                {
+                                    <HxBadge Color="ThemeColor.Success">@status.ActiveSessions active</HxBadge>
+                                }
+                                else
+                                {
+                                    <HxBadge Color="ThemeColor.Danger">Stopped</HxBadge>
+                                }
+                            </HxListGroupItem>
+                        }
+                    </HxListGroup>
+                </BodyTemplate>
+            </HxCard>
+        </div>
+    </BodyTemplate>
+</HxCard>

@@ -1,0 +1,173 @@
+@page "/SendQueue"
+
+@rendermode InteractiveServer
+@using Havit.Collections
+@using Oftp4Net.DataLayer.Filters
+@using Oftp4Net.Domain
+<style>
+    .scrollable-table-container {
+        overflow: auto;
+        height: calc(100vh - 160px);
+    }
+</style>
+
+<HxModal @ref="sendQueueItemEditModal" ShowCloseButton="true" OnClosed="EditModalClosed">
+    <HeaderTemplate>
+        Edit Oftp SendQueueItem
+    </HeaderTemplate>
+    <BodyTemplate>
+            @if (currentSendQueueItem is not null)
+            {
+                <EditForm Model="@currentSendQueueItem" OnValidSubmit="@(async() => { await SaveSendQueueItem(); })">
+                    <DataAnnotationsValidator />
+
+                    <HxInputFile @ref="inputFileComponent"
+                                 Label="Upload file"
+                                 Hint="The file is uploaded to the outbox directory right after it is selected."
+                                 UploadUrl="/upload/outbox"
+                                 OnChange="HandleFileSelected"
+                                 OnProgress="HandleUploadProgress"
+                                 OnFileUploaded="HandleFileUploaded"
+                                 Multiple="false"
+                                 MaxFileSize="MaxUploadFileSize" />
+                    @if (uploadProgress is not null)
+                    {
+                        <HxProgress CssClass="mb-3" Height="5">
+                            <HxProgressBar Value="@uploadProgress.Value" />
+                        </HxProgress>
+                    }
+
+                    <HxInputText Label="File path" Hint="Filled in by the upload, or enter the path of an existing file on the server." @bind-Value="@currentSendQueueItem.FilePath" />
+                    <HxInputText Label="Virtual file name" Hint="Max. 26 characters, e.g. ORDERS.EDI" MaxLength="26" @bind-Value="@currentSendQueueItem.VirtualFileName" />
+                    <HxInputText Label="Description" @bind-Value="@currentSendQueueItem.Description" />
+
+
+                    <HxSelect TItem="Identity"
+                              TValue="int"
+                              Label="Identity"
+                              Data="availableIdentities"
+                              @bind-Value="@currentSendQueueItem.IdentityId"
+                              TextSelector="@(p => p.Name)"
+                              ValueSelector="@(p => p.Id)"
+                              Nullable="false"/>
+                
+                    <HxSelect TItem="Partner"
+                              TValue="int"
+                              Label="Partner"
+                              Data="availablePartners"
+                              @bind-Value="@currentSendQueueItem.PartnerId"
+                              TextSelector="@(p => p.Name)"
+                              ValueSelector="@(p => p.Id)"
+                              Nullable="false"/>
+
+                
+                    <HxSubmit Color="ThemeColor.Primary" Enabled="@(uploadProgress is null)">Save</HxSubmit>
+
+                </EditForm>
+            }
+    </BodyTemplate>
+</HxModal>
+
+<HxListLayout Title="Send Queue" TFilterModel="SendQueueFilter"
+              @bind-FilterModel="filterModel"
+              @bind-FilterModel:after="gridComponent.RefreshDataAsync">
+    <CommandsTemplate>
+        <HxButton @ref="btnAdd" Text="New Item"
+                  Color="ThemeColor.Primary"
+                  Icon="BootstrapIcon.PlusLg" OnClick="HandleNewItemClicked" />
+        <HxButton Text="Send now"
+                  Color="ThemeColor.Secondary"
+                  Icon="BootstrapIcon.Send" OnClick="HandleSendNowClicked" />
+        <HxDropdownButtonGroup>
+            <HxDropdownToggleButton CssClass="contextDropdownToggleButton" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ThreeDots">
+            </HxDropdownToggleButton>
+            <HxDropdownMenu>
+                <HxDropdownItem Icon="BootstrapIcon.Trash" OnClick="HandleClearQueue">Clear queue</HxDropdownItem>
+            </HxDropdownMenu>
+        </HxDropdownButtonGroup>
+    </CommandsTemplate>
+    <FilterTemplate Context="filterContext">
+        <HxInputText Label="Name" @bind-Value="filterContext.Name" />
+    </FilterTemplate>
+    <DataTemplate>
+        
+        <div style="width: 100%; height: 5px; background-color: #ddd;">
+            <div style="height: 100%; width: @_progress%; background-color: #555; transition: width 1s;"></div>
+        </div>
+        
+        <HxGrid @ref="gridComponent"
+                ContentNavigationMode="GridContentNavigationMode.Pagination"
+                PageSize="1000"
+                MultiSelectionEnabled="true"
+                TableContainerCssClass="scrollable-table-container"
+                HeaderRowCssClass="sticky-top"
+                FooterRowCssClass="sticky-bottom"
+                TItem="SendQueueItem"
+                DataProvider="GetGridData"
+                @bind-SelectedDataItem="@currentSendQueueItem"
+                @bind-SelectedDataItem:after="HandleSelectedDataItemChanged"
+                Responsive="true"
+                PreserveSelection="false">
+            <Columns>
+
+                <HxGridColumn HeaderText="Created"
+                              ItemTextSelector="@(d => d.Created.ToString("g"))"
+                              SortKeySelector="d => d.Created"
+                              IsDefaultSortColumn="true"
+                              SortDirection="SortDirection.Descending"/>
+                <HxGridColumn HeaderText="VFN"
+                              ItemTextSelector="@(d => d.VirtualFileName)"
+                              SortKeySelector="d => d.VirtualFileName"/>
+                <HxGridColumn HeaderText="Identity"
+                              ItemTextSelector="@(d => d.Identity.Name)"
+                              SortKeySelector="d => d.Identity.Name"/>
+                <HxGridColumn HeaderText="Partner"
+                              ItemTextSelector="@(d => d.Partner.Name)"
+                              SortKeySelector="d => d.Partner.Name"/>
+                <HxGridColumn HeaderText="File Path"
+                              ItemTextSelector="@(d => d.FilePath)"
+                              SortKeySelector="d => d.FilePath"/>
+                <HxGridColumn HeaderText="Status"
+                              SortKeySelector="d => d.Status">
+                    <ItemTemplate Context="item">
+                        <HxBadge Color="@GetStatusColor(item.Status)">@item.Status</HxBadge>
+                        @if (item.Status == SendStatus.ERROR)
+                        {
+                            <span class="ms-2 small">retry @item.RetryCount at @item.NextRetry.ToString("g")</span>
+                        }
+                    </ItemTemplate>
+                </HxGridColumn>
+                <HxGridColumn HeaderText="Sent"
+                              ItemTextSelector="@(d => d.SentDate?.ToString("g"))"
+                              SortKeySelector="d => d.SentDate"/>
+                <HxGridColumn HeaderText="Delivered (EERP)"
+                              ItemTextSelector="@(d => d.DeliveredDate?.ToString("g"))"
+                              SortKeySelector="d => d.DeliveredDate"/>
+                <HxGridColumn HeaderText="Last error"
+                              ItemTextSelector="@(d => d.LastError)"
+                              ItemCssClass="text-danger small"/>
+
+
+                <HxContextMenuGridColumn Context="currentSendQueueItem">
+                    <HxContextMenu>
+                        <HxContextMenuItem Text="Edit"
+                                           Icon="BootstrapIcon.Pen"
+                                           OnClick="async () => await HandleEditClick(currentSendQueueItem)"/>
+
+                        <HxContextMenuItem Text="Send again"
+                                           Icon="BootstrapIcon.ArrowRepeat"
+                                           OnClick="async () => await HandleRequeueClick(currentSendQueueItem)"
+                                           ConfirmationQuestion="Put the file back to the queue?"/>
+
+                        <HxContextMenuItem Text="Delete"
+                                           Icon="BootstrapIcon.Trash"
+                                           OnClick="async () => await HandleDeleteClick(currentSendQueueItem)"
+                                           ConfirmationQuestion="@($"Are you sure you really want to delete selected items? ({currentSendQueueItem.Id})")"/>
+
+                    </HxContextMenu>
+                </HxContextMenuGridColumn>
+            </Columns>
+        </HxGrid>
+    </DataTemplate>
+ 
+</HxListLayout>

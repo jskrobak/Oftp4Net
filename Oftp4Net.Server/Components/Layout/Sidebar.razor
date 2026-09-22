@@ -1,0 +1,47 @@
+@inject NavigationManager NavigationManager
+
+
+<HxSidebar CssClass="sticky-md-top sidebar" CollapsedChanged="HandleCollapsedChanged" Collapsed="@isCollapsed">
+    <HeaderTemplate>
+        <HxSidebarBrand BrandName="Oftp4Net" BrandNameShort="O4N"/>
+    </HeaderTemplate>
+    <ItemsTemplate>
+        
+        <HxSidebarItem Text="Home" Href="" Match="NavLinkMatch.All" Icon="BootstrapIcon.House" TooltipText="Home"/>
+        <HxSidebarItem Text="Identities" Href="Identities" Match="NavLinkMatch.All" Icon="BootstrapIcon.Person" TooltipText="Identities"/>
+        <HxSidebarItem Text="Partners" Href="Partners" Match="NavLinkMatch.All" Icon="BootstrapIcon.People" TooltipText="Partners"/>
+
+        <HxSidebarItem Text="Queues" Icon="BootstrapIcon.BoxArrowInDownRight">
+            <HxSidebarItem Text="Send queue" Href="SendQueue" Match="NavLinkMatch.All" Icon="BootstrapIcon.Send" TooltipText="Outbound message queue"/>
+            <HxSidebarItem Text="Received files" Href="ReceivedFiles" Match="NavLinkMatch.All" Icon="BootstrapIcon.Inbox" TooltipText="Inbound files"/>
+        </HxSidebarItem>
+        
+        <HxSidebarItem Text="Logs" Icon="BootstrapIcon.Lightbulb">
+            <HxSidebarItem Text="Log stream" Href="Log" Match="NavLinkMatch.All" Icon="BootstrapIcon.Lightning" TooltipText="Watch Log Stream"/>    
+        </HxSidebarItem>
+        
+        <HxSidebarItem Text="Settings" Icon="BootstrapIcon.Gear">
+            <HxSidebarItem Text="Certificates" Href="Certificates" Match="NavLinkMatch.All" Icon="BootstrapIcon.Key" TooltipText="Certificates"/>
+            <HxSidebarItem Text="Listeners" Href="Listeners" Match="NavLinkMatch.All" Icon="BootstrapIcon.Ear" TooltipText="Listeners"/>
+            <HxSidebarItem Text="General" Href="Settings" Match="NavLinkMatch.All" Icon="BootstrapIcon.Sliders" TooltipText="General settings"/>
+            <HxSidebarItem Text="Users" Href="Users" Match="NavLinkMatch.All" Icon="BootstrapIcon.PersonLock" TooltipText="Users of the administration"/>
+        </HxSidebarItem>
+       
+    </ItemsTemplate>
+    <FooterTemplate>
+        <div class="d-flex align-items-center gap-2">
+            <Oftp4Net.Server.Components.ColorMode.ColorModeSwitcher/>
+            <AuthorizeView Context="auth">
+                <a href="ChangePassword" class="ms-auto btn btn-sm btn-link" title="Change password of @auth.User.Identity?.Name">
+                    <HxIcon Icon="BootstrapIcon.Key" />
+                </a>
+                <form method="post" action="account/logout" data-enhance="false">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn btn-sm btn-link" title="Sign out @auth.User.Identity?.Name">
+                        <HxIcon Icon="BootstrapIcon.BoxArrowRight" />
+                    </button>
+                </form>
+            </AuthorizeView>
+        </div>
+    </FooterTemplate>
+</HxSidebar>

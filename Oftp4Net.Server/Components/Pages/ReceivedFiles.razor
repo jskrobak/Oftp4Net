@@ -1,0 +1,76 @@
+@page "/ReceivedFiles"
+@rendermode InteractiveServer
+@using Havit.Collections
+@using Oftp4Net.DataLayer.Filters
+@using Oftp4Net.Domain
+<style>
+    .scrollable-table-container {
+        overflow: auto;
+        height: calc(100vh - 160px);
+    }
+</style>
+
+<HxListLayout Title="Received files" TFilterModel="ReceivedFileFilter"
+              @bind-FilterModel="filterModel"
+              @bind-FilterModel:after="gridComponent.RefreshDataAsync">
+    <CommandsTemplate>
+        <HxButton Text="Refresh"
+                  Color="ThemeColor.Secondary"
+                  Icon="BootstrapIcon.ArrowClockwise" OnClick="() => gridComponent.RefreshDataAsync()" />
+    </CommandsTemplate>
+    <FilterTemplate Context="filterContext">
+        <HxInputText Label="Virtual file name" @bind-Value="filterContext.Name" />
+    </FilterTemplate>
+    <DataTemplate>
+        <HxGrid @ref="gridComponent"
+                ContentNavigationMode="GridContentNavigationMode.Pagination"
+                PageSize="1000"
+                TableContainerCssClass="scrollable-table-container"
+                HeaderRowCssClass="sticky-top"
+                TItem="ReceivedFile"
+                DataProvider="GetGridData"
+                Responsive="true">
+            <Columns>
+                <HxGridColumn HeaderText="Received"
+                              ItemTextSelector="@(d => d.Created.ToString("g"))"
+                              SortKeySelector="d => d.Created"
+                              IsDefaultSortColumn="true"
+                              SortDirection="SortDirection.Descending"/>
+                <HxGridColumn HeaderText="VFN"
+                              ItemTextSelector="@(d => d.VirtualFileName)"
+                              SortKeySelector="d => d.VirtualFileName"/>
+                <HxGridColumn HeaderText="Partner"
+                              ItemTextSelector="@(d => d.Partner?.Name)"/>
+                <HxGridColumn HeaderText="Originator"
+                              ItemTextSelector="@(d => d.Originator)"/>
+                <HxGridColumn HeaderText="Destination"
+                              ItemTextSelector="@(d => d.Destination)"/>
+                <HxGridColumn HeaderText="Size"
+                              ItemTextSelector="@(d => d.Size.ToString("N0"))"
+                              SortKeySelector="d => d.Size"
+                              ItemCssClass="text-end"
+                              HeaderCssClass="text-end"/>
+                <HxGridColumn HeaderText="Status"
+                              SortKeySelector="d => d.Status">
+                    <ItemTemplate Context="file">
+                        <HxBadge Color="@GetStatusColor(file.Status)">@file.Status</HxBadge>
+                        @if (!string.IsNullOrEmpty(file.LastError))
+                        {
+                            <span class="ms-2 text-danger">@file.LastError</span>
+                        }
+                    </ItemTemplate>
+                </HxGridColumn>
+                <HxGridColumn HeaderText="">
+                    <ItemTemplate Context="file">
+                        @if (file.Status is ReceiveStatus.RECEIVED or ReceiveStatus.CONFIRMED)
+                        {
+                            <a href="@($"received/{file.Id}/download")" target="_blank" title="Download">
+                                <HxIcon Icon="BootstrapIcon.Download"/>
+                            </a>
+                        }
+                    </ItemTemplate>
+                </HxGridColumn>
+            </Columns>
+        </HxGrid>
+    </DataTemplate>
+</HxListLayout>

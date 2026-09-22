@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <ItemGroup>
+      <PackageReference Include="Havit.Blazor.Components.Web.Bootstrap" />
+      <PackageReference Include="Havit.Data.EntityFrameworkCore" />
+      <PackageReference Include="Havit.Data.EntityFrameworkCore.Patterns" />
+      <PackageReference Include="Havit.Data.Patterns" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Oftp4Net.Domain\Oftp4Net.Domain.csproj" />
+      <ProjectReference Include="..\Oftp4Net.Entity\Oftp4Net.Entity.csproj" />
+    </ItemGroup>
+
+</Project>
