@@ -212,8 +212,9 @@ The cipher suites are those of RFC 5024 and the extensions of the Odette OFTP2 E
 | `07` | AES-256-CBC | the same | SHA3-512 |
 | `08`, `09`, `10` | AES-256-CBC | RSA-PSS and RSA-OAEP | SHA-256, SHA-512, SHA3-512 |
 
-`01` and `02` are supported by every OFTP2 node. The suites with SHA3 (`07` and `10`) are offered only where the
-platform provides it (Linux with OpenSSL 1.1.1+, recent Windows; not macOS). The datasheet of a partner (PDX) can
+`01` and `02` are supported by every OFTP2 node. Suite `07` needs a platform that provides SHA3 (Linux with
+OpenSSL 1.1.1+, recent Windows; not macOS), and suite `10` is not offered at all for now: .NET knows no signature
+algorithm for RSA-PSS with a SHA3 digest, so such a signature cannot be produced. The datasheet of a partner (PDX) can
 only announce the suites its schema knows, up to `07`; `08` to `10` are used with partners that agreed on them in
 another way.
 

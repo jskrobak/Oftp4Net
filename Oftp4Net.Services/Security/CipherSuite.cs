@@ -63,8 +63,11 @@ public sealed record CipherSuite(string Code, string Name, HashAlgorithmName Has
     /// </summary>
     public bool InCommunicationSetup => int.TryParse(Code, out var number) && number <= 7;
 
-    /// <summary>The platform provides the hash algorithm of the suite.</summary>
-    public bool IsSupported => HashAlgorithm != HashAlgorithmName.SHA3_512 || SHA3_512.IsSupported;
+    /// <summary>The platform can use the suite.</summary>
+    public bool IsSupported =>
+        (HashAlgorithm != HashAlgorithmName.SHA3_512 || SHA3_512.IsSupported) &&
+        // .NET knows no signature algorithm for RSA-PSS with a SHA3 digest, so suite 10 cannot be produced yet.
+        !(SignaturePadding == RSASignaturePadding.Pss && HashAlgorithm == HashAlgorithmName.SHA3_512);
 
     /// <summary>OID of the hash algorithm, used as the digest algorithm of CMS signatures.</summary>
     public Oid DigestAlgorithm => HashAlgorithm == HashAlgorithmName.SHA3_512
