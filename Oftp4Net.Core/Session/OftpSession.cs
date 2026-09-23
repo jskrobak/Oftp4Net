@@ -24,6 +24,7 @@ public sealed class OftpSession
     private readonly OftpSessionHandler _handler;
     private readonly ILogger _logger;
     private readonly MemoryStream _decodeBuffer = new();
+    private readonly List<int> _recordEnds = [];
 
     private bool _peerAcceptsFiles = true;
 
@@ -364,10 +365,14 @@ public sealed class OftpSession
             Destination = file.Destination,
             Originator = file.Originator,
             Format = file.Format,
-            MaxRecordSize = 0,
+            MaxRecordSize = file.MaxRecordSize,
             FileSize = sizeInBlocks,
             OriginalFileSize = originalSizeInBlocks,
-            RestartPosition = RestartAgreed ? file.RestartPosition : 0,
+            // The restart position of a record structured file is a record number, which we do not support;
+            // such files always start from the beginning.
+            RestartPosition = RestartAgreed && !FileFormats.IsRecordStructured(file.Format)
+                ? file.RestartPosition
+                : 0,
             SecurityLevel = file.SecurityLevel,
             CipherSuite = file.CipherSuite,
             Compression = file.Compression,
@@ -385,7 +390,9 @@ public sealed class OftpSession
                 await _handler.OnFileRefusedAsync(file, OftpAnswer.Reject(sfna.ReasonCode, sfna.ReasonText, sfna.RetryLater),
                     cancellationToken);
                 return false;
-            case SFPA sfpa when sfpa.AnswerCount > (RestartAgreed ? file.RestartPosition : 0):
+            case SFPA sfpa when sfpa.AnswerCount > (RestartAgreed && !FileFormats.IsRecordStructured(file.Format)
+                ? file.RestartPosition
+                : 0):
                 throw new OftpProtocolException(ReasonCodes.ProtocolViolation,
                     $"SFPA answer count {sfpa.AnswerCount} is higher than the offered restart position {file.RestartPosition}.");
             case SFPA sfpa:
@@ -404,7 +411,12 @@ public sealed class OftpSession
             await SkipAsync(content, skipped, cancellationToken);
         }
 
-        var payload = new byte[DATA.MaxPayloadLength(ExchangeBufferSize)];
+        // A signed, compressed or encrypted file has no discernable record boundaries any more, so it is
+        // transferred as unstructured whatever SFIDFMT says (RFC 5024, section 5.3.3).
+        var secured = IsSecured(file.SecurityLevel, file.Compression, file.Enveloping);
+        var reader = new VirtualFileReader(content,
+            secured ? FileFormats.Unstructured : file.Format, file.MaxRecordSize);
+        var builder = new DataBufferBuilder(ExchangeBufferSize, BufferCompressionAgreed);
         var credit = Credit;
         // The unit count of EFID is the size of the whole file, even for a restarted transfer.
         var unitCount = skipped;
@@ -412,24 +424,46 @@ public sealed class OftpSession
 
         while (true)
         {
-            var length = await content.ReadAtLeastAsync(payload, payload.Length, throwOnEndOfStream: false, cancellationToken);
-            if (length == 0)
+            var (data, endOfRecord, endOfFile) = await reader.ReadAsync(cancellationToken);
+            if (endOfFile)
                 break;
 
+            var offset = 0;
+            while (true)
+            {
+                offset += builder.Append(data.Span[offset..], endOfRecord, out var completed);
+                if (completed)
+                    break;
+
+                // The buffer is full, the rest of the record goes into the next one.
+                await SendBufferAsync();
+            }
+
+            unitCount += data.Length;
+            file.BytesSent = unitCount;
+        }
+
+        if (!builder.IsEmpty)
+            await SendBufferAsync();
+
+        await SendAsync(new EFID
+        {
+            // Only fixed and variable files have a record count, the others send zeros.
+            RecordCount = file.RecordCount ?? reader.Records,
+            UnitCount = unitCount,
+        }, cancellationToken);
+
+        async Task SendBufferAsync()
+        {
             if (credit == 0)
             {
                 await ReceiveAsync<CDT>(cancellationToken);
                 credit = Credit;
             }
 
-            await _transport.WriteAsync(
-                DATA.FromPayload(payload.AsSpan(0, length), BufferCompressionAgreed).Encode(), cancellationToken);
+            await _transport.WriteAsync(builder.ToData().Encode(Level), cancellationToken);
             credit--;
-            unitCount += length;
-            file.BytesSent = unitCount;
         }
-
-        await SendAsync(new EFID { RecordCount = 0, UnitCount = unitCount }, cancellationToken);
 
         while (true)
         {
@@ -500,13 +534,16 @@ public sealed class OftpSession
             return;
         }
 
-        var restartPosition = RestartAgreed ? decision.RestartPosition : 0;
+        var restartPosition = RestartAgreed && !FileFormats.IsRecordStructured(sfid.Format) ? decision.RestartPosition : 0;
         if (restartPosition > sfid.RestartPosition)
             throw new InvalidOperationException(
                 $"The restart position {restartPosition} is higher than the position {sfid.RestartPosition} offered by the speaker.");
 
         var file = new OftpIncomingFile { Header = sfid, State = decision.State, RestartPosition = restartPosition };
         var destination = decision.Destination;
+        var securedContent = IsSecured(sfid.SecurityLevel, sfid.Compression, sfid.Enveloping);
+        var writer = new VirtualFileWriter(destination,
+            securedContent ? FileFormats.Unstructured : sfid.Format, sfid.MaxRecordSize);
         EFID efid;
 
         try
@@ -541,8 +578,9 @@ public sealed class OftpSession
                     throw new OftpProtocolException(ReasonCodes.ProtocolViolation, "DATA received without credit.");
 
                 _decodeBuffer.SetLength(0);
-                var length = data.DecodeTo(_decodeBuffer);
-                await destination.WriteAsync(_decodeBuffer.GetBuffer().AsMemory(0, length), cancellationToken);
+                _recordEnds.Clear();
+                var length = data.DecodeTo(_decodeBuffer, _recordEnds);
+                await writer.WriteAsync(_decodeBuffer.GetBuffer().AsMemory(0, length), _recordEnds, cancellationToken);
                 file.BytesReceived += length;
 
                 if (--credit == 0)
@@ -571,6 +609,17 @@ public sealed class OftpSession
             return;
         }
 
+        // Fixed and variable files carry the number of records they consist of; a secured file is counted by
+        // the application after it is unpacked, not here.
+        file.Records = writer.Records;
+        if (FileFormats.IsRecordStructured(sfid.Format) && !securedContent && efid.RecordCount != writer.Records)
+        {
+            var reason = $"Record count {efid.RecordCount} does not match {writer.Records} received records.";
+            await _handler.OnFileReceiveFailedAsync(file, reason, cancellationToken);
+            await SendAsync(new EFNA { ReasonCode = AnswerReasonCodes.InvalidRecordCount, ReasonText = reason }, cancellationToken);
+            return;
+        }
+
         var result = await _handler.OnFileReceivedAsync(file, cancellationToken);
         if (!result.Accepted)
         {
@@ -584,6 +633,11 @@ public sealed class OftpSession
     }
 
     #endregion
+
+    private static bool IsSecured(string securityLevel, string compression, string enveloping) =>
+        securityLevel != SecurityLevels.None ||
+        compression != FileCompressionAlgorithms.None ||
+        enveloping != FileEnvelopingFormats.None;
 
     /// <summary>Skips the part of the content the peer already has, by seeking when the stream allows it.</summary>
     private static async Task SkipAsync(Stream content, long count, CancellationToken cancellationToken)

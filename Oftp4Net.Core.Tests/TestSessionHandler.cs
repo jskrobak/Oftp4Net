@@ -23,7 +23,8 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
     public void Enqueue(string datasetName, byte[] content, string destination,
         string securityLevel = SecurityLevels.None, string cipherSuite = CipherSuites.None,
         string compression = FileCompressionAlgorithms.None, string enveloping = FileEnvelopingFormats.None,
-        bool signedEerpRequested = false, long? originalSize = null, long restartPosition = 0)
+        bool signedEerpRequested = false, long? originalSize = null, long restartPosition = 0,
+        string format = FileFormats.Unstructured, int maxRecordSize = 0)
     {
         var (date, time) = OftpOutgoingFile.CreateTimestamp(DateTime.Now);
         _outgoing.Enqueue(new OftpOutgoingFile
@@ -40,6 +41,8 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
             SignedEerpRequested = signedEerpRequested,
             OriginalSize = originalSize,
             RestartPosition = restartPosition,
+            Format = format,
+            MaxRecordSize = maxRecordSize,
             OpenAsync = _ => ValueTask.FromResult<Stream>(new MemoryStream(content)),
         });
     }

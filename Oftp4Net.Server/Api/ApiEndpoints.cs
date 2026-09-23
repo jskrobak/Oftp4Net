@@ -41,6 +41,8 @@ public static class ApiEndpoints
                 [FromForm] string? destination,
                 [FromForm] string? virtualFileName,
                 [FromForm] string? description,
+                [FromForm] string? format,
+                [FromForm] int? maxRecordSize,
                 [FromForm] string? reference,
                 [FromForm] string? webhookUrl,
                 [FromForm] string? webhookSecret,
@@ -82,9 +84,23 @@ public static class ApiEndpoints
                 if (name.Length is 0 or > 26)
                     return Results.BadRequest(new ApiError("The virtual file name must have 1 to 26 characters."));
 
+                // Virtual file format: U and T are byte streams, F and V are records and need a record length.
+                var fileFormat = string.IsNullOrWhiteSpace(format) ? FileFormats.Unstructured : format.Trim().ToUpperInvariant();
+                if (!FileFormats.IsSupported(fileFormat))
+                    return Results.BadRequest(new ApiError($"Unknown file format '{format}', use U, T, F or V."));
+
+                var recordSize = maxRecordSize ?? 0;
+                if (FileFormats.IsRecordStructured(fileFormat) && recordSize is <= 0 or > 99999)
+                    return Results.BadRequest(new ApiError($"Format {fileFormat} needs a record length of 1 to 99999."));
+
+                if (!FileFormats.IsRecordStructured(fileFormat))
+                    recordSize = 0;
+
                 var item = new SendQueueItem
                 {
                     PartnerId = partnerEntity.Id,
+                    Format = fileFormat,
+                    MaxRecordSize = recordSize,
                     IdentityId = identityEntity.Id,
                     DestinationSfid = destinationSfid,
                     VirtualFileName = name,
@@ -304,23 +320,25 @@ public record ApiPage<T>(IReadOnlyList<T> Items, int TotalCount);
 
 public record PartyDto(int Id, string Name, string Ssid, string Sfid);
 
-public record QueueItemDto(int Id, string Status, string VirtualFileName, string? Reference, string? Description,
+public record QueueItemDto(int Id, string Status, string VirtualFileName, string Format, int MaxRecordSize,
+    string? Reference, string? Description,
     string? PartnerName, string? PartnerSsid, string? IdentityName, DateTime Created, string? FileDate, string? FileTime,
     DateTime? SentDate, DateTime? DeliveredDate, int RetryCount, DateTime? NextRetry, string? LastError, string? WebhookUrl,
     string? DestinationSfid)
 {
-    public static QueueItemDto From(SendQueueItem i) => new(i.Id, i.Status.ToString(), i.VirtualFileName, i.Reference,
-        i.Description, i.Partner?.Name, i.Partner?.SSID, i.Identity?.Name, i.Created, i.FileDate, i.FileTime,
+    public static QueueItemDto From(SendQueueItem i) => new(i.Id, i.Status.ToString(), i.VirtualFileName,
+        i.Format, i.MaxRecordSize, i.Reference, i.Description, i.Partner?.Name, i.Partner?.SSID, i.Identity?.Name, i.Created, i.FileDate, i.FileTime,
         i.SentDate, i.DeliveredDate, i.RetryCount, i.Status == SendStatus.ERROR ? i.NextRetry : null, i.LastError, i.WebhookUrl,
         string.IsNullOrEmpty(i.DestinationSfid) ? i.Partner?.SFID : i.DestinationSfid);
 }
 
-public record ReceivedFileDto(int Id, string Status, string VirtualFileName, string? PartnerName, string? PartnerSsid,
+public record ReceivedFileDto(int Id, string Status, string VirtualFileName, string Format, int MaxRecordSize,
+    string? PartnerName, string? PartnerSsid,
     string Originator, string Destination, string? Description, string? UserData, long Size, DateTime Created,
     string FileDate, string FileTime, DateTime? ConfirmedDate, DateTime? FetchedDate)
 {
-    public static ReceivedFileDto From(ReceivedFile f) => new(f.Id, f.Status.ToString(), f.VirtualFileName, f.Partner?.Name,
-        f.Partner?.SSID, f.Originator, f.Destination, f.Description, f.UserData, f.Size, f.Created, f.FileDate, f.FileTime,
+    public static ReceivedFileDto From(ReceivedFile f) => new(f.Id, f.Status.ToString(), f.VirtualFileName,
+        f.Format, f.MaxRecordSize, f.Partner?.Name, f.Partner?.SSID, f.Originator, f.Destination, f.Description, f.UserData, f.Size, f.Created, f.FileDate, f.FileTime,
         f.ConfirmedDate, f.FetchedDate);
 }
 

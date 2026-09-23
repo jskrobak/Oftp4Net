@@ -311,6 +311,97 @@ public class SessionTests
         Assert.NotNull(serverError);
     }
 
+    /// <summary>Records of a fixed file are stored one after another, of a variable file with a 2 octet length.</summary>
+    private static byte[] FixedRecords(int count, int length) =>
+        Enumerable.Range(0, count).SelectMany(i => Enumerable.Repeat((byte)('A' + i % 26), length)).ToArray();
+
+    private static byte[] VariableRecords(params int[] lengths)
+    {
+        var file = new List<byte>();
+        for (var i = 0; i < lengths.Length; i++)
+        {
+            file.Add((byte)(lengths[i] >> 8));
+            file.Add((byte)lengths[i]);
+            file.AddRange(Enumerable.Repeat((byte)('a' + i % 26), lengths[i]));
+        }
+
+        return file.ToArray();
+    }
+
+    [Fact]
+    public async Task FixedFormatFileIsTransferredAsRecords()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        // 40 records of 128 octets: with a 256 octet buffer a record spans several data exchange buffers.
+        var content = FixedRecords(40, 128);
+        client.Enqueue("F128", content, ServerCode, format: FileFormats.Fixed, maxRecordSize: 128);
+
+        var (clientError, serverError) = await RunAsync(client, server, bufferSize: 256, credit: 4);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal(content, server.ReceivedFiles["F128"]);
+
+        var header = server.ReceivedHeaders["F128"];
+        Assert.Equal(FileFormats.Fixed, header.Format);
+        Assert.Equal(128, header.MaxRecordSize);
+    }
+
+    [Fact]
+    public async Task VariableFormatFileIsTransferredAsRecords()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        // Records of different lengths, including an empty one and one of the maximum length.
+        var content = VariableRecords(44, 1, 0, 17, 44, 3);
+        client.Enqueue("V44", content, ServerCode, format: FileFormats.Variable, maxRecordSize: 44);
+
+        var (clientError, serverError) = await RunAsync(client, server, bufferSize: 128, credit: 2);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal(content, server.ReceivedFiles["V44"]);
+        Assert.Equal(FileFormats.Variable, server.ReceivedHeaders["V44"].Format);
+        Assert.Equal(44, server.ReceivedHeaders["V44"].MaxRecordSize);
+    }
+
+    [Fact]
+    public async Task TextFileIsTransferredAsASingleRecord()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        // A text file keeps its line separators in the data, it has no record structure on the wire.
+        var content = System.Text.Encoding.ASCII.GetBytes(
+            string.Join("\r\n", Enumerable.Range(0, 200).Select(i => $"Line {i} of the test file")));
+        client.Enqueue("TEXT", content, ServerCode, format: FileFormats.Text);
+
+        var (clientError, serverError) = await RunAsync(client, server, bufferSize: 512, credit: 3);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal(content, server.ReceivedFiles["TEXT"]);
+        Assert.Equal(FileFormats.Text, server.ReceivedHeaders["TEXT"].Format);
+        // Text and unstructured files carry no record length.
+        Assert.Equal(0, server.ReceivedHeaders["TEXT"].MaxRecordSize);
+    }
+
+    [Fact]
+    public async Task RecordFilesAreTransferredWithBufferCompression()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        var content = FixedRecords(20, 128);
+        client.Enqueue("PADDED", content, ServerCode, format: FileFormats.Fixed, maxRecordSize: 128);
+
+        var (clientError, serverError) = await RunAsync(client, server, bufferSize: 256, credit: 4,
+            bufferCompression: true);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal(content, server.ReceivedFiles["PADDED"]);
+    }
+
     [Fact]
     public async Task UndeliverableFileIsAnsweredWithNerp()
     {

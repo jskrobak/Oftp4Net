@@ -191,6 +191,9 @@ public sealed class OftpIncomingFile
     /// <summary>Position (in 1K blocks) the transfer was restarted from, zero for a complete transfer.</summary>
     public long RestartPosition { get; internal set; }
 
+    /// <summary>Records the file consists of; zero for unstructured and text files.</summary>
+    public long Records { get; internal set; }
+
     /// <summary>Size of the whole file, including the part received before a restart.</summary>
     public long TotalBytes => RestartPosition * OftpSession.RestartBlockSize + BytesReceived;
 }
@@ -210,7 +213,23 @@ public sealed class OftpOutgoingFile
 
     public string UserData { get; init; } = "";
     public string Description { get; init; } = "";
+
+    /// <summary>
+    /// Virtual file format (SFIDFMT). Fixed and variable files are transferred as records, so the content has to
+    /// be stored the way <see cref="MaxRecordSize"/> describes: fixed records one after another, variable records
+    /// each with its length as two octets in network byte order in front of it.
+    /// </summary>
     public string Format { get; init; } = FileFormats.Unstructured;
+
+    /// <summary>Length of a fixed record, or the longest variable record (SFIDLRECL); zero for U and T.</summary>
+    public int MaxRecordSize { get; init; }
+
+    /// <summary>
+    /// Records of the original file, reported in EFID. Set it for a record structured file that is signed,
+    /// compressed or encrypted: such a file is transferred without record boundaries, so they cannot be counted
+    /// while sending.
+    /// </summary>
+    public long? RecordCount { get; init; }
 
     /// <summary>Security of the transferred content (SFIDSEC), see <see cref="SecurityLevels"/>.</summary>
     public string SecurityLevel { get; init; } = SecurityLevels.None;

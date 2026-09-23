@@ -33,6 +33,7 @@ What of RFC 5024 the implementation covers:
 |---|---|
 | Session: SSRM, SSID, ESID, CD, credit (CDT) | Protocol levels 1 - 5 negotiated down to the lower one, buffer size and credit negotiated |
 | Files: SFID, SFPA, SFNA, DATA, EFID, EFPA, EFNA | Both directions in one session, several files per session |
+| File formats (SFIDFMT) | `U`, `T`, `F` and `V`, with record boundaries and record counts |
 | End to end responses: EERP, NERP, RTR | Both are sent for received files and processed for sent ones |
 | Buffer compression (SSIDCMPR) | Sent compressed when agreed, always accepted from a partner |
 | Restart (SSIDREST, SFIDREST) | Interrupted transfers continue at the last complete 1K block |
@@ -43,8 +44,6 @@ What of RFC 5024 the implementation covers:
 
 Not implemented, because the deployments this server is built for do not use it:
 
-- Record structured virtual files: files are transferred as unstructured (SFIDFMT `U`), the record format of a
-  partner is accepted but records are not interpreted and no record count is reported in EFID
 - Automatic exchange of certificates (ODETTE_CERTIFICATE_REQUEST, _DELIVER, _REPLACE); certificates are exchanged
   with the OFTP2 Communication Setup instead
 - Broadcast and distribution to several destinations through an intermediate location
@@ -219,6 +218,29 @@ Files that cannot be unpacked are refused with the reason code that says what is
 decryption failure, invalid file signature, …). Signing, compression and encryption are done in memory, so files
 larger than *Maximum size of a secured file (MB)* (setting, default 100) are not transferred to partners with file
 security and the error is written to the transfer log.
+
+## File formats
+
+Every virtual file has a format (SFIDFMT), chosen on the send queue item or with `format` in the REST API:
+
+| Format | Transfer | Stored here as |
+|---|---|---|
+| `U` unstructured | one record, the End of Record flag marks the end of the file | the file as it is |
+| `T` text | the same; line separators are part of the data | the file as it is |
+| `F` fixed records | each record ends with the End of Record flag, EFID reports their count | records one after another, the file size is a multiple of the record length |
+| `V` variable records | the same, records may differ in length | each record with its length as two octets in network byte order in front of it |
+
+`F` and `V` need a record length (SFIDLRECL): the length of every record, or of the longest one. The representation
+of `V` is the one RFC 5024 prescribes in section 6.5 for variable files that are signed, compressed or encrypted,
+so the same file works with and without file level security.
+
+A signed, compressed or encrypted file has no discernable record boundaries, so it is transferred as unstructured
+whatever SFIDFMT says (RFC 5024, section 5.3.3); the record count of the original file is still reported in EFID.
+For the same reason a record structured file is never restarted in the middle — the restart position of such a
+file is a record number, which is not supported.
+
+Records of a `V` file cannot be converted to EBCDIC, because the lengths stored in the file are binary; the
+transfer of such a file to a partner with the conversion switched on fails with a clear error.
 
 ## Files that cannot be delivered
 

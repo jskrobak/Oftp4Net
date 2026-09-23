@@ -52,6 +52,14 @@ public static class FileFormats
     public const string Variable = "V";
     public const string Unstructured = "U";
     public const string Text = "T";
+
+    /// <summary>
+    /// Fixed and variable files are transferred as a sequence of records, unstructured and text files as one
+    /// record (RFC 5024, sections 5.3.3 and 7.2).
+    /// </summary>
+    public static bool IsRecordStructured(string format) => format is Fixed or Variable;
+
+    public static bool IsSupported(string format) => format is Fixed or Variable or Unstructured or Text;
 }
 
 /// <summary>File security level (SFIDSEC).</summary>

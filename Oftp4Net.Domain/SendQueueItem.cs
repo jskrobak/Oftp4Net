@@ -52,6 +52,19 @@ public class SendQueueItem: BaseQueueItem
     public DateTime? DeliveredDate { get; set; }
 
     /// <summary>
+    /// Virtual file format (SFIDFMT): <c>U</c> unstructured, <c>T</c> text, <c>F</c> fixed records,
+    /// <c>V</c> variable records. Records of a fixed file are stored one after another in the file, records of a
+    /// variable file each with their length as two octets in network byte order in front of them.
+    /// </summary>
+    [Required]
+    [StringLength(1)]
+    public string Format { get; set; } = "U";
+
+    /// <summary>Length of a fixed record, or the longest variable record (SFIDLRECL); zero for U and T.</summary>
+    [Range(0, 99999)]
+    public int MaxRecordSize { get; set; }
+
+    /// <summary>
     /// Complete 1K blocks the partner is believed to have from an interrupted transfer. The next attempt offers
     /// this position in SFID and the partner lowers it to what it really has.
     /// </summary>

@@ -4,6 +4,7 @@
 @using Havit.Collections
 @using Oftp4Net.DataLayer.Filters
 @using Oftp4Net.Domain
+@using Oftp4Net.Core.Protocol
 <style>
     .scrollable-table-container {
         overflow: auto;
@@ -40,6 +41,27 @@
                     <HxInputText Label="File path" Hint="Filled in by the upload, or enter the path of an existing file on the server." @bind-Value="@currentSendQueueItem.FilePath" />
                     <HxInputText Label="Virtual file name" Hint="Max. 26 characters, e.g. ORDERS.EDI" MaxLength="26" @bind-Value="@currentSendQueueItem.VirtualFileName" />
                     <HxInputText Label="Description" @bind-Value="@currentSendQueueItem.Description" />
+
+                    <HxSelect TItem="FileFormatOption"
+                              TValue="string"
+                              Label="File format"
+                              Hint="U and T are sent as a byte stream, F and V as records."
+                              Data="FileFormatOptions"
+                              @bind-Value="@currentSendQueueItem.Format"
+                              @bind-Value:after="HandleFormatChanged"
+                              TextSelector="@(f => f.Text)"
+                              ValueSelector="@(f => f.Code)"
+                              Nullable="false" />
+
+                    @if (FileFormats.IsRecordStructured(currentSendQueueItem.Format))
+                    {
+                        <HxInputNumber Label="Record length"
+                                       Hint="@(currentSendQueueItem.Format == FileFormats.Fixed
+                                             ? "Length of every record; the file must be a multiple of it."
+                                             : "Length of the longest record; every record is stored with its length as two octets in front of it.")"
+                                       Decimals="0"
+                                       @bind-Value="@currentSendQueueItem.MaxRecordSize" />
+                    }
 
 
                     <HxSelect TItem="Identity"

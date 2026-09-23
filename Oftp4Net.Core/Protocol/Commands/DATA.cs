@@ -12,6 +12,7 @@ public sealed class DATA : OftpCommand
     public const char Id = 'D';
     public const int MaxSubrecordLength = 63;
 
+    private const byte EndOfRecordFlag = 0x80;
     private const byte CompressedFlag = 0x40;
     private const byte CountMask = 0x3F;
 
@@ -32,7 +33,7 @@ public sealed class DATA : OftpCommand
     /// Splits the payload into subrecords, optionally using ODETTE-FTP buffer compression, which replaces a run
     /// of equal octets by a single one (SSIDCMPR, only when both sides agreed on it).
     /// </summary>
-    public static DATA FromPayload(ReadOnlySpan<byte> payload, bool compress = false)
+    public static DATA FromPayload(ReadOnlySpan<byte> payload, bool compress = false, bool endOfRecord = false)
     {
         var subrecordCount = (payload.Length + MaxSubrecordLength - 1) / MaxSubrecordLength;
         var buffer = new byte[payload.Length + subrecordCount];
@@ -43,7 +44,7 @@ public sealed class DATA : OftpCommand
             var run = compress ? RunLength(payload) : 0;
             if (run >= MinCompressibleRun)
             {
-                buffer[position++] = (byte)(CompressedFlag | run);
+                buffer[position++] = (byte)((endOfRecord && run == payload.Length ? EndOfRecordFlag : 0) | CompressedFlag | run);
                 buffer[position++] = payload[0];
                 payload = payload[run..];
                 continue;
@@ -51,7 +52,7 @@ public sealed class DATA : OftpCommand
 
             // Literal octets up to the next run worth compressing.
             var length = compress ? LiteralLength(payload) : Math.Min(MaxSubrecordLength, payload.Length);
-            buffer[position++] = (byte)length;
+            buffer[position++] = (byte)((endOfRecord && length == payload.Length ? EndOfRecordFlag : 0) | length);
             payload[..length].CopyTo(buffer.AsSpan(position));
             position += length;
             payload = payload[length..];
@@ -97,8 +98,12 @@ public sealed class DATA : OftpCommand
 
     internal static DATA Read(byte[] buffer) => new() { Subrecords = buffer[1..] };
 
-    /// <summary>Decodes the subrecords into the payload octets, expanding compressed subrecords.</summary>
-    public int DecodeTo(Stream destination)
+    /// <summary>
+    /// Decodes the subrecords into the payload octets, expanding compressed subrecords. Offsets at which a record
+    /// ends (the End of Record flag, RFC 5024, section 7.2) are added to <paramref name="recordEnds"/>, counted
+    /// from the beginning of this buffer.
+    /// </summary>
+    public int DecodeTo(Stream destination, List<int>? recordEnds = null)
     {
         var total = 0;
         var position = 0;
@@ -107,6 +112,7 @@ public sealed class DATA : OftpCommand
         {
             var header = data[position++];
             var count = header & CountMask;
+            var endOfRecord = (header & EndOfRecordFlag) != 0;
 
             if ((header & CompressedFlag) != 0)
             {
@@ -127,6 +133,8 @@ public sealed class DATA : OftpCommand
             }
 
             total += count;
+            if (endOfRecord)
+                recordEnds?.Add(total);
         }
 
         return total;

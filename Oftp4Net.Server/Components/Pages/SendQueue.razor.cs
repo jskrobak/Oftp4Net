@@ -3,6 +3,7 @@ using Havit.Blazor.Components.Web.Bootstrap;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Oftp4Net.DataLayer.Filters;
+using Oftp4Net.Core.Protocol;
 using Oftp4Net.Domain;
 using Oftp4Net.Services;
 
@@ -17,6 +18,23 @@ public partial class SendQueue : ComponentBase, IDisposable
     [Inject] protected SendService SendService { get; set; } = null!;
     [Inject] protected OutboxStorage OutboxStorage { get; set; } = null!;
     [Inject] protected IConfiguration Configuration { get; set; } = null!;
+
+    /// <summary>Virtual file formats of SFIDFMT as they are offered in the form.</summary>
+    internal sealed record FileFormatOption(string Code, string Text);
+
+    private static readonly FileFormatOption[] FileFormatOptions =
+    [
+        new(FileFormats.Unstructured, "U - unstructured"),
+        new(FileFormats.Text, "T - text"),
+        new(FileFormats.Fixed, "F - fixed records"),
+        new(FileFormats.Variable, "V - variable records"),
+    ];
+
+    private void HandleFormatChanged()
+    {
+        if (!FileFormats.IsRecordStructured(currentSendQueueItem.Format))
+            currentSendQueueItem.MaxRecordSize = 0;
+    }
 
     private HxInputFile inputFileComponent = null!;
     private float? uploadProgress;

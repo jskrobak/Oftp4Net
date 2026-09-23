@@ -52,6 +52,16 @@ public class ReceivedFile
     [StringLength(2000)]
     public string? LastError { get; set; }
 
+    /// <summary>Virtual file format the partner announced in SFIDFMT.</summary>
+    [StringLength(1)]
+    public string Format { get; set; } = "U";
+
+    /// <summary>Record length of a fixed or variable file (SFIDLRECL).</summary>
+    public int MaxRecordSize { get; set; }
+
+    /// <summary>Records the file consists of, for a fixed or variable file.</summary>
+    public long Records { get; set; }
+
     /// <summary>Security of the transferred content as announced in SFIDSEC.</summary>
     [StringLength(2)]
     public string? SecurityLevel { get; set; }

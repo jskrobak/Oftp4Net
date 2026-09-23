@@ -272,6 +272,10 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 Enveloping = content.Settings.Enveloping,
                 SignedEerpRequested = item.SignedResponseRequested,
                 OriginalSize = content.OriginalSize,
+                Format = item.Format,
+                MaxRecordSize = item.MaxRecordSize,
+                // A secured record file is transferred without record boundaries, so the count comes from here.
+                RecordCount = content.RecordCount,
                 // Secured content is built anew for every attempt (encryption is randomised), so only a file sent
                 // as it is stored can be continued where the previous attempt stopped.
                 RestartPosition = content.Settings.Any ? 0 : item.RestartPosition,
@@ -397,7 +401,29 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
     /// <summary>Content of an outgoing file after signing, compression and encryption were applied to it.</summary>
     private sealed record SecuredContent(
-        FileSecuritySettings Settings, long OriginalSize, Func<CancellationToken, ValueTask<Stream>> OpenAsync);
+        FileSecuritySettings Settings, long OriginalSize, Func<CancellationToken, ValueTask<Stream>> OpenAsync)
+    {
+        /// <summary>Records of a secured fixed or variable file, which cannot be counted while sending.</summary>
+        public long? RecordCount { get; init; }
+    }
+
+    /// <summary>
+    /// Checks that the file format of the item can be transferred to the partner. Variable records are stored
+    /// with a binary length in front of them, which a character set conversion would destroy.
+    /// </summary>
+    private static void CheckFormat(SendQueueItem item, Partner partner)
+    {
+        if (!FileFormats.IsSupported(item.Format))
+            throw new FileSecurityException($"File format '{item.Format}' is not supported.");
+
+        if (FileFormats.IsRecordStructured(item.Format) && item.MaxRecordSize <= 0)
+            throw new FileSecurityException($"A file of format {item.Format} needs a record length.");
+
+        if (item.Format == FileFormats.Variable && partner.OutgoingEncoding == FileCharacterEncoding.EBCDIC)
+            throw new FileSecurityException(
+                $"Variable records cannot be converted to EBCDIC for {partner.Name}: the record lengths stored " +
+                "in the file are binary.");
+    }
 
     /// <summary>
     /// Applies the file level security configured for the partner to the content of <paramref name="item"/> and
@@ -407,6 +433,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private async Task<SecuredContent> SecureAsync(SendQueueItem item, CancellationToken cancellationToken)
     {
         var partner = Partner!;
+        CheckFormat(item, partner);
+
         var station = StationSettings.For(partner, item.DestinationSfid);
         var isSetup = PartnerSetupService.IsSetupFile(item.VirtualFileName);
         var settings = isSetup
@@ -459,12 +487,14 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
         var secured = FileSecurity.Protect(plain, settings);
         item.ContentHash = FileSecurity.ComputeHash(secured, settings.Suite);
+        // A secured file is transferred without record boundaries, so its records are counted here.
+        var records = FileFormats.IsRecordStructured(item.Format) ? CountRecords(plain, item) : (long?)null;
 
         _logger.LogInformation("File {VirtualFileName} for {Partner} secured ({Applied}): {Original} B -> {Secured} B",
             item.VirtualFileName, partner.Name, Applied(settings), plain.Length, secured.Length);
 
         return new SecuredContent(settings, originalSize,
-            _ => ValueTask.FromResult<Stream>(new MemoryStream(secured, writable: false)));
+            _ => ValueTask.FromResult<Stream>(new MemoryStream(secured, writable: false))) { RecordCount = records };
     }
 
     /// <summary>
@@ -488,6 +518,23 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         file.SecurityLevel != SecurityLevels.None ||
         file.Compression != FileCompressionAlgorithms.None ||
         file.Enveloping != FileEnvelopingFormats.None;
+
+    /// <summary>Records of a file in our representation: fixed blocks, or a length in front of the data.</summary>
+    private static long CountRecords(byte[] content, SendQueueItem item)
+    {
+        if (item.Format == FileFormats.Fixed)
+            return item.MaxRecordSize > 0 ? content.Length / item.MaxRecordSize : 0;
+
+        var records = 0L;
+        var position = 0;
+        while (position + 2 <= content.Length)
+        {
+            position += 2 + ((content[position] << 8) | content[position + 1]);
+            records++;
+        }
+
+        return records;
+    }
 
     private static string Applied(FileSecuritySettings settings) => string.Join(", ",
         new[] { settings.Sign ? "signed" : null, settings.Compress ? "compressed" : null, settings.Encrypt ? "encrypted" : null }
@@ -545,6 +592,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         record.Destination = header.Destination;
         record.Description = header.Description;
         record.SecurityLevel = header.SecurityLevel;
+        record.Format = header.Format;
+        record.MaxRecordSize = header.MaxRecordSize;
         record.CipherSuite = security.Any || header.SignedEerpRequested ? header.CipherSuite : null;
         record.Compressed = security.Compressed;
         record.SignedResponseRequested = header.SignedEerpRequested;
@@ -641,6 +690,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         }
 
         record.Size = new FileInfo(record.FilePath).Length;
+        record.Records = file.Records;
         record.RestartedFrom = file.RestartPosition;
         record.Status = ReceiveStatus.RECEIVED;
         FilesReceived++;
