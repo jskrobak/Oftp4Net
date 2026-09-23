@@ -673,9 +673,12 @@ standard input:
 | `OFTP_REASON_CODE`, `OFTP_REASON_TEXT` | send failed, not delivered | answer reason from SFNA / EFNA / NERP |
 | `OFTP_WILL_RETRY`, `OFTP_RETRY_COUNT`, `OFTP_NEXT_RETRY` | send failed | retry state |
 | `OFTP_CREATOR` | not delivered | node that created the NERP |
+| `OFTP_RUN_AGAIN_OF` | run again manually | id of the log record of the failed run |
 
 Hooks run in the background one after another; a slow or failing script never affects the transfer. Their output and
-exit code are logged. See [`samples/hooks/on_received.sh`](samples/hooks/on_received.sh). In Docker, mount the
+exit code are logged. A failed run is not repeated automatically: *Run again* in its detail in *Logs → Hooks and
+webhooks* queues the script now configured for the event again, with the same parameters (`OFTP_TIMESTAMP` stays the
+time of the original event) and `OFTP_RUN_AGAIN_OF` set. See [`samples/hooks/on_received.sh`](samples/hooks/on_received.sh). In Docker, mount the
 scripts and point the configuration to them:
 
 ```bash

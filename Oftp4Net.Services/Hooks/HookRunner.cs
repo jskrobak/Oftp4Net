@@ -76,6 +76,9 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
 {
     private const int QueueCapacity = 1000;
 
+    /// <summary>Parameter of a run started manually from the log: id of the log record of the failed run it repeats.</summary>
+    public const string RunAgainOfParameter = "runAgainOf";
+
     // Readable JSON for scripts (no \u escaping of '+' or diacritics); it is not embedded in HTML.
     private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
@@ -114,6 +117,49 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
 
         // A full queue drops the hook and reports it (MonitoredQueue).
         _queue.Writer.TryWrite((hookEvent, command, all));
+    }
+
+    /// <summary>
+    /// Queues the script currently configured for the event of a failed run again, with the parameters of that run
+    /// (<c>OFTP_TIMESTAMP</c> stays the time of the original event) and <c>OFTP_RUN_AGAIN_OF</c> set to the id of its
+    /// log record. Returns <c>false</c> with the reason when it cannot be run.
+    /// </summary>
+    public bool TryRunAgain(TransferEvent failedRun, out string? error)
+    {
+        Dictionary<string, string?>? parameters = null;
+        try
+        {
+            if (failedRun.HookParameters is not null)
+                parameters = JsonSerializer.Deserialize<Dictionary<string, string?>>(failedRun.HookParameters);
+        }
+        catch (JsonException)
+        {
+        }
+
+        if (failedRun.Category != TransferEventCategory.Hook || parameters is null
+            || !parameters.TryGetValue("event", out var eventName) || !Enum.TryParse<HookEvent>(eventName, out var hookEvent))
+        {
+            error = "The record does not contain the parameters of a hook run.";
+            return false;
+        }
+
+        var command = Options.GetCommand(hookEvent);
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            error = $"No script is configured for {hookEvent}.";
+            return false;
+        }
+
+        parameters[RunAgainOfParameter] = failedRun.Id.ToString();
+        if (!_queue.Writer.TryWrite((hookEvent, command, parameters)))
+        {
+            error = "The hook queue is full.";
+            return false;
+        }
+
+        logger.LogInformation("Hook {Event} ({Command}) queued to run again (log record {Id})", hookEvent, command, failedRun.Id);
+        error = null;
+        return true;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -217,6 +263,10 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
         parameters.TryGetValue("partnerName", out var partnerName);
         parameters.TryGetValue("fileDate", out var fileDate);
         parameters.TryGetValue("fileTime", out var fileTime);
+        parameters.TryGetValue("queueItemId", out var queueItemId);
+        parameters.TryGetValue("receivedFileId", out var receivedFileId);
+        if (parameters.ContainsKey(RunAgainOfParameter))
+            message += " (run again manually)";
         transferEvents.Record(new TransferEvent
         {
             Category = TransferEventCategory.Hook,
@@ -229,6 +279,9 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
             VirtualFileName = virtualFileName,
             FileDate = fileDate,
             FileTime = fileTime,
+            SendQueueItemId = int.TryParse(queueItemId, out var id) ? id : null,
+            ReceivedFileId = int.TryParse(receivedFileId, out id) ? id : null,
+            HookParameters = JsonSerializer.Serialize(parameters, JsonOptions),
         });
     }
 

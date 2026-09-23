@@ -1,9 +1,11 @@
+using Havit.Blazor.Components.Web;
 using Havit.Blazor.Components.Web.Bootstrap;
 using Microsoft.AspNetCore.Components;
 using Oftp4Net.DataLayer.Filters;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using Oftp4Net.Services;
+using Oftp4Net.Services.Hooks;
 
 namespace Oftp4Net.Server.Components.Pages;
 
@@ -25,6 +27,8 @@ public partial class TransferLog : ComponentBase
     [Inject] protected ITransferEventRepository Repository { get; set; } = null!;
     [Inject] protected GlobalSettingsService GlobalSettingsService { get; set; } = null!;
     [Inject] protected NavigationManager Navigation { get; set; } = null!;
+    [Inject] protected HookRunner HookRunner { get; set; } = null!;
+    [Inject] protected IHxMessengerService Messenger { get; set; } = null!;
 
     private static readonly TransferEventLevel[] levels = Enum.GetValues<TransferEventLevel>();
 
@@ -77,6 +81,25 @@ public partial class TransferLog : ComponentBase
         selected = transferEvent;
         if (selected is not null)
             await detailModal.ShowAsync();
+    }
+
+    private static bool CanRunAgain(TransferEvent? transferEvent) =>
+        transferEvent is { Type: TransferEventType.HookFailed, HookParameters: not null };
+
+    private async Task RunAgainAsync()
+    {
+        if (selected is null)
+            return;
+
+        if (HookRunner.TryRunAgain(selected, out var error))
+        {
+            Messenger.AddInformation("The hook is queued; its result appears in this log.");
+            await detailModal.HideAsync();
+        }
+        else
+        {
+            Messenger.AddError($"The hook cannot be run again: {error}");
+        }
     }
 
     private static ThemeColor GetColor(TransferEventLevel level) => level switch

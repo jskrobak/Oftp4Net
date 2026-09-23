@@ -94,5 +94,8 @@ public class TransferEvent
 
     public long? DurationMs { get; set; }
 
+    /// <summary>Parameters a hook script was run with (JSON as on its standard input), so it can be run again.</summary>
+    public string? HookParameters { get; set; }
+
     public bool IsArchived { get; set; }
 }

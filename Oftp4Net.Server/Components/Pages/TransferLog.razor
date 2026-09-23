@@ -35,6 +35,14 @@
             }
         }
     </BodyTemplate>
+    <FooterTemplate>
+        @if (CanRunAgain(selected))
+        {
+            <HxButton Text="Run again" Color="ThemeColor.Primary" Icon="BootstrapIcon.ArrowRepeat"
+                      Tooltip="Runs the script now configured for the event again with the parameters of this run."
+                      OnClick="RunAgainAsync" />
+        }
+    </FooterTemplate>
 </HxModal>
 
 <HxListLayout Title="@Title" TFilterModel="TransferEventFilter"
