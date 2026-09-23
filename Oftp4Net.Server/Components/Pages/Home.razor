@@ -37,12 +37,12 @@
                             <div class="small text-body-secondary mt-1">Last run: @(SendService.LastRun?.ToString("g") ?? "never")</div>
                             <div class="small text-body-secondary">Active sessions: @SendService.ActiveSessions</div>
                         </div>
-                        <HxButtonGroup>
+                        <div class="d-flex gap-2">
                             <HxButton Color="ThemeColor.Primary" Tooltip="Send now" OnClick="SendService.Trigger" Icon="BootstrapIcon.Send" />
                             <HxButton Color="ThemeColor.Secondary" Tooltip="@(SendService.IsPaused ? "Resume" : "Pause")"
                                       OnClick="ToggleSendService"
                                       Icon="@(SendService.IsPaused ? BootstrapIcon.Play : BootstrapIcon.Pause)" />
-                        </HxButtonGroup>
+                        </div>
                     </div>
                 </BodyTemplate>
             </HxCard>
