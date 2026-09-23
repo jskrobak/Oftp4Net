@@ -38,6 +38,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
 - Health checks for Docker, Kubernetes and monitoring: database, storage, listeners, send service, certificates,
   revocation lists and stuck files, shown on the dashboard and reported by webhook
+- Retention: old data removed every night and written to compressed archive files first, nothing unfinished touched
 
 ## OFTP2 support
 
@@ -281,7 +282,7 @@ readinessProbe:
 
 | Check | Unhealthy / degraded when |
 |---|---|
-| `database` | the database cannot be reached or migrations are missing (`Database:MigrateOnStartup=false`) |
+| `database` | the database cannot be reached or migrations are missing (`Database:MigrateOnStartup=false`); its size and the largest tables in bytes are in the data |
 | `storage` | the receive or outbox directory or the data protection keys cannot be written; degraded when disk space runs low |
 | `listeners` | an enabled listener did not start (port taken, certificate missing) |
 | `send-service` | the service stopped or has not processed the queue for three send intervals and a minute; degraded while paused |
@@ -290,6 +291,7 @@ readinessProbe:
 | `certificates` | degraded: a certificate in use (ours, listeners, partners, per station and purpose) expired or expires within 30 days |
 | `send-queue` | degraded: a file waits to be sent for more than 24 hours, failed for good in the last 24 hours, or a received file waits for more than an hour for its End to End Response |
 | `internal-queues` | degraded: the queue of the transfer log, the webhooks or the hooks is 80 % full and about to drop items |
+| `retention` | degraded: the nightly removal of old data failed or has not run for two days |
 
 The checks read the state the services keep and the database; none of them connects to a partner or downloads
 anything. The application runs them every 30 seconds, shows the result on the dashboard and writes every change
@@ -338,9 +340,10 @@ also with an empty queue, so that the items the monitoring discovers per partner
 
 In Zabbix (7.0 or later) import the template [`samples/zabbix/oftp4net_by_http.yaml`](samples/zabbix/oftp4net_by_http.yaml)
 (*Data collection → Templates → Import*), link it to a host and set the macros `{$OFTP.URL}` and `{$OFTP.TOKEN}`.
-It watches the state of the server, every health check and the send queue of every partner; the thresholds are
-the macros `{$OFTP.WAITING.MAX.AGE}` (default `1h`) and `{$OFTP.EERP.MAX.AGE}` (default `1d`), and a partner
-gets its own with its SSID as context, e.g. `{$OFTP.WAITING.MAX.AGE:"O0013000000PARTNER"}` = `4h`.
+It watches the state of the server, every health check, the size of the database and the send queue of every
+partner; the thresholds are the macros `{$OFTP.WAITING.MAX.AGE}` (default `1h`) and `{$OFTP.EERP.MAX.AGE}`
+(default `1d`), and a partner gets its own with its SSID as context, e.g.
+`{$OFTP.WAITING.MAX.AGE:"O0013000000PARTNER"}` = `4h`.
 
 What the template does, to build it by hand or in another monitoring:
 
@@ -380,8 +383,41 @@ file name, severity, period) and a detail of every record:
 | EERP / NERP | End to End Responses sent for received files and received for sent files |
 | Hooks and webhooks | every hook run with exit code, duration and output, and every webhook call |
 
-Records older than *Archive transfer log after (days)* (setting, default 90) are archived: they are kept, but shown only
-when *Complete archive* is checked in the filter. *Log stream* remains the live technical log.
+Records older than *Hide transfer log records after (days)* (setting, default 90) are shown only when *Complete
+archive* is checked in the filter; how long they are kept at all is up to the retention below. *Log stream* remains
+the live technical log.
+
+## Retention
+
+Every night old data is removed, so that the database stays within bounds (*Settings → Retention*):
+
+| Setting | Default | What is removed |
+|---|---|---|
+| *Remove content after (days)* | 30 | the details of transfer log records (exceptions, output of hooks, bodies of webhooks; the record stays), the parameters of hook runs (*Run again* is not offered any more) and the files of delivered send queue items in the outbox |
+| *Delete informational log records after (days)* | 90 | informational transfer log records |
+| *Delete warnings and errors after (days)* | 365 | the remaining transfer log records |
+| *Delete finished files after (days)* | 365 | records of send queue items whose End to End Response arrived (`DELIVERED`, `NOT_DELIVERED`) and of received files that need nothing more (response delivered, transfer failed or interrupted) |
+
+Nothing is lost on the way:
+
+- Everything removed from the database is written to the archive directory first (*Archive directory*, default
+  `archive` in the data directory): compressed JSON lines per kind and month, e.g.
+  `transfer-log-2026-09.jsonl.gz`, `send-queue-2026-09.jsonl.gz`, `received-files-2026-09.jsonl.gz`. A transfer
+  log record goes there in full, with its details, when they are removed. Back the directory up with the database;
+  it is read with `zcat` or any gzip reader, e.g. `zcat archive/send-queue-2025-*.jsonl.gz | grep INVOIC`. After a
+  crash in the middle of a run a record may be there twice, never missing.
+- Nothing unfinished is touched: files waiting, failed for good or waiting for their End to End Response, in either
+  direction, and files held for a decision.
+- Finished files are kept at least 30 days whatever the setting says, because a file a partner sends again is
+  recognised as a duplicate by its record.
+- A file in the outbox is deleted only when it belongs to delivered items and to nothing else; files the application
+  did not put there stay. The received files stay where they are, they belong to the integration.
+- A shorter period than the one before it does not delete earlier: informational records go at the earliest with the
+  content, the other records at the earliest with the informational ones.
+
+The first run is a few minutes after the start, *Clean up now* runs it at once. The health check `retention` reports
+a run that failed or did not happen for two days, the check `database` the size of the database and its largest
+tables.
 
 ## Character set conversion
 

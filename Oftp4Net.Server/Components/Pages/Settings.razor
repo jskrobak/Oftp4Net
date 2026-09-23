@@ -109,9 +109,6 @@
                         <HxInputNumber Label="Maximum retry count" Decimals="0" @bind-Value="@settings.MaxRetryCount" />
                     </div>
                     <div class="col-md-6">
-                        <HxInputNumber Label="Archive transfer log after (days)" Hint="Older records are hidden unless the complete archive is shown." Decimals="0" @bind-Value="@settings.ArchiveEventsAfterDays" />
-                    </div>
-                    <div class="col-md-6">
                         <HxInputNumber Label="Response timeout (seconds)" Decimals="0" @bind-Value="@settings.ResponseTimeoutSeconds" />
                     </div>
                     <div class="col-md-6">
@@ -277,6 +274,80 @@
                     </div>
                 </div>
             </EditForm>
+        }
+    </BodyTemplate>
+</HxCard>
+
+<HxCard CssClass="mt-3">
+    <HeaderTemplate>
+        <h5 class="card-title">Retention</h5>
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (settings is not null)
+        {
+            <p class="small text-body-secondary" style="max-width: 60rem;">
+                Old data is removed every night so that the database stays within bounds. Nothing unfinished is touched
+                (files waiting, failed or waiting for their End to End Response), the received files stay where they
+                are, and everything removed from the database is written to the archive directory first, as compressed
+                JSON lines per month.
+            </p>
+            <EditForm Model="@settings" OnValidSubmit="SaveAsync">
+                <DataAnnotationsValidator />
+                <div class="row g-3" style="max-width: 60rem;">
+                    <div class="col-md-6">
+                        <HxInputNumber Label="Hide transfer log records after (days)" Hint="Older records are shown only with the complete archive." Decimals="0" @bind-Value="@settings.ArchiveEventsAfterDays" />
+                    </div>
+                    <div class="col-12">
+                        <HxCheckbox Label="Remove old data every night" @bind-Value="@settings.RetentionEnabled" />
+                    </div>
+                    @if (settings.RetentionEnabled)
+                    {
+                        <div class="col-md-6">
+                            <HxInputNumber Label="Remove content after (days)"
+                                           Hint="Details of transfer log records and parameters of hook runs are removed (the record stays), files of delivered items are deleted from the outbox."
+                                           Decimals="0" @bind-Value="@settings.DeleteContentAfterDays" />
+                        </div>
+                        <div class="col-md-6">
+                            <HxInputNumber Label="Delete informational log records after (days)" Hint="At the earliest with the content."
+                                           Decimals="0" @bind-Value="@settings.DeleteInformationEventsAfterDays" />
+                        </div>
+                        <div class="col-md-6">
+                            <HxInputNumber Label="Delete warnings and errors after (days)" Hint="At the earliest with the informational records."
+                                           Decimals="0" @bind-Value="@settings.DeleteEventsAfterDays" />
+                        </div>
+                        <div class="col-md-6">
+                            <HxInputNumber Label="Delete finished files after (days)"
+                                           Hint="Records of delivered send queue items and of confirmed received files, at least 30 days (duplicates are recognised by them)."
+                                           Decimals="0" @bind-Value="@settings.DeleteFinishedFilesAfterDays" />
+                        </div>
+                        <div class="col-12">
+                            <HxInputText Label="Archive directory"
+                                         Hint="@($"Relative paths are resolved against {GlobalSettingsService.DataDirectory}. Back it up with the database.")"
+                                         @bind-Value="@settings.RetentionArchiveDirectory" />
+                        </div>
+                    }
+                    <div class="col-12 d-flex gap-2">
+                        <HxSubmit Color="ThemeColor.Primary" Icon="BootstrapIcon.Save">Save</HxSubmit>
+                        @if (settings.RetentionEnabled)
+                        {
+                            <HxButton Color="ThemeColor.Secondary" Icon="BootstrapIcon.Trash" Spinner="Retention.IsRunning" Enabled="!Retention.IsRunning"
+                                      OnClick="RunRetentionAsync" Tooltip="With the saved settings">Clean up now</HxButton>
+                        }
+                    </div>
+                </div>
+            </EditForm>
+
+            @if (Retention.LastResult is { } result)
+            {
+                <hr />
+                <div class="small" style="max-width: 60rem;">
+                    Last run @result.Finished.ToString("g"): @result.ToString().
+                    @if (result.Error is not null)
+                    {
+                        <HxAlert Color="ThemeColor.Warning" CssClass="py-2 mt-2 mb-0">@result.Error</HxAlert>
+                    }
+                </div>
+            }
         }
     </BodyTemplate>
 </HxCard>

@@ -106,6 +106,8 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
             entity.Property(e => e.Type).HasConversion<string>().HasMaxLength(40);
             entity.HasIndex(e => new { e.Category, e.IsArchived, e.Timestamp });
             entity.HasIndex(e => new { e.IsArchived, e.Timestamp });
+            // Retention goes through the records in this order.
+            entity.HasIndex(e => new { e.Timestamp, e.Id });
         });
 
         modelBuilder.Entity<ApiToken>(entity =>

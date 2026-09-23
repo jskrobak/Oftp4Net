@@ -45,6 +45,21 @@ public interface ISendQueueItemRepository: IRepository<SendQueueItem, int>
     /// <summary>Items that failed for good since the given time.</summary>
     Task<int> CountFailedAsync(DateTime failedSince, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Items whose End to End Response arrived (delivered or not delivered), queued before the given time, with
+    /// their partner and identity; the oldest first.
+    /// </summary>
+    Task<List<SendQueueItem>> GetFinishedAsync(DateTime createdBefore, int take, CancellationToken cancellationToken = default);
+
+    Task<int> DeleteAsync(IReadOnlyCollection<int> ids, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Of the given files, those that belong to items and only to items delivered before the given time; a file
+    /// of no item is not returned.
+    /// </summary>
+    Task<List<string>> GetFilesDeliveredBeforeAsync(IReadOnlyCollection<string> filePaths, DateTime deliveredBefore,
+        CancellationToken cancellationToken = default);
+
     /// <summary>The state of the send queue of every partner that has items waiting, failed or not yet confirmed.</summary>
     Task<List<SendQueuePartnerState>> GetStateByPartnerAsync(CancellationToken cancellationToken = default);
 }

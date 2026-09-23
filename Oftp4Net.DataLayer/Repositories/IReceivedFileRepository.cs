@@ -28,6 +28,15 @@ public interface IReceivedFileRepository: IRepository<ReceivedFile, int>
     /// </summary>
     Task<int> CountUnconfirmedAsync(DateTime createdBefore, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Records of files received before the given time that need nothing more: their End to End Response reached
+    /// the partner, or the transfer failed or was interrupted. With their partner, the oldest first.
+    /// </summary>
+    Task<List<ReceivedFile>> GetFinishedAsync(DateTime createdBefore, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes the records; the files themselves stay where they are.</summary>
+    Task<int> DeleteAsync(IReadOnlyCollection<int> ids, CancellationToken cancellationToken = default);
+
     Task<bool> ExistsAsync(int partnerId, string virtualFileName, string fileDate, string fileTime,
         CancellationToken cancellationToken = default);
 

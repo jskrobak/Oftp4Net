@@ -61,6 +61,45 @@ public class GlobalSettings
     public int ArchiveEventsAfterDays { get; set; } = 90;
 
     /// <summary>
+    /// Old data is removed every night (see <see cref="Retention.RetentionService"/>); what is removed from the
+    /// database is written to <see cref="RetentionArchiveDirectory"/> first.
+    /// </summary>
+    [SettingsItem]
+    public bool RetentionEnabled { get; set; } = true;
+
+    /// <summary>
+    /// The details of transfer log records (messages of exceptions, output of hooks, bodies of webhooks) and the
+    /// parameters of hook runs are removed, and the files of delivered send queue items are deleted from the outbox.
+    /// </summary>
+    [SettingsItem]
+    [Range(7, 36500)]
+    public int DeleteContentAfterDays { get; set; } = 30;
+
+    /// <summary>Informational transfer log records are deleted (at the earliest with the content).</summary>
+    [SettingsItem]
+    [Range(7, 36500)]
+    public int DeleteInformationEventsAfterDays { get; set; } = 90;
+
+    /// <summary>Warnings and errors of the transfer log are deleted (at the earliest with the informational ones).</summary>
+    [SettingsItem]
+    [Range(7, 36500)]
+    public int DeleteEventsAfterDays { get; set; } = 365;
+
+    /// <summary>
+    /// Send queue items and received files that need nothing more (the End to End Response was exchanged) are
+    /// deleted from the database. At least 30 days, because a file received again within that time is recognised
+    /// as a duplicate by its record. The received files themselves stay.
+    /// </summary>
+    [SettingsItem]
+    [Range(30, 36500)]
+    public int DeleteFinishedFilesAfterDays { get; set; } = 365;
+
+    /// <summary>Directory the removed data is written to, as compressed JSON lines per month.</summary>
+    [SettingsItem]
+    [Required]
+    public string RetentionArchiveDirectory { get; set; } = "archive";
+
+    /// <summary>
     /// Certificate with private key used for file level security: outgoing files and End to End Responses are
     /// signed with it, incoming ones are decrypted with it. Give its public part to your partners.
     /// </summary>

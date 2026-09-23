@@ -4,12 +4,15 @@ using Microsoft.AspNetCore.Components;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using Oftp4Net.Services;
+using Oftp4Net.Services.Retention;
 using Oftp4Net.Services.Tsl;
 
 namespace Oftp4Net.Server.Components.Pages;
 
-public partial class Settings : ComponentBase
+public partial class Settings : ComponentBase, IDisposable
 {
+    [Inject] protected RetentionService Retention { get; set; } = null!;
+
     [Inject] protected GlobalSettingsService GlobalSettingsService { get; set; } = null!;
     [Inject] protected IDataService DataService { get; set; } = null!;
     [Inject] protected SendService SendService { get; set; } = null!;
@@ -54,7 +57,21 @@ public partial class Settings : ComponentBase
         availableCertificates = (await DataService.GetAllCertificatesAsync()).Where(c => c.HasPrivateKey).ToList();
         availableListeners = await Listeners.GetAllAsync();
         settings = await GlobalSettingsService.GetGlobalSettingsAsync();
+        Retention.Changed += HandleRetentionChanged;
     }
+
+    private void HandleRetentionChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task RunRetentionAsync()
+    {
+        var result = await Retention.RunAsync();
+        if (result.Error is null)
+            Messenger.AddInformation($"Clean up finished: {result}.");
+        else
+            Messenger.AddWarning($"Clean up finished with an error: {result.Error}");
+    }
+
+    public void Dispose() => Retention.Changed -= HandleRetentionChanged;
 
     /// <summary>A security feature of the station profile with its setting for received and sent files.</summary>
     private sealed record ProfileRow(

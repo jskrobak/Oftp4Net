@@ -58,4 +58,37 @@ public class TransferEventRepository(
             .Where(e => !e.IsArchived && e.Timestamp < cutoff)
             .ExecuteUpdateAsync(s => s.SetProperty(e => e.IsArchived, true), cancellationToken);
     }
+
+    public Task<List<TransferEvent>> GetNextOlderThanAsync(DateTime before, DateTime? afterTimestamp, int afterId, int take,
+        CancellationToken cancellationToken = default)
+    {
+        var query = Data.AsNoTracking().Where(e => e.Timestamp < before);
+        if (afterTimestamp is { } timestamp)
+            query = query.Where(e => e.Timestamp > timestamp || e.Timestamp == timestamp && e.Id > afterId);
+
+        return query.OrderBy(e => e.Timestamp).ThenBy(e => e.Id).Take(take).ToListAsync(cancellationToken);
+    }
+
+    public Task ClearDetailsAsync(IReadOnlyCollection<int> ids, CancellationToken cancellationToken = default)
+    {
+        return Data
+            .Where(e => ids.Contains(e.Id) && (e.Details != null || e.HookParameters != null))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(e => e.Details, (string?)null)
+                .SetProperty(e => e.HookParameters, (string?)null), cancellationToken);
+    }
+
+    public async Task<int> DeleteOldAsync(DateTime exportedTimestamp, int exportedId, DateTime informationBefore,
+        DateTime othersBefore, int take, CancellationToken cancellationToken = default)
+    {
+        var ids = await Data
+            .Where(e => (e.Timestamp < exportedTimestamp || e.Timestamp == exportedTimestamp && e.Id <= exportedId)
+                        && (e.Timestamp < othersBefore || e.Level == TransferEventLevel.Information && e.Timestamp < informationBefore))
+            .OrderBy(e => e.Id)
+            .Select(e => e.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+
+        return ids.Count == 0 ? 0 : await Data.Where(e => ids.Contains(e.Id)).ExecuteDeleteAsync(cancellationToken);
+    }
 }

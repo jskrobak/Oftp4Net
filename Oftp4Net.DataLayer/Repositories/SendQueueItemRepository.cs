@@ -154,6 +154,38 @@ public class SendQueueItemRepository(
             .ToList();
     }
 
+    public Task<List<SendQueueItem>> GetFinishedAsync(DateTime createdBefore, int take, CancellationToken cancellationToken = default)
+    {
+        return Data.AsNoTracking()
+            .Where(i => (i.Status == SendStatus.DELIVERED || i.Status == SendStatus.NOT_DELIVERED) && i.Created < createdBefore)
+            .Include(i => i.Partner)
+            .Include(i => i.Identity)
+            .OrderBy(i => i.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<int> DeleteAsync(IReadOnlyCollection<int> ids, CancellationToken cancellationToken = default)
+    {
+        return Data.Where(i => ids.Contains(i.Id)).ExecuteDeleteAsync(cancellationToken);
+    }
+
+    public async Task<List<string>> GetFilesDeliveredBeforeAsync(IReadOnlyCollection<string> filePaths, DateTime deliveredBefore,
+        CancellationToken cancellationToken = default)
+    {
+        var items = await Data
+            .Where(i => filePaths.Contains(i.FilePath))
+            .Select(i => new { i.FilePath, i.Status, i.DeliveredDate })
+            .ToListAsync(cancellationToken);
+
+        // A file sent again in another item stays until that one is delivered as well.
+        return items
+            .GroupBy(i => i.FilePath)
+            .Where(g => g.All(i => i.Status == SendStatus.DELIVERED && i.DeliveredDate < deliveredBefore))
+            .Select(g => g.Key)
+            .ToList();
+    }
+
     public Task<int> CountFailedAsync(DateTime failedSince, CancellationToken cancellationToken = default)
     {
         return Data

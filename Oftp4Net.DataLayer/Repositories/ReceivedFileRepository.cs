@@ -77,6 +77,25 @@ public class ReceivedFileRepository(
             .ToListAsync(cancellationToken);
     }
 
+    public Task<List<ReceivedFile>> GetFinishedAsync(DateTime createdBefore, int take, CancellationToken cancellationToken = default)
+    {
+        return Data.AsNoTracking()
+            .Where(i => i.Created < createdBefore
+                        && (i.Status == ReceiveStatus.CONFIRMED
+                            || i.Status == ReceiveStatus.NOT_DELIVERED && i.ConfirmedDate != null
+                            || i.Status == ReceiveStatus.FAILED
+                            || i.Status == ReceiveStatus.INTERRUPTED))
+            .Include(i => i.Partner)
+            .OrderBy(i => i.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<int> DeleteAsync(IReadOnlyCollection<int> ids, CancellationToken cancellationToken = default)
+    {
+        return Data.Where(i => ids.Contains(i.Id)).ExecuteDeleteAsync(cancellationToken);
+    }
+
     public Task<int> CountUnconfirmedAsync(DateTime createdBefore, CancellationToken cancellationToken = default)
     {
         return Data

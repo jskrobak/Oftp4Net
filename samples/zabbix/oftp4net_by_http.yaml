@@ -72,6 +72,45 @@ zabbix_export:
           tags:
             - tag: component
               value: raw
+        - uuid: 0c8d5f6ed2344d59aceeb8f995bca68f
+          name: 'Oftp4Net: Database size'
+          type: DEPENDENT
+          key: oftp.database.size
+          delay: '0'
+          history: 31d
+          trends: 365d
+          value_type: UNSIGNED
+          units: B
+          description: 'Size of the database; the retention keeps it within bounds.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.checks.database.data.sizeBytes
+          master_item:
+            key: oftp.health.details
+          tags:
+            - tag: component
+              value: database
+        - uuid: dfa4438d14e2469694141179cd7040ab
+          name: 'Oftp4Net: Transfer log size'
+          type: DEPENDENT
+          key: oftp.database.size.events
+          delay: '0'
+          history: 31d
+          trends: 365d
+          value_type: UNSIGNED
+          units: B
+          description: 'Size of the transfer log table with its indexes, usually the largest one.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.checks.database.data.TransferEventsBytes
+              error_handler: DISCARD_VALUE
+          master_item:
+            key: oftp.health.details
+          tags:
+            - tag: component
+              value: database
         - uuid: 83f7f24af5ad47e2bfc4bbf9afcb6820
           name: 'Oftp4Net: Send queue'
           type: HTTP_AGENT

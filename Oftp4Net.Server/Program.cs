@@ -27,6 +27,7 @@ using Oftp4Net.Services.Health;
 using Oftp4Net.Services.Hooks;
 using Oftp4Net.Services.Import;
 using Oftp4Net.Services.Pdx;
+using Oftp4Net.Services.Retention;
 using Oftp4Net.Services.Certificates;
 using Oftp4Net.Services.Security;
 using Oftp4Net.Services.Tsl;
@@ -198,6 +199,8 @@ builder.Services.AddSingleton<ListenerService>();
 builder.Services.AddHostedService(serviceCollection => serviceCollection.GetRequiredService<ListenerService>());
 builder.Services.AddSingleton<SendService>();
 builder.Services.AddHostedService(serviceCollection => serviceCollection.GetRequiredService<SendService>());
+builder.Services.AddSingleton<RetentionService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetentionService>());
 builder.Services.AddOftpHealthChecks();
 
 builder.Services.AddResponseCompression(opts =>
