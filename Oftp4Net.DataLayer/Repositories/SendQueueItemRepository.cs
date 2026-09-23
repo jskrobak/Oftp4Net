@@ -120,6 +120,40 @@ public class SendQueueItemRepository(
             .CountAsync(cancellationToken);
     }
 
+    public async Task<List<SendQueuePartnerState>> GetStateByPartnerAsync(CancellationToken cancellationToken = default)
+    {
+        var counts = await Data
+            .Where(i => i.Status == SendStatus.NEW || i.Status == SendStatus.ERROR || i.Status == SendStatus.FAILED
+                        || i.Status == SendStatus.SENT)
+            .GroupBy(i => i.PartnerId)
+            .Select(g => new
+            {
+                PartnerId = g.Key,
+                Waiting = g.Count(i => i.Status == SendStatus.NEW || i.Status == SendStatus.ERROR),
+                OldestWaiting = g.Where(i => i.Status == SendStatus.NEW || i.Status == SendStatus.ERROR).Min(i => (DateTime?)i.Created),
+                Failed = g.Count(i => i.Status == SendStatus.FAILED),
+                AwaitingEndResponse = g.Count(i => i.Status == SendStatus.SENT),
+                OldestSent = g.Where(i => i.Status == SendStatus.SENT).Min(i => i.SentDate),
+            })
+            .ToListAsync(cancellationToken);
+
+        // The error of the item that failed last, among those still waiting or failed for good.
+        var errors = await Data
+            .Where(i => (i.Status == SendStatus.ERROR || i.Status == SendStatus.FAILED) && i.LastErrorDate != null)
+            .GroupBy(i => i.PartnerId)
+            .Select(g => g.OrderByDescending(i => i.LastErrorDate).Select(i => new { i.PartnerId, i.LastError, i.LastErrorDate }).First())
+            .ToListAsync(cancellationToken);
+        var errorByPartner = errors.ToDictionary(e => e.PartnerId);
+
+        return counts
+            .Select(c => errorByPartner.TryGetValue(c.PartnerId, out var error)
+                ? new SendQueuePartnerState(c.PartnerId, c.Waiting, c.OldestWaiting, c.Failed, c.AwaitingEndResponse, c.OldestSent,
+                    error.LastError, error.LastErrorDate)
+                : new SendQueuePartnerState(c.PartnerId, c.Waiting, c.OldestWaiting, c.Failed, c.AwaitingEndResponse, c.OldestSent,
+                    null, null))
+            .ToList();
+    }
+
     public Task<int> CountFailedAsync(DateTime failedSince, CancellationToken cancellationToken = default)
     {
         return Data

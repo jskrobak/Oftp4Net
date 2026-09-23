@@ -5,6 +5,16 @@ using Oftp4Net.Domain;
 
 namespace Oftp4Net.DataLayer.Repositories;
 
+/// <summary>What waits in the send queue for one partner.</summary>
+/// <param name="Waiting">Items new or to be retried.</param>
+/// <param name="OldestWaiting">When the oldest of them was queued.</param>
+/// <param name="Failed">Items that failed for good and wait for the administrator.</param>
+/// <param name="AwaitingEndResponse">Items sent, whose End to End Response has not arrived yet.</param>
+/// <param name="OldestSent">When the oldest of them was sent.</param>
+/// <param name="LastError">The error of the item that failed last, with its time.</param>
+public sealed record SendQueuePartnerState(int PartnerId, int Waiting, DateTime? OldestWaiting, int Failed,
+    int AwaitingEndResponse, DateTime? OldestSent, string? LastError, DateTime? LastErrorDate);
+
 public interface ISendQueueItemRepository: IRepository<SendQueueItem, int>
 {
     Task<DataFragment<SendQueueItem>> GetFragmentAsync(SendQueueFilter filter, GridDataProviderRequest<SendQueueItem> request,
@@ -34,4 +44,7 @@ public interface ISendQueueItemRepository: IRepository<SendQueueItem, int>
 
     /// <summary>Items that failed for good since the given time.</summary>
     Task<int> CountFailedAsync(DateTime failedSince, CancellationToken cancellationToken = default);
+
+    /// <summary>The state of the send queue of every partner that has items waiting, failed or not yet confirmed.</summary>
+    Task<List<SendQueuePartnerState>> GetStateByPartnerAsync(CancellationToken cancellationToken = default);
 }

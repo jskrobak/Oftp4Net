@@ -14,6 +14,7 @@ public static class HealthCheckRegistration
     /// </summary>
     public static IServiceCollection AddOftpHealthChecks(this IServiceCollection services)
     {
+        services.AddSingleton<SendQueueReportService>();
         services.AddSingleton<HealthMonitor>();
         services.AddSingleton<IHealthCheckPublisher>(sp => sp.GetRequiredService<HealthMonitor>());
         services.Configure<HealthCheckPublisherOptions>(options =>

@@ -217,6 +217,7 @@ docker build -f Oftp4Net.Server/Dockerfile -t oftp4net-server .
 | `GET /health/live` | none, the process answers | anonymous |
 | `GET /health/ready` | `database`, `storage`, `listeners`, `send-service`; `503` when one of them is unhealthy | anonymous, the state only |
 | `GET /health/details` | all of them, as JSON with a description and data | API token (`Authorization: Bearer …`) |
+| `GET /health/send-queue` | the send queue in numbers, per partner, for alerting in the monitoring | API token |
 
 The liveness endpoint checks nothing on purpose: a database outage must not make the orchestrator restart the
 server again and again. The Docker image uses it in its `HEALTHCHECK`; readiness is for the load balancer or a
@@ -276,8 +277,7 @@ readinessProbe:
   periodSeconds: 15
 ```
 
-In the web UI the same result is on the *Dashboard* (the start page), in the card *Health*: the overall state,
-the time of the last check, every check with its description and a button that runs them right away.
+### The checks
 
 | Check | Unhealthy / degraded when |
 |---|---|
@@ -295,6 +295,72 @@ The checks read the state the services keep and the database; none of them conne
 anything. The application runs them every 30 seconds, shows the result on the dashboard and writes every change
 to the log. With `HealthChecks:WebhookUrl` it also calls the webhook `health.changed` with the overall `status`
 and the problems in `error`, signed like the other webhooks when `HealthChecks:WebhookSecret` is set.
+
+### Files that are not sent
+
+The check `send-queue` only says that something is stuck for a day. When a file has to reach the partner sooner,
+the monitoring asks `/health/send-queue` and decides itself: the endpoint returns counts and ages, no thresholds.
+
+```json
+{
+  "waiting": 2,
+  "oldestWaitingMinutes": 120,
+  "failed": 1,
+  "awaitingEndResponse": 1,
+  "oldestAwaitingEndResponseMinutes": 300,
+  "partners": [
+    {
+      "partner": "Loopback",
+      "ssid": "O0013000000LOOPBACK",
+      "waiting": 2,
+      "oldestWaitingMinutes": 120,
+      "failed": 1,
+      "awaitingEndResponse": 1,
+      "oldestAwaitingEndResponseMinutes": 300,
+      "lastError": "retry limit reached: TLS handshake failed",
+      "lastErrorDate": "2026-09-23T21:13:34"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `waiting` | files new or waiting for a retry |
+| `oldestWaitingMinutes` | how long the oldest of them has been in the queue |
+| `failed` | files that failed for good (`FAILED`) and wait for the administrator to send them again or delete them |
+| `awaitingEndResponse` | files sent whose End to End Response has not arrived yet (`SENT`) |
+| `oldestAwaitingEndResponseMinutes` | how long ago the oldest of them was sent |
+| `lastError`, `lastErrorDate` | the error of the file that failed last, among those waiting or failed |
+
+Ages are whole minutes and `0` when there is nothing, so that every value is a number. Every partner is listed,
+also with an empty queue, so that the items the monitoring discovers per partner do not come and go.
+
+In Zabbix:
+
+1. A host with the macros `{$OFTP.URL}` (e.g. `https://oftp.example.com`) and `{$OFTP.TOKEN}` (secret text).
+2. A master item of the type *HTTP agent*: URL `{$OFTP.URL}/health/send-queue`, header
+   `Authorization: Bearer {$OFTP.TOKEN}`, type of information *Text*, interval e.g. `5m`, history `0` (only the
+   dependent items keep values).
+3. Dependent items for the totals with the preprocessing *JSONPath*, e.g. `$.oldestWaitingMinutes` or `$.failed`.
+4. A discovery rule of the type *Dependent item* on the master item, with the preprocessing *JSONPath*
+   `$.partners` and the LLD macros `{#PARTNER}` = `$.partner` and `{#SSID}` = `$.ssid`.
+5. Item prototypes with *JSONPath* such as `$.partners[?(@.ssid=='{#SSID}')].oldestWaitingMinutes.first()`, and
+   trigger prototypes, e.g.:
+
+| Trigger | Expression |
+|---|---|
+| A file for {#PARTNER} waits for more than an hour | `last(/oftp/oftp.waiting.age[{#SSID}])>60` |
+| A file for {#PARTNER} failed for good | `last(/oftp/oftp.failed[{#SSID}])>0` |
+| {#PARTNER} has not confirmed a file for a day | `last(/oftp/oftp.eerp.age[{#SSID}])>1440` |
+| The server does not answer | `nodata(/oftp/oftp.send-queue,15m)=1` on the master item |
+
+The last trigger matters as much as the others: a server that is down sends no alert of its own.
+
+### Dashboard
+
+In the web UI the same result is on the *Dashboard* (the start page), in the card *Health*: the overall state,
+the time of the last check, every check with its description and a button that runs them right away.
 
 ## Transfer log
 

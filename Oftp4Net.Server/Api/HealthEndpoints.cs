@@ -9,7 +9,8 @@ namespace Oftp4Net.Server.Api;
 /// <summary>
 /// Health endpoints for container orchestration and monitoring:
 /// <c>/health/live</c> (the process answers), <c>/health/ready</c> (the server can work, 503 when not) and
-/// <c>/health/details</c> (all checks as JSON, with an API token).
+/// <c>/health/details</c> (all checks as JSON, with an API token) and <c>/health/send-queue</c> (the send queue in
+/// numbers per partner for the monitoring, with an API token).
 /// </summary>
 public static class HealthEndpoints
 {
@@ -27,6 +28,12 @@ public static class HealthEndpoints
 
         app.MapHealthChecks("/health/details", new HealthCheckOptions { ResponseWriter = WriteDetailsAsync })
             .RequireAuthorization(new AuthorizeAttribute { AuthenticationSchemes = ApiTokenAuthenticationHandler.SchemeName });
+
+        // Counts and ages without thresholds: when a file waits too long is decided by the monitoring.
+        app.MapGet("/health/send-queue", async (SendQueueReportService reports, CancellationToken cancellationToken) =>
+                Results.Json(await reports.GetReportAsync(cancellationToken), JsonOptions))
+            .RequireAuthorization(new AuthorizeAttribute { AuthenticationSchemes = ApiTokenAuthenticationHandler.SchemeName })
+            .ExcludeFromDescription();
     }
 
     private static Task WriteDetailsAsync(HttpContext context, HealthReport report)
