@@ -368,6 +368,18 @@
     </BodyTemplate>
 </HxModal>
 
+<HxModal @ref="connectionTestModal" ShowCloseButton="true" Size="ModalSize.Large">
+    <HeaderTemplate>
+        Test the connection to @connectionTestPartner?.Name
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (connectionTestPartner is not null && connectionTestIdentities is not null)
+        {
+            <ConnectionTestForm Partner="connectionTestPartner" Identities="connectionTestIdentities" />
+        }
+    </BodyTemplate>
+</HxModal>
+
 <HxModal @ref="pdxModal" ShowCloseButton="true" Size="ModalSize.Large">
     <HeaderTemplate>
         Import OFTP2 Communication Setup (PDX)
@@ -539,6 +551,10 @@
                         <HxContextMenuItem Text="Send our certificate"
                                            Icon="BootstrapIcon.Award"
                                            OnClick="async () => await HandleSendCertificateClick(currentPartner)" />
+
+                        <HxContextMenuItem Text="Test connection"
+                                           Icon="BootstrapIcon.Plug"
+                                           OnClick="async () => await HandleTestConnectionClick(currentPartner)" />
 
                         <HxContextMenuItem Text="Delete"
                                            Icon="BootstrapIcon.Trash"

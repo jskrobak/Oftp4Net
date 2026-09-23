@@ -39,14 +39,14 @@ public partial class ConnectionTests : ComponentBase, IDisposable
             Messenger.AddWarning("Connection tests are running already.");
     }
 
-    private static ThemeColor StageColor(ConnectionTestResult result) => result.Stage switch
+    internal static ThemeColor StageColor(ConnectionTestResult result) => result.Stage switch
     {
         ConnectionTestStage.Completed => ThemeColor.Success,
         ConnectionTestStage.Skipped => ThemeColor.Secondary,
         _ => ThemeColor.Danger,
     };
 
-    private static string StageText(ConnectionTestResult result) => result.Stage switch
+    internal static string StageText(ConnectionTestResult result) => result.Stage switch
     {
         ConnectionTestStage.Completed => "OK",
         ConnectionTestStage.Skipped => "skipped",

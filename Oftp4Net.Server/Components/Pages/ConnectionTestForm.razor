@@ -1,0 +1,99 @@
+@using Oftp4Net.Domain
+@using Oftp4Net.Services.ConnectionTests
+@implements IDisposable
+
+@* Tests the connection to one partner without transferring anything (Partners -> Test connection). *@
+<p class="small text-body-secondary">
+    The session runs through TCP, TLS, SSID and the secure authentication and is ended before anything is
+    transferred in either direction; the send queue is not touched.
+</p>
+<div class="row g-2 align-items-end">
+    <div class="col-md-8">
+        <label class="form-label">Test as identity</label>
+        <select class="form-select" value="@identityId" @onchange="e => identityId = int.Parse((string)e.Value!)">
+            @foreach (var identity in Identities)
+            {
+                <option value="@identity.Id">@identity.Name (@identity.SSID)</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <HxButton Color="ThemeColor.Primary" Icon="BootstrapIcon.PlayFill" Spinner="running"
+                  Enabled="!running && !Tests.IsRunning && identityId != 0" OnClick="TestAsync">Test</HxButton>
+    </div>
+    @if (Tests.IsRunning)
+    {
+        <div class="col-12 small text-body-secondary">A series of connection tests is running, wait until it has finished.</div>
+    }
+</div>
+
+@if (Tests.Results.GetValueOrDefault(Partner.Id) is { } result)
+{
+    <hr />
+    <div class="d-flex align-items-center gap-2 mb-2">
+        <HxBadge Color="@ConnectionTests.StageColor(result)">@ConnectionTests.StageText(result)</HxBadge>
+        <span class="small text-body-secondary">
+            @result.Tested.ToString("g"), @result.Duration.TotalSeconds.ToString("F1") s as @result.Identity to @result.EndPoint
+        </span>
+    </div>
+    <div class="mb-2">@result.Message</div>
+    <dl class="row small mb-0">
+        @if (result.Negotiated is not null)
+        {
+            <dt class="col-sm-3">Negotiated</dt>
+            <dd class="col-sm-9">@result.Negotiated</dd>
+        }
+        @if (result.Tls is not null)
+        {
+            <dt class="col-sm-3">TLS</dt>
+            <dd class="col-sm-9">@result.Tls</dd>
+        }
+        @if (result.RemoteCertificate is not null)
+        {
+            <dt class="col-sm-3">Certificate</dt>
+            <dd class="col-sm-9 text-break">@result.RemoteCertificate</dd>
+        }
+    </dl>
+}
+
+@code {
+    [Inject] protected ConnectionTestService Tests { get; set; } = null!;
+    [Inject] protected IHxMessengerService Messenger { get; set; } = null!;
+
+    [Parameter, EditorRequired] public Partner Partner { get; set; } = null!;
+
+    [Parameter, EditorRequired] public IReadOnlyList<Identity> Identities { get; set; } = [];
+
+    private int identityId;
+    private bool running;
+
+    protected override void OnInitialized() => Tests.Changed += HandleChanged;
+
+    protected override void OnParametersSet()
+    {
+        // The identity of the last test of the partner, otherwise the first one.
+        var last = Tests.Results.GetValueOrDefault(Partner.Id)?.Identity;
+        identityId = Identities.FirstOrDefault(i => i.SSID == last)?.Id ?? Identities.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private void HandleChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task TestAsync()
+    {
+        running = true;
+        try
+        {
+            await Tests.TestAsync(Partner.Id, identityId);
+        }
+        catch (Exception ex)
+        {
+            Messenger.AddError($"The connection test could not be run: {ex.Message}");
+        }
+        finally
+        {
+            running = false;
+        }
+    }
+
+    public void Dispose() => Tests.Changed -= HandleChanged;
+}

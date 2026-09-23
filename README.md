@@ -773,7 +773,8 @@ validity, name), a TLS handshake the partner broke off (usually our client certi
 other side refused with its ESID reason, or the secure authentication. A successful one shows what was negotiated,
 the TLS version and the certificate of the partner.
 
-*Test all* goes through the partners one after another, *Test failed again* repeats the failed ones. Each test
+*Test all* goes through the partners one after another, *Test failed again* repeats the failed ones; a single
+partner is tested from its menu on the *Partners* page (*Test connection*). Each test
 runs under the identity chosen on the page: a partner that knows us by another of our codes refuses it with reason
 `03` (user code not known) and is to be tested with that identity. A partner with a session of ours running is
 skipped, since some partners accept only one session per code. Every test is written to the transfer log

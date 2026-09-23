@@ -243,6 +243,21 @@ public partial class Partners : ComponentBase
 
     #endregion
 
+    #region Testing the connection to one partner
+
+    private HxModal connectionTestModal = null!;
+    private Partner? connectionTestPartner;
+    private List<Identity>? connectionTestIdentities;
+
+    private async Task HandleTestConnectionClick(Partner partner)
+    {
+        connectionTestIdentities = await DataService.GetAllIdentitiesAsync();
+        connectionTestPartner = partner;
+        await connectionTestModal.ShowAsync();
+    }
+
+    #endregion
+
     #region Import of an OFTP2 Communication Setup (PDX)
 
     private async Task HandlePdxImportClicked()
