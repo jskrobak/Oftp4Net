@@ -2,18 +2,88 @@ html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
-a, .btn-link {
-    color: #006bb7;
+/* The colours of the logo and of oftp4net.com: navy leads, amber is the accent. Bootstrap is not rebuilt, only
+   its variables are set, so an update of the framework keeps working. */
+:root {
+    --o4n-navy: #0f2a4a;
+    --o4n-navy-hover: #163c68;
+    --o4n-navy-light: #4f8ccc;
+    --o4n-amber: #f5a524;
+    --o4n-amber-dark: #c77f00;
+}
+
+:root, [data-bs-theme="light"] {
+    --bs-primary: var(--o4n-navy);
+    --bs-primary-rgb: 15, 42, 74;
+    --bs-link-color: #14416f;
+    --bs-link-color-rgb: 20, 65, 111;
+    --bs-link-hover-color: var(--o4n-navy);
+    --bs-link-hover-color-rgb: 15, 42, 74;
+    --bs-focus-ring-color: rgba(15, 42, 74, 0.25);
+    /* The amber of the logo instead of the Bootstrap yellow, so that the two do not sit next to each other. */
+    --bs-warning: var(--o4n-amber);
+    --bs-warning-rgb: 245, 165, 36;
+    --bs-warning-bg-subtle: #fdf1dc;
+    --bs-warning-border-subtle: #f6d79a;
+    --bs-warning-text-emphasis: #7a4f00;
+}
+
+[data-bs-theme="dark"] {
+    /* Navy disappears on a dark background, so the lighter shade of the brand leads there. */
+    --bs-primary: var(--o4n-navy-light);
+    --bs-primary-rgb: 79, 140, 204;
+    --bs-link-color: #7fb0e3;
+    --bs-link-color-rgb: 127, 176, 227;
+    --bs-link-hover-color: #a6c9ee;
+    --bs-link-hover-color-rgb: 166, 201, 238;
+    --bs-focus-ring-color: rgba(79, 140, 204, 0.3);
+    --bs-warning: var(--o4n-amber);
+    --bs-warning-rgb: 245, 165, 36;
 }
 
 .btn-primary {
-    color: #fff;
-    background-color: #1b6ec2;
-    border-color: #1861ac;
+    --bs-btn-bg: var(--o4n-navy);
+    --bs-btn-border-color: var(--o4n-navy);
+    --bs-btn-hover-bg: var(--o4n-navy-hover);
+    --bs-btn-hover-border-color: var(--o4n-navy-hover);
+    --bs-btn-active-bg: #0a1e36;
+    --bs-btn-active-border-color: #0a1e36;
+    --bs-btn-disabled-bg: var(--o4n-navy);
+    --bs-btn-disabled-border-color: var(--o4n-navy);
 }
 
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+[data-bs-theme="dark"] .btn-primary {
+    --bs-btn-bg: var(--o4n-navy-light);
+    --bs-btn-border-color: var(--o4n-navy-light);
+    --bs-btn-hover-bg: #6ea4db;
+    --bs-btn-hover-border-color: #6ea4db;
+    --bs-btn-active-bg: #3f76b0;
+    --bs-btn-active-border-color: #3f76b0;
+    --bs-btn-color: #08121f;
+    --bs-btn-hover-color: #08121f;
+    --bs-btn-active-color: #08121f;
+}
+
+.btn-outline-primary {
+    --bs-btn-color: var(--o4n-navy);
+    --bs-btn-border-color: var(--o4n-navy);
+    --bs-btn-hover-bg: var(--o4n-navy);
+    --bs-btn-hover-border-color: var(--o4n-navy);
+    --bs-btn-active-bg: var(--o4n-navy);
+    --bs-btn-active-border-color: var(--o4n-navy);
+}
+
+/* The warning button keeps dark text on the amber of the logo. */
+.btn-warning {
+    --bs-btn-bg: var(--o4n-amber);
+    --bs-btn-border-color: var(--o4n-amber);
+    --bs-btn-color: #1a1300;
+    --bs-btn-hover-bg: #ffb53d;
+    --bs-btn-hover-border-color: #ffb53d;
+    --bs-btn-hover-color: #1a1300;
+    --bs-btn-active-bg: var(--o4n-amber-dark);
+    --bs-btn-active-border-color: var(--o4n-amber-dark);
+    --bs-btn-active-color: #1a1300;
 }
 
 .content {

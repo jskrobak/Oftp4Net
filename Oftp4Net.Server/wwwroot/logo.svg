@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Oftp4Net">
+  <rect width="64" height="64" rx="14" fill="#0f2a4a"/>
+  <!-- a file goes out to the partner -->
+  <path d="M12 22 H44" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M37 15 L44 22 L37 29" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- the end-to-end response (EERP) comes back -->
+  <path d="M52 42 H28" stroke="#f5a524" stroke-width="5" stroke-linecap="round"/>
+  <path d="M12 42 l4 4 l8 -9" fill="none" stroke="#f5a524" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
