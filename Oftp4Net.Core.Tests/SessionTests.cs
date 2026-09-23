@@ -553,7 +553,9 @@ public class SessionTests
         }
 
         Assert.Equal(1, refused);
-        Assert.Equal(1, listener.ActiveSessions);
+        // The refused connection is counted until the listener has closed it, which it does on its own thread.
+        while (listener.ActiveSessions > 1)
+            await Task.Delay(10, cts.Token);
 
         // A slot freed by the first session is available again.
         release.SetResult();
