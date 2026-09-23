@@ -1185,7 +1185,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             _ => throw new ArgumentException("Unexpected end response.", nameof(response))
         };
 
-        var item = await _sendQueue.FindSentAsync(datasetName, date, time, cancellationToken);
+        var item = await _sendQueue.FindSentAsync(Partner!.Id, datasetName, date, time, cancellationToken);
         if (item is null)
         {
             _logger.LogWarning("Received {Response} for unknown file {VirtualFileName} {Date} {Time}",

@@ -834,6 +834,26 @@ Every entry of the list carries the OFTP2 certification authority and its root, 
 authority only. A certificate issued directly by such a root is refused although its chain is sound, because only
 the listed authority may issue the certificate of a partner (Odette OP08 2.7).
 
+## Load test
+
+[`samples/loadtest.py`](samples/loadtest.py) puts a test installation under the load of many partners at once. It
+creates an identity, a partner and a listener per partner, all sharing one Odette code, so that the server plays
+both sides of every session; the throughput is pessimistic because one machine does the client, the server and TLS
+twice, but sessions in parallel, the memory of the file security and mix-ups between partners show up as they
+would in production.
+
+```bash
+samples/loadtest.py setup --partners 60 --size-kb 1024   # partners, listeners and the payload
+# restart the server so that it opens the listeners
+samples/loadtest.py run --partners 60 --files 5          # queue the files and measure
+samples/loadtest.py cleanup                              # remove everything of the test
+```
+
+It writes into the database of the server (`--psql` says how to reach it), so it belongs to a test installation
+and never to a production one. Everything it creates is named `O0013LOAD…` and `Load …`, which is what cleanup
+looks for. `--security` signs and encrypts the files: those are processed in memory, so the memory a run needs is
+roughly *sessions in parallel × size of a file × 5* — worth measuring before the limits are raised.
+
 ## Certificates for the interoperability tests
 
 [`samples/odette-test-pki.sh`](samples/odette-test-pki.sh) creates the certificates of the Odette interoperability

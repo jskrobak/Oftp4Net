@@ -101,15 +101,17 @@ public class SendQueueItemRepository(
             .FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
     }
 
-    public async Task<SendQueueItem?> FindSentAsync(string virtualFileName, string fileDate, string fileTime,
+    public async Task<SendQueueItem?> FindSentAsync(int partnerId, string virtualFileName, string fileDate, string fileTime,
         CancellationToken cancellationToken = default)
     {
         return await Data
-            .Where(i => i.VirtualFileName == virtualFileName
+            .Where(i => i.PartnerId == partnerId
+                        && i.VirtualFileName == virtualFileName
                         && i.FileDate == fileDate
                         && i.FileTime == fileTime
                         && i.Status == SendStatus.SENT)
             .Include(i => i.Identity)
+            .OrderBy(i => i.Id)
             .FirstOrDefaultAsync(cancellationToken);
     }
 

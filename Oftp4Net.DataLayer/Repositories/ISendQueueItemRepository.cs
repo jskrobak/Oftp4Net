@@ -36,7 +36,11 @@ public interface ISendQueueItemRepository: IRepository<SendQueueItem, int>
         CancellationToken cancellationToken = default);
 
     /// <summary>Finds a sent item by the virtual file identification echoed in an End to End Response.</summary>
-    Task<SendQueueItem?> FindSentAsync(string virtualFileName, string fileDate, string fileTime,
+    /// <summary>
+    /// The file an End to End Response belongs to. The partner is part of the search: several partners use the
+    /// same virtual file names, and two of them can send a file at the same moment.
+    /// </summary>
+    Task<SendQueueItem?> FindSentAsync(int partnerId, string virtualFileName, string fileDate, string fileTime,
         CancellationToken cancellationToken = default);
 
     /// <summary>Items still waiting to be sent (new or to be retried) that were queued before the given time.</summary>
