@@ -11,6 +11,19 @@ public enum OftpRole
     Responder
 }
 
+/// <summary>How far a session got; tells where one that failed stopped.</summary>
+public enum OftpSessionPhase
+{
+    /// <summary>SSRM and SSID are exchanged and checked.</summary>
+    Start,
+
+    /// <summary>Both sides prove that they hold their private keys (SECD, AUCH, AURP).</summary>
+    SecureAuthentication,
+
+    /// <summary>The session started, files and End to End Responses are exchanged.</summary>
+    Running,
+}
+
 public sealed class OftpSessionOptions
 {
     public const int MinExchangeBufferSize = 128;
@@ -59,6 +72,13 @@ public sealed class OftpSessionOptions
     /// <summary>Maximum time to wait for the next command from the peer.</summary>
     public TimeSpan ResponseTimeout { get; init; } = TimeSpan.FromMinutes(3);
 
+    /// <summary>
+    /// Initiator only: a connection test. The session ends with ESID (normal termination) right after the start and
+    /// the secure authentication, before the direction changes, so that no file and no End to End Response is
+    /// exchanged in either direction.
+    /// </summary>
+    public bool EndAfterStart { get; init; }
+
     internal void Validate()
     {
         if (ExchangeBufferSize is < MinExchangeBufferSize or > OftpTransport.MaxExchangeBufferSize)
@@ -67,6 +87,8 @@ public sealed class OftpSessionOptions
             throw new ArgumentOutOfRangeException(nameof(Credit));
         if (!ProtocolLevels.IsSupported(ProtocolLevel))
             throw new ArgumentOutOfRangeException(nameof(ProtocolLevel));
+        if (EndAfterStart && Role != OftpRole.Initiator)
+            throw new ArgumentException("Only the initiator can end the session right after the start.", nameof(EndAfterStart));
         if (SecureAuthentication && !ProtocolLevels.HasOftp2Features(ProtocolLevel))
             throw new ArgumentException("Secure authentication requires protocol level 5 (OFTP 2.0).",
                 nameof(SecureAuthentication));

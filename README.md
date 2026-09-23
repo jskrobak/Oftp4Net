@@ -39,6 +39,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Health checks for Docker, Kubernetes and monitoring: database, storage, listeners, send service, certificates,
   revocation lists and stuck files, shown on the dashboard and reported by webhook
 - Retention: old data removed every night and written to compressed archive files first, nothing unfinished touched
+- Connection tests that check partners (TCP, TLS, SSID, secure authentication) without transferring anything
 
 ## OFTP2 support
 
@@ -655,6 +656,7 @@ the OpenAPI description itself is at `/openapi/v1.json`. Both require a signed i
 | `GET /api/v1/inbox/{id}` / `…/content` | detail / content of a received file |
 | `POST /api/v1/inbox/{id}/fetched` | marks a received file as fetched |
 | `GET /api/v1/partners`, `/identities` | codes usable when sending |
+| `POST /api/v1/partners/{partner}/connection-test` | tests the connection to a partner without transferring anything (`identity`, default the first one) |
 | `GET /api/v1/events` | reads the transfer log |
 | `GET /api/v1/status` | state of the services, listeners and queues |
 
@@ -747,6 +749,33 @@ OS4X keeps both sides of a relation in one row, so the identity of a partner com
 Certificates are not part of the OS4X partner table, so the trusted certificate of a TLS connection and the
 partner's certificate for file security are assigned after the import. Buffer size and credit are per partner in
 OS4X but global here, so they are not taken over.
+
+## Testing the connection to partners
+
+*Partners* → *Connection tests* checks that partners can be reached before files are sent to them, e.g. after an
+import from OS4X. A test opens the session as for sending and ends it before anything is transferred:
+
+1. TCP connection to the host and port of the partner,
+2. TLS with the certificates of both sides, the trusted certificate and the revocation lists,
+3. SSRM and SSID: the codes and passwords of both sides, release level, buffer size and credit,
+4. the secure authentication (SECD, AUCH, AURP) when the partner uses it,
+5. ESID with *normal termination* right away, before the direction changes (CD).
+
+Because the session ends before the partner becomes the speaker, it cannot deliver the files it has waiting for us
+and no End to End Response goes either way; a partner sees a session that started and ended without files. The
+send queue is not touched, so a failed test is not a failed attempt of the files waiting for the partner.
+
+The result says where a failed test stopped and why, in words an administrator can act on: no connection (a
+firewall that drops the connection, or does not let our address through), a certificate refused and why (chain,
+validity, name), a TLS handshake the partner broke off (usually our client certificate), a code or password the
+other side refused with its ESID reason, or the secure authentication. A successful one shows what was negotiated,
+the TLS version and the certificate of the partner.
+
+*Test all* goes through the partners one after another, *Test failed again* repeats the failed ones. Each test
+runs under the identity chosen on the page: a partner that knows us by another of our codes refuses it with reason
+`03` (user code not known) and is to be tested with that identity. A partner with a session of ours running is
+skipped, since some partners accept only one session per code. Every test is written to the transfer log
+(*Outgoing*, `ConnectionTested`) and can be run from scripts with `POST /api/v1/partners/{partner}/connection-test`.
 
 ## Partner Details Exchange (PDX)
 

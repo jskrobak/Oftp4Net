@@ -50,6 +50,9 @@ public enum TransferEventType
     SetupRejected,
     CertificateReceived,
     CertificateRejected,
+
+    /// <summary>A connection test: a session ended right after its start, without transferring anything.</summary>
+    ConnectionTested,
 }
 
 /// <summary>

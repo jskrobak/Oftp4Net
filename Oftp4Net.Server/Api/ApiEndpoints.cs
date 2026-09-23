@@ -8,6 +8,7 @@ using Oftp4Net.Services;
 using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.Pdx;
 using Oftp4Net.Services.Api;
+using Oftp4Net.Services.ConnectionTests;
 
 namespace Oftp4Net.Server.Api;
 
@@ -259,6 +260,26 @@ public static class ApiEndpoints
                 Results.Ok((await repository.GetAllAsync(cancellationToken))
                     .Select(i => new PartyDto(i.Id, i.Name, i.SSID, i.SFID)).ToList()))
             .WithSummary("Lists our identities that can be used when sending.");
+
+        api.MapPost("/partners/{partner}/connection-test", async (string partner, string? identity,
+                IPartnerRepository partners, IIdentityRepository identities, ConnectionTestService tests,
+                CancellationToken cancellationToken) =>
+            {
+                var partnerEntity = (await partners.GetAllAsync(cancellationToken))
+                    .FirstOrDefault(p => Matches(p.SSID, partner) || Matches(p.Name, partner));
+                if (partnerEntity is null)
+                    return Results.NotFound(new ApiError($"Unknown partner '{partner}'."));
+
+                var all = await identities.GetAllAsync(cancellationToken);
+                var identityEntity = string.IsNullOrWhiteSpace(identity)
+                    ? all.OrderBy(i => i.Id).FirstOrDefault()
+                    : all.FirstOrDefault(i => Matches(i.SSID, identity) || Matches(i.Name, identity));
+                if (identityEntity is null)
+                    return Results.BadRequest(new ApiError(string.IsNullOrWhiteSpace(identity) ? "No identity is configured." : $"Unknown identity '{identity}'."));
+
+                return Results.Ok(await tests.TestAsync(partnerEntity.Id, identityEntity.Id, cancellationToken));
+            })
+            .WithSummary("Tests the connection to a partner without transferring anything (TCP, TLS, SSID, secure authentication); identity defaults to the first one.");
 
         api.MapGet("/events", async (
                 ITransferEventRepository repository,

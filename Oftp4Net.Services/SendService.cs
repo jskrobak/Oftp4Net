@@ -53,6 +53,9 @@ public class SendService(ILogger<SendService> logger,
     /// <summary>Number of sessions with partners running at the moment.</summary>
     public int ActiveSessions => _active.Count;
 
+    /// <summary>A session of ours with the partner is running.</summary>
+    public bool HasActiveSession(int partnerId) => _active.ContainsKey(partnerId);
+
     public void Pause() => IsPaused = true;
 
     public void Resume()
@@ -258,7 +261,7 @@ public class SendService(ILogger<SendService> logger,
     /// <param name="tslVerificationRoots">
     /// Certificates of the TSL that are only there to verify the authorities above them.
     /// </param>
-    private static async Task<OftpTlsOptions> CreateTlsOptionsAsync(IServiceProvider services, Partner partner,
+    internal static async Task<OftpTlsOptions> CreateTlsOptionsAsync(IServiceProvider services, Partner partner,
         GlobalSettings settings, System.Security.Cryptography.X509Certificates.X509Certificate2Collection tslAnchors,
         System.Security.Cryptography.X509Certificates.X509Certificate2Collection tslVerificationRoots,
         CancellationToken cancellationToken)

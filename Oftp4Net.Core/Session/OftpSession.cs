@@ -45,6 +45,9 @@ public sealed class OftpSession
         Level = options.ProtocolLevel;
     }
 
+    /// <summary>How far the session got.</summary>
+    public OftpSessionPhase Phase { get; private set; } = OftpSessionPhase.Start;
+
     /// <summary>SSID received from the peer, available once the session has started.</summary>
     public SSID? RemoteSsid { get; private set; }
 
@@ -80,6 +83,12 @@ public sealed class OftpSession
         try
         {
             await StartAsync(cancellationToken);
+
+            if (_options.EndAfterStart)
+            {
+                await SendAsync(new ESID { ReasonCode = ReasonCodes.NormalTermination }, cancellationToken);
+                return;
+            }
 
             var speaker = _options.Role == OftpRole.Initiator;
             var changeDirectionReceived = false;
@@ -164,7 +173,12 @@ public sealed class OftpSession
                 RestartAgreed ? ", restart" : ""));
 
         if (SecureAuthenticationAgreed)
+        {
+            Phase = OftpSessionPhase.SecureAuthentication;
             await AuthenticateSecurelyAsync(cancellationToken);
+        }
+
+        Phase = OftpSessionPhase.Running;
     }
 
     private SSID CreateSsid(string code, string password, int bufferSize, int credit) => new()

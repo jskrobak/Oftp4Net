@@ -29,7 +29,8 @@ public class SessionTests
         string clientPassword = ClientPassword,
         OftpTlsOptions? serverTls = null, OftpTlsOptions? clientTls = null,
         bool secureAuthentication = false, bool bufferCompression = false, bool restart = false,
-        int level = ProtocolLevels.Oftp2, int? responderLevel = null)
+        int level = ProtocolLevels.Oftp2, int? responderLevel = null,
+        bool endAfterStart = false, Action<OftpSession>? clientSession = null)
     {
         using var cts = new CancellationTokenSource(TestTimeout);
         var serverDone = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -76,7 +77,9 @@ public class SessionTests
                 BufferCompression = bufferCompression,
                 Restart = restart,
                 ProtocolLevel = level,
+                EndAfterStart = endAfterStart,
             }, client, NullLogger.Instance);
+            clientSession?.Invoke(session);
             await session.RunAsync(cts.Token);
         }
         catch (Exception ex)
@@ -165,6 +168,80 @@ public class SessionTests
         Assert.Null(clientError);
         Assert.Null(serverError);
         Assert.Equal(content, server.ReceivedFiles["PADDED"]);
+    }
+
+    [Fact]
+    public async Task ConnectionTestEndsAfterTheStartWithoutTransferringAnything()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        // Both sides have something to send, which a normal session would transfer.
+        client.Enqueue("FROMCLIENT", "content"u8.ToArray(), ServerCode);
+        server.Enqueue("FROMSERVER", "content"u8.ToArray(), ClientCode);
+        OftpSession? session = null;
+
+        var (clientError, serverError) = await RunAsync(client, server, endAfterStart: true, clientSession: s => session = s);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal(OftpSessionPhase.Running, session!.Phase);
+        Assert.Equal(ServerCode, session.RemoteSsid!.Code);
+        Assert.Empty(client.SentFiles);
+        Assert.Empty(server.SentFiles);
+        Assert.Empty(client.ReceivedFiles);
+        Assert.Empty(server.ReceivedFiles);
+    }
+
+    [Fact]
+    public async Task ConnectionTestRunsTheSecureAuthentication()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+
+        var (clientError, serverError) = await RunAsync(client, server, secureAuthentication: true, endAfterStart: true);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Single(client.EncryptedChallenges);
+        Assert.Single(server.EncryptedChallenges);
+    }
+
+    [Fact]
+    public async Task ConnectionTestRefusedByTheResponderStopsInTheStart()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        OftpSession? session = null;
+
+        var (clientError, _) = await RunAsync(client, server, clientPassword: "WRONG", endAfterStart: true,
+            clientSession: s => session = s);
+
+        Assert.Equal(ReasonCodes.InvalidPassword, Assert.IsType<OftpSessionAbortedException>(clientError).ReasonCode);
+        Assert.Equal(OftpSessionPhase.Start, session!.Phase);
+    }
+
+    [Fact]
+    public async Task ConnectionTestThatFailsTheChallengeStopsInTheSecureAuthentication()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        client.AnswerChallengeWrongly = true;
+        OftpSession? session = null;
+
+        var (clientError, _) = await RunAsync(client, server, secureAuthentication: true, endAfterStart: true,
+            clientSession: s => session = s);
+
+        Assert.NotNull(clientError);
+        Assert.Equal(OftpSessionPhase.SecureAuthentication, session!.Phase);
+    }
+
+    [Fact]
+    public void OnlyTheInitiatorEndsTheSessionAfterTheStart()
+    {
+        var options = new OftpSessionOptions { Role = OftpRole.Responder, EndAfterStart = true };
+
+        Assert.Throws<ArgumentException>(() =>
+            new OftpSession(new OftpTransport(new MemoryStream()), options, CreateServerHandler(), NullLogger.Instance));
     }
 
     [Fact]
@@ -575,8 +652,31 @@ public class SessionTests
             (_, _, _) => Task.CompletedTask, NullLogger.Instance);
         listener.Start();
 
+        var diagnostics = new OftpConnectDiagnostics();
         await Assert.ThrowsAsync<AuthenticationException>(() =>
-            OftpConnector.ConnectAsync("localhost", listener.LocalEndPoint.Port, new OftpTlsOptions(), cts.Token));
+            OftpConnector.ConnectAsync("localhost", listener.LocalEndPoint.Port, new OftpTlsOptions(), cts.Token, diagnostics));
+
+        // The connection itself worked, the certificate did not.
+        Assert.True(diagnostics.Connected);
+        Assert.Equal(certificate.Subject, diagnostics.RemoteCertificate!.Subject);
+        Assert.Contains("not trusted", diagnostics.CertificateProblem);
+    }
+
+    [Fact]
+    public async Task ConnectionToAClosedPortFailsBeforeItIsConnected()
+    {
+        using var cts = new CancellationTokenSource(TestTimeout);
+        // A port that was free a moment ago.
+        var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+
+        var diagnostics = new OftpConnectDiagnostics();
+        await Assert.ThrowsAnyAsync<System.Net.Sockets.SocketException>(() =>
+            OftpConnector.ConnectAsync("localhost", port, null, cts.Token, diagnostics));
+
+        Assert.False(diagnostics.Connected);
     }
 
     [Fact]
