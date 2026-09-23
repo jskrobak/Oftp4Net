@@ -98,7 +98,7 @@ public partial class Partners : ComponentBase
 
     private static bool HasSetupDetails(Partner partner) =>
         partner.SetupAppliedDate is not null || !string.IsNullOrEmpty(partner.CompanyName) ||
-        partner.Contacts is { Count: > 0 } || partner.SubStations is { Count: > 0 } ||
+        partner.SubStations is { Count: > 0 } ||
         partner.InboundDsnPatterns is { Count: > 0 } || partner.OutboundDsnPatterns is { Count: > 0 };
 
     private static string CompanyText(Partner partner) => string.Join(Environment.NewLine, new[]

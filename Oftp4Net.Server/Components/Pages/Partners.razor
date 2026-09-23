@@ -206,6 +206,11 @@
                         </HxAlert>
                     }
 
+                    <hr />
+                    <h6>Contacts</h6>
+                    <div class="form-text mb-2">E-mails and phones separated by commas. Replaced by the contacts of the partner's datasheet when one is imported.</div>
+                    <PartnerContactsEditor Contacts="currentPartner.Contacts" />
+
                     @if (HasSetupDetails(currentPartner))
                     {
                         <hr />
@@ -230,11 +235,6 @@
                             {
                                 <dt class="col-sm-4">Previous certificate</dt>
                                 <dd class="col-sm-8">@previous.Name (valid to @previous.ValidTo.ToString("d"))</dd>
-                            }
-                            @foreach (var contact in currentPartner.Contacts ?? [])
-                            {
-                                <dt class="col-sm-4">Contact</dt>
-                                <dd class="col-sm-8"><PartnerContactView Contact="contact" /></dd>
                             }
                             @foreach (var sub in currentPartner.SubStations ?? [])
                             {

@@ -1,0 +1,24 @@
+@using Oftp4Net.Domain
+
+@* Editing of a list of contacts: two lines per contact, several e-mails or phones separated by commas. *@
+@foreach (var contact in Contacts)
+{
+    <div class="row g-2 mb-3">
+        <div class="col-6"><input class="form-control form-control-sm" placeholder="Name" @bind="contact.Name" /></div>
+        <div class="col-6"><input class="form-control form-control-sm" placeholder="Responsible for" @bind="contact.Description" /></div>
+        <div class="col-6"><input class="form-control form-control-sm" placeholder="E-mail" value="@string.Join(", ", contact.Emails)" @onchange="e => contact.Emails = Split(e.Value)" /></div>
+        <div class="col"><input class="form-control form-control-sm" placeholder="Phone" value="@string.Join(", ", contact.Phones)" @onchange="e => contact.Phones = Split(e.Value)" /></div>
+        <div class="col-auto">
+            <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Trash" OnClick="() => Contacts.Remove(contact)" />
+        </div>
+    </div>
+}
+<HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.PlusLg"
+          OnClick="() => Contacts.Add(new PartnerContact())">Add contact</HxButton>
+
+@code {
+    [Parameter, EditorRequired] public List<PartnerContact> Contacts { get; set; } = null!;
+
+    private static List<string> Split(object? value) =>
+        (value?.ToString() ?? "").Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+}

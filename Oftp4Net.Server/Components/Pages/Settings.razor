@@ -207,20 +207,7 @@
                     </div>
                     <div class="col-12">
                         <label class="form-label">Contacts</label>
-                        @foreach (var contact in settings.StationProfile.Contacts)
-                        {
-                            <div class="row g-2 mb-2">
-                                <div class="col-md-3"><input class="form-control form-control-sm" placeholder="Name" @bind="contact.Name" /></div>
-                                <div class="col-md-3"><input class="form-control form-control-sm" placeholder="Responsible for" @bind="contact.Description" /></div>
-                                <div class="col-md-3"><input class="form-control form-control-sm" placeholder="E-mail" value="@string.Join(", ", contact.Emails)" @onchange="e => contact.Emails = Split(e.Value)" /></div>
-                                <div class="col-md-2"><input class="form-control form-control-sm" placeholder="Phone" value="@string.Join(", ", contact.Phones)" @onchange="e => contact.Phones = Split(e.Value)" /></div>
-                                <div class="col-md-1">
-                                    <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Trash" OnClick="() => settings.StationProfile.Contacts.Remove(contact)" />
-                                </div>
-                            </div>
-                        }
-                        <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.PlusLg"
-                                  OnClick="() => settings.StationProfile.Contacts.Add(new PartnerContact())">Add contact</HxButton>
+                        <PartnerContactsEditor Contacts="settings.StationProfile.Contacts" />
                     </div>
 
                     <div class="col-12">
