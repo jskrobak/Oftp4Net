@@ -16,6 +16,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses
 - Secure authentication (SSIDAUTH with SECD/AUCH/AURP): both sides prove they hold the private key of their certificate
 - Restart of interrupted transfers and ODETTE-FTP buffer compression, both negotiated per partner
+- Partners on the older ODETTE-FTP 1.2 - 1.4 (RFC 2204) with their own command layout
 - REST API with bearer tokens and webhooks, scripts run on transfer events, persistent transfer log
 - Import of partners from an existing OS4X installation
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
@@ -26,7 +27,7 @@ What of RFC 5024 the implementation covers:
 
 | Area | State |
 |---|---|
-| Session: SSRM, SSID, ESID, CD, credit (CDT) | Protocol level 5 (OFTP 2.0) only, buffer size and credit negotiated |
+| Session: SSRM, SSID, ESID, CD, credit (CDT) | Protocol levels 1 - 5 negotiated down to the lower one, buffer size and credit negotiated |
 | Files: SFID, SFPA, SFNA, DATA, EFID, EFPA, EFNA | Both directions in one session, several files per session |
 | End to end responses: EERP, NERP, RTR | Both are sent for received files and processed for sent ones |
 | Buffer compression (SSIDCMPR) | Sent compressed when agreed, always accepted from a partner |
@@ -41,7 +42,7 @@ Not implemented, because the deployments this server is built for do not use it:
 - Record structured virtual files: files are transferred as unstructured (SFIDFMT `U`), the record format of a
   partner is accepted but records are not interpreted and no record count is reported in EFID
 - Broadcast and distribution to several destinations through an intermediate location
-- Special logic (SSIDSPEC) and the OFTP 1.x protocol levels
+- Special logic (SSIDSPEC)
 - Transports other than TCP/IP (X.25, ISDN) and the mailbox operation of older OFTP versions
 
 ## Solution structure
@@ -223,6 +224,28 @@ The file changes to the state `NOT_DELIVERED` and the response is sent in the ne
 when the partner asked for a signed end response. Only a file whose end response has not been sent yet can be
 reported this way. In the other direction, a NERP from a partner puts the queue item into `NOT_DELIVERED` and runs
 the `OnNotDelivered` hook.
+
+## Partners on ODETTE-FTP 1.x
+
+The release each partner gets is set on the *Partners* page (*ODETTE-FTP release*), and the session runs at the
+lower of the two levels announced in SSIDLEV:
+
+| Level | Revision | What it means here |
+|---|---|---|
+| 5 | 2.0 | everything described in this file |
+| 4 | 1.4 | no file level security, secure authentication, signed end responses, file description or reason texts |
+| 2 | 1.3 | additionally short stamps (`YYMMDD` / `HHMMSS`) and no NERP |
+| 1 | 1.2 | the level RFC 2204 announces, same layout as 1.3 here |
+
+Below OFTP 2.0 the commands use the layout of RFC 2204: the reserved area before the stamps is longer, file size,
+restart position and the counts of EFID are shorter, and SSID has no secure authentication field. Answer reason
+codes the release does not know (the file security codes, and 14 before revision 1.4) are sent as `99`.
+
+A file with signing, compression or encryption is not sent to such a partner at all — the transfer fails with a
+clear error instead of quietly dropping the protection. A file that cannot be delivered is reported with a NERP
+from revision 1.4 on; below it the transfer log says that the partner cannot be told.
+
+Only ODETTE-FTP over TCP/IP is supported, the X.25 and ISDN parts of the old specification are not.
 
 ## Buffer compression and restart
 

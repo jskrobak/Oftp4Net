@@ -28,7 +28,8 @@ public class SessionTests
         int bufferSize = 4096, int credit = 64,
         string clientPassword = ClientPassword,
         OftpTlsOptions? serverTls = null, OftpTlsOptions? clientTls = null,
-        bool secureAuthentication = false, bool bufferCompression = false, bool restart = false)
+        bool secureAuthentication = false, bool bufferCompression = false, bool restart = false,
+        int level = ProtocolLevels.Oftp2, int? responderLevel = null)
     {
         using var cts = new CancellationTokenSource(TestTimeout);
         var serverDone = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -47,6 +48,7 @@ public class SessionTests
                             SecureAuthentication = secureAuthentication,
                             BufferCompression = bufferCompression,
                             Restart = restart,
+                            ProtocolLevel = responderLevel ?? level,
                         },
                         server, NullLogger.Instance);
                     await session.RunAsync(ct);
@@ -73,6 +75,7 @@ public class SessionTests
                 SecureAuthentication = secureAuthentication,
                 BufferCompression = bufferCompression,
                 Restart = restart,
+                ProtocolLevel = level,
             }, client, NullLogger.Instance);
             await session.RunAsync(cts.Token);
         }
@@ -243,6 +246,69 @@ public class SessionTests
         // Sizes are announced in 1K blocks, rounded up.
         Assert.Equal(3, header.FileSize);
         Assert.Equal(10, header.OriginalFileSize);
+    }
+
+    [Theory]
+    [InlineData(ProtocolLevels.Oftp12)]
+    [InlineData(ProtocolLevels.Oftp13)]
+    [InlineData(ProtocolLevels.Oftp14)]
+    public async Task FilesAreTransferredWithOldProtocolLevels(int level)
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        var content = RandomNumberGenerator.GetBytes(5000);
+        client.Enqueue("OLDLEVEL", content, ServerCode);
+
+        var (clientError, serverError) = await RunAsync(client, server, bufferSize: 512, credit: 3, level: level);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal(content, server.ReceivedFiles["OLDLEVEL"]);
+
+        // Before revision 1.4 the stamps are YYMMDD and HHMMSS, from 1.4 on CCYYMMDD and HHMMSScccc.
+        var header = server.ReceivedHeaders["OLDLEVEL"];
+        Assert.Equal(ProtocolLevels.HasExtendedTimestamp(level) ? 8 : 6, header.Date.Length);
+        Assert.Equal(ProtocolLevels.HasExtendedTimestamp(level) ? 10 : 6, header.Time.Length);
+
+        // The End to End Response refers to the file with the same stamps.
+        var eerp = Assert.IsType<EERP>(Assert.Single(client.ReceivedEndResponses));
+        Assert.Equal(header.Date, eerp.Date);
+        Assert.Equal(header.Time, eerp.Time);
+    }
+
+    [Fact]
+    public async Task TheLowerProtocolLevelOfTheTwoIsUsed()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        client.Enqueue("MIXED", "content"u8.ToArray(), ServerCode);
+
+        // We offer OFTP 2.0, the responder only revision 1.3.
+        var (clientError, serverError) = await RunAsync(client, server,
+            level: ProtocolLevels.Oftp2, responderLevel: ProtocolLevels.Oftp13);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+        Assert.Equal("content"u8.ToArray(), server.ReceivedFiles["MIXED"]);
+        Assert.Equal(6, server.ReceivedHeaders["MIXED"].Date.Length);
+    }
+
+    [Fact]
+    public async Task SecuredFileIsNotSentWithAnOldProtocolLevel()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        client.Enqueue("SECURED", "content"u8.ToArray(), ServerCode,
+            securityLevel: SecurityLevels.EncryptedAndSigned,
+            cipherSuite: CipherSuites.Aes256Sha256,
+            enveloping: FileEnvelopingFormats.Cms);
+
+        var (clientError, serverError) = await RunAsync(client, server, level: ProtocolLevels.Oftp14);
+
+        Assert.Equal(ReasonCodes.ModeOrCapabilitiesIncompatible,
+            Assert.IsType<OftpProtocolException>(clientError).ReasonCode);
+        Assert.Empty(server.ReceivedFiles);
+        Assert.NotNull(serverError);
     }
 
     [Fact]

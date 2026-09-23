@@ -118,8 +118,14 @@ public sealed class OftpAuthenticationResult
     /// </summary>
     public bool? Restart { get; private init; }
 
+    /// <summary>
+    /// Responder only: highest protocol release level offered to the identified peer. When not set,
+    /// <see cref="OftpSessionOptions.ProtocolLevel"/> is used.
+    /// </summary>
+    public int? ProtocolLevel { get; private init; }
+
     public static OftpAuthenticationResult Accept(string? localCode = null, string? localPassword = null, object? state = null,
-        bool? secureAuthentication = null, bool? bufferCompression = null, bool? restart = null) =>
+        bool? secureAuthentication = null, bool? bufferCompression = null, bool? restart = null, int? protocolLevel = null) =>
         new()
         {
             Success = true,
@@ -129,6 +135,7 @@ public sealed class OftpAuthenticationResult
             SecureAuthentication = secureAuthentication,
             BufferCompression = bufferCompression,
             Restart = restart,
+            ProtocolLevel = protocolLevel,
         };
 
     public static OftpAuthenticationResult Reject(string reasonCode, string reasonText) =>
@@ -234,6 +241,13 @@ public sealed class OftpOutgoingFile
 
     /// <summary>Position (in 1K blocks) the transfer really started from, answered by the peer in SFPA.</summary>
     public long RestartedFrom { get; internal set; }
+
+    /// <summary>
+    /// Date and time stamp as they were really sent: a partner below revision 1.4 gets the short form
+    /// (YYMMDD and HHMMSS), and the End to End Response then refers to those values.
+    /// </summary>
+    public string SentDate { get; internal set; } = "";
+    public string SentTime { get; internal set; } = "";
 
     /// <summary>Octets of the content handed to the transport so far, used to restart an interrupted transfer.</summary>
     public long BytesSent { get; internal set; }

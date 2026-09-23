@@ -169,4 +169,170 @@ public class CommandEncodingTests
     {
         Assert.Throws<OftpDecodingException>(() => OftpCommand.Decode(Encoding.ASCII.GetBytes("X5ABC")));
     }
+
+    #region Protocol release levels (RFC 2204 layouts)
+
+    [Fact]
+    public void SSID_OfRevision13_HasNoSecureAuthenticationField()
+    {
+        var ssid = new SSID
+        {
+            Level = ProtocolLevels.Oftp13,
+            Code = "O0013000000TEST",
+            Password = "PWD",
+            ExchangeBufferSize = 2048,
+            Credit = 7,
+            UserData = "USER",
+        };
+
+        var encoded = ssid.Encode(ProtocolLevels.Oftp13);
+
+        // Command, level, code, password, buffer size, S/R, compression, restart, special logic, credit,
+        // 5 reserved octets, user data and the carriage return (RFC 2204, section 5.3.2).
+        Assert.Equal(61, encoded.Length);
+        Assert.Equal("2", Ascii(encoded[1..2]));
+        Assert.Equal("USER    ", Ascii(encoded[52..60]));
+        Assert.Equal("\r", Ascii(encoded[60..61]));
+
+        var decoded = Assert.IsType<SSID>(OftpCommand.Decode(encoded, ProtocolLevels.Oftp13));
+        Assert.Equal(ProtocolLevels.Oftp13, decoded.Level);
+        Assert.Equal("O0013000000TEST", decoded.Code);
+        Assert.Equal(2048, decoded.ExchangeBufferSize);
+        Assert.Equal(7, decoded.Credit);
+        Assert.Equal("USER", decoded.UserData);
+        Assert.False(decoded.SecureAuthentication);
+    }
+
+    [Fact]
+    public void SFID_OfRevision13_MatchesRfc2204Layout()
+    {
+        var sfid = new SFID
+        {
+            DatasetName = "TESTFILE",
+            Date = "20260923",
+            Time = "1122334455",
+            UserData = "USER",
+            Destination = "O0013000000DEST",
+            Originator = "O0013000000ORIG",
+            FileSize = 42,
+            OriginalFileSize = 42,
+            RestartPosition = 7,
+            // Attributes of OFTP 2.0 are not part of the older layout.
+            SecurityLevel = SecurityLevels.EncryptedAndSigned,
+            Description = "ignored",
+        };
+
+        var encoded = sfid.Encode(ProtocolLevels.Oftp13);
+
+        Assert.Equal(128, encoded.Length);
+        // The stamps are shortened and the reserved area before them is longer.
+        Assert.Equal("260923", Ascii(encoded[36..42]));
+        Assert.Equal("112233", Ascii(encoded[42..48]));
+        Assert.Equal("USER    ", Ascii(encoded[48..56]));
+        Assert.Equal("0000042", Ascii(encoded[112..119]));
+        Assert.Equal("000000007", Ascii(encoded[119..128]));
+
+        var decoded = Assert.IsType<SFID>(OftpCommand.Decode(encoded, ProtocolLevels.Oftp13));
+        Assert.Equal("TESTFILE", decoded.DatasetName);
+        Assert.Equal("260923", decoded.Date);
+        Assert.Equal("112233", decoded.Time);
+        Assert.Equal(42, decoded.FileSize);
+        Assert.Equal(7, decoded.RestartPosition);
+        Assert.Equal(SecurityLevels.None, decoded.SecurityLevel);
+        Assert.Equal("", decoded.Description);
+    }
+
+    [Fact]
+    public void SFID_OfRevision14_KeepsTheExtendedStampsAndTheShortSizes()
+    {
+        var sfid = new SFID { DatasetName = "F", Date = "20260923", Time = "1122334455", FileSize = 3 };
+
+        var encoded = sfid.Encode(ProtocolLevels.Oftp14);
+
+        // Revision 1.4 only extended the stamps, the fields behind them keep their positions.
+        Assert.Equal(128, encoded.Length);
+        Assert.Equal("20260923", Ascii(encoded[30..38]));
+        Assert.Equal("1122334455", Ascii(encoded[38..48]));
+
+        var decoded = Assert.IsType<SFID>(OftpCommand.Decode(encoded, ProtocolLevels.Oftp14));
+        Assert.Equal("20260923", decoded.Date);
+        Assert.Equal("1122334455", decoded.Time);
+        Assert.Equal(3, decoded.FileSize);
+    }
+
+    [Fact]
+    public void EERP_OfRevision13_HasNoHashAndSignature()
+    {
+        var eerp = new EERP
+        {
+            DatasetName = "TESTFILE",
+            Date = "20260923",
+            Time = "1122334455",
+            UserData = "USER",
+            Destination = "O0013000000DEST",
+            Originator = "O0013000000ORIG",
+            Hash = [1, 2, 3],
+            Signature = [4, 5, 6],
+        };
+
+        var encoded = eerp.Encode(ProtocolLevels.Oftp13);
+
+        Assert.Equal(106, encoded.Length);
+        Assert.Equal("260923", Ascii(encoded[36..42]));
+
+        var decoded = Assert.IsType<EERP>(OftpCommand.Decode(encoded, ProtocolLevels.Oftp13));
+        Assert.Equal("TESTFILE", decoded.DatasetName);
+        Assert.Equal("260923", decoded.Date);
+        Assert.Equal("112233", decoded.Time);
+        Assert.Empty(decoded.Hash);
+        Assert.Empty(decoded.Signature);
+    }
+
+    [Fact]
+    public void AnswersOfRevision13_CarryNoReasonText()
+    {
+        var sfna = new SFNA { ReasonCode = AnswerReasonCodes.DuplicateFile, RetryLater = true, ReasonText = "ignored" };
+        var efna = new EFNA { ReasonCode = AnswerReasonCodes.InvalidByteCount, ReasonText = "ignored" };
+        var esid = new ESID { ReasonCode = ReasonCodes.InvalidPassword, ReasonText = "ignored" };
+
+        Assert.Equal("3", Ascii(sfna.Encode(ProtocolLevels.Oftp13)[..1]));
+        Assert.Equal(4, sfna.Encode(ProtocolLevels.Oftp13).Length);
+        Assert.Equal(3, efna.Encode(ProtocolLevels.Oftp13).Length);
+        Assert.Equal("F04\r", Ascii(esid.Encode(ProtocolLevels.Oftp13)));
+
+        var decoded = Assert.IsType<SFNA>(OftpCommand.Decode(sfna.Encode(ProtocolLevels.Oftp13), ProtocolLevels.Oftp13));
+        Assert.Equal(AnswerReasonCodes.DuplicateFile, decoded.ReasonCode);
+        Assert.True(decoded.RetryLater);
+        Assert.Equal("", decoded.ReasonText);
+    }
+
+    [Fact]
+    public void ReasonCodesUnknownToTheLevelBecomeUnspecified()
+    {
+        // The codes of file level security exist from OFTP 2.0 on, code 14 from revision 1.4 on.
+        var security = new EFNA { ReasonCode = AnswerReasonCodes.InvalidFileSignature };
+        var direction = new SFNA { ReasonCode = AnswerReasonCodes.FileDirectionRefused };
+
+        Assert.Equal("99", Ascii(security.Encode(ProtocolLevels.Oftp14)[1..3]));
+        Assert.Equal("14", Ascii(direction.Encode(ProtocolLevels.Oftp14)[1..3]));
+        Assert.Equal("99", Ascii(direction.Encode(ProtocolLevels.Oftp13)[1..3]));
+        Assert.Equal("21", Ascii(security.Encode(ProtocolLevels.Oftp2)[1..3]));
+    }
+
+    [Fact]
+    public void EfidAndSfpa_OfRevision13_UseShorterCounts()
+    {
+        var efid = new EFID { RecordCount = 5, UnitCount = 1234 };
+        var sfpa = new SFPA { AnswerCount = 9 };
+
+        Assert.Equal("T000000005000000001234", Ascii(efid.Encode(ProtocolLevels.Oftp13)));
+        Assert.Equal("2000000009", Ascii(sfpa.Encode(ProtocolLevels.Oftp13)));
+
+        Assert.Equal(1234, Assert.IsType<EFID>(
+            OftpCommand.Decode(efid.Encode(ProtocolLevels.Oftp13), ProtocolLevels.Oftp13)).UnitCount);
+        Assert.Equal(9, Assert.IsType<SFPA>(
+            OftpCommand.Decode(sfpa.Encode(ProtocolLevels.Oftp13), ProtocolLevels.Oftp13)).AnswerCount);
+    }
+
+    #endregion
 }

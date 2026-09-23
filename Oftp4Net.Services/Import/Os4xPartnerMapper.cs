@@ -57,8 +57,8 @@ public static class Os4xPartnerMapper
 {
     public static Os4xPartnerCandidate Map(Os4xPartnerRow row)
     {
-        if (row.OftpVersion < 2)
-            return Refuse(row, $"OFTP {row.OftpVersion:0.#} is not supported, only OFTP 2.");
+        if (row.OftpVersion < 1)
+            return Refuse(row, $"OFTP release {row.OftpVersion:0.#} is not known.");
 
         if (string.IsNullOrWhiteSpace(row.HisSsid))
             return Refuse(row, "The partner has no ODETTE identification code.");
@@ -83,6 +83,8 @@ public static class Os4xPartnerMapper
             SecureAuthentication = row.SecureAuthentication,
             RequestSignedEndResponse = row.RequestSignedEerp,
             FileCipherSuite = CipherSuiteCode(row.CipherSuite) ?? CipherSuites.Aes256Sha1,
+            // OS4X knows the release as 1 or 2; the older one is offered as revision 1.4.
+            ProtocolLevel = row.OftpVersion >= 2 ? ProtocolLevels.Oftp2 : ProtocolLevels.Oftp14,
         };
 
         var candidate = new Os4xPartnerCandidate
@@ -96,6 +98,14 @@ public static class Os4xPartnerMapper
 
         if (!row.Active)
             candidate.Notes.Add("Marked as inactive in OS4X.");
+
+        if (partner.ProtocolLevel < ProtocolLevels.Oftp2)
+        {
+            candidate.Notes.Add($"OFTP {row.OftpVersion:0.#} partner, imported as ODETTE-FTP " +
+                                $"{ProtocolLevels.Name(partner.ProtocolLevel)}; check the release in the partner.");
+            partner.SignFiles = partner.EncryptFiles = partner.CompressFiles = false;
+            partner.SecureAuthentication = partner.RequestSignedEndResponse = false;
+        }
 
         if (row.CipherSuite > 0 && CipherSuiteCode(row.CipherSuite) is null)
             candidate.Notes.Add($"Cipher suite {row.CipherSuite} is not supported, {partner.FileCipherSuite} is used instead.");

@@ -10,10 +10,14 @@ internal sealed class CommandWriter
 {
     private readonly MemoryStream _stream = new();
 
-    public CommandWriter(char indicator)
+    public CommandWriter(char indicator, int level = ProtocolLevels.Oftp2)
     {
+        Level = level;
         _stream.WriteByte((byte)indicator);
     }
+
+    /// <summary>Negotiated protocol release level the command is written for.</summary>
+    public int Level { get; }
 
     /// <summary>Alphanumeric field X(n): ASCII, left justified, padded with spaces.</summary>
     public CommandWriter Alpha(string? value, int length)

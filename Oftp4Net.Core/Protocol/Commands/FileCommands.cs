@@ -28,46 +28,71 @@ public sealed class SFID : OftpCommand
     public bool SignedEerpRequested { get; init; }
     public string Description { get; init; } = "";
 
-    internal override void Write(CommandWriter writer) => writer
-        .Alpha(DatasetName, 26)
-        .Alpha("", 3)
-        .Alpha(Date, 8)
-        .Alpha(Time, 10)
-        .Alpha(UserData, 8)
-        .Alpha(Destination, 25)
-        .Alpha(Originator, 25)
-        .Alpha(Format, 1)
-        .Numeric(MaxRecordSize, 5)
-        .Numeric(FileSize, 13)
-        .Numeric(OriginalFileSize, 13)
-        .Numeric(RestartPosition, 17)
-        .Alpha(SecurityLevel, 2)
-        .Alpha(CipherSuite, 2)
-        .Alpha(Compression, 1)
-        .Alpha(Enveloping, 1)
-        .Alpha(YesNo(SignedEerpRequested), 1)
-        .TextWithLength(Description);
-
-    internal static SFID Read(CommandReader reader) => new()
+    internal override void Write(CommandWriter writer)
     {
-        DatasetName = reader.Alpha(26),
-        Date = reader.Skip(3).Alpha(8),
-        Time = reader.Alpha(10),
-        UserData = reader.Alpha(8),
-        Destination = reader.Alpha(25),
-        Originator = reader.Alpha(25),
-        Format = reader.Alpha(1),
-        MaxRecordSize = (int)reader.Numeric(5),
-        FileSize = reader.Numeric(13),
-        OriginalFileSize = reader.Numeric(13),
-        RestartPosition = reader.Numeric(17),
-        SecurityLevel = reader.Alpha(2),
-        CipherSuite = reader.Alpha(2),
-        Compression = reader.Alpha(1),
-        Enveloping = reader.Alpha(1),
-        SignedEerpRequested = ParseYesNo(reader.Alpha(1)),
-        Description = reader.AtEnd ? "" : reader.TextWithLength(),
-    };
+        writer.Alpha(DatasetName, 26);
+        WriteTimestamp(writer, Date, Time);
+        writer
+            .Alpha(UserData, 8)
+            .Alpha(Destination, 25)
+            .Alpha(Originator, 25)
+            .Alpha(Format, 1)
+            .Numeric(MaxRecordSize, 5);
+
+        // The sizes are shorter before OFTP 2.0, which also added the original size and the security fields.
+        if (!ProtocolLevels.HasOftp2Features(writer.Level))
+        {
+            writer.Numeric(Math.Min(FileSize, 9_999_999), 7).Numeric(Math.Min(RestartPosition, 999_999_999), 9);
+            return;
+        }
+
+        writer
+            .Numeric(FileSize, 13)
+            .Numeric(OriginalFileSize, 13)
+            .Numeric(RestartPosition, 17)
+            .Alpha(SecurityLevel, 2)
+            .Alpha(CipherSuite, 2)
+            .Alpha(Compression, 1)
+            .Alpha(Enveloping, 1)
+            .Alpha(YesNo(SignedEerpRequested), 1)
+            .TextWithLength(Description);
+    }
+
+    internal static SFID Read(CommandReader reader)
+    {
+        var datasetName = reader.Alpha(26);
+        var (date, time) = ReadTimestamp(reader);
+        var userData = reader.Alpha(8);
+        var destination = reader.Alpha(25);
+        var originator = reader.Alpha(25);
+        var format = reader.Alpha(1);
+        var maxRecordSize = (int)reader.Numeric(5);
+
+        // Before OFTP 2.0 the sizes are shorter and the original size and the security fields do not exist.
+        var oftp2 = ProtocolLevels.HasOftp2Features(reader.Level);
+        var fileSize = reader.Numeric(oftp2 ? 13 : 7);
+
+        return new SFID
+        {
+            DatasetName = datasetName,
+            Date = date,
+            Time = time,
+            UserData = userData,
+            Destination = destination,
+            Originator = originator,
+            Format = format,
+            MaxRecordSize = maxRecordSize,
+            FileSize = fileSize,
+            OriginalFileSize = oftp2 ? reader.Numeric(13) : fileSize,
+            RestartPosition = reader.Numeric(oftp2 ? 17 : 9),
+            SecurityLevel = oftp2 ? reader.Alpha(2) : SecurityLevels.None,
+            CipherSuite = oftp2 ? reader.Alpha(2) : CipherSuites.None,
+            Compression = oftp2 ? reader.Alpha(1) : FileCompressionAlgorithms.None,
+            Enveloping = oftp2 ? reader.Alpha(1) : FileEnvelopingFormats.None,
+            SignedEerpRequested = oftp2 && ParseYesNo(reader.Alpha(1)),
+            Description = oftp2 && !reader.AtEnd ? reader.TextWithLength() : "",
+        };
+    }
 }
 
 /// <summary>Start File Positive Answer.</summary>
@@ -79,9 +104,11 @@ public sealed class SFPA : OftpCommand
     /// <summary>Restart position accepted by the receiver.</summary>
     public long AnswerCount { get; init; }
 
-    internal override void Write(CommandWriter writer) => writer.Numeric(AnswerCount, 17);
+    internal override void Write(CommandWriter writer) =>
+        writer.Numeric(AnswerCount, ProtocolLevels.HasOftp2Features(writer.Level) ? 17 : 9);
 
-    internal static SFPA Read(CommandReader reader) => new() { AnswerCount = reader.Numeric(17) };
+    internal static SFPA Read(CommandReader reader) =>
+        new() { AnswerCount = reader.Numeric(ProtocolLevels.HasOftp2Features(reader.Level) ? 17 : 9) };
 }
 
 /// <summary>Start File Negative Answer.</summary>
@@ -94,16 +121,20 @@ public sealed class SFNA : OftpCommand
     public bool RetryLater { get; init; }
     public string ReasonText { get; init; } = "";
 
-    internal override void Write(CommandWriter writer) => writer
-        .Numeric(int.Parse(ReasonCode), 2)
-        .Alpha(YesNo(RetryLater), 1)
-        .TextWithLength(ReasonText);
+    internal override void Write(CommandWriter writer)
+    {
+        writer.Numeric(int.Parse(LevelReasonCode(ReasonCode, writer.Level)), 2).Alpha(YesNo(RetryLater), 1);
+
+        // The reason text was added in OFTP 2.0.
+        if (ProtocolLevels.HasOftp2Features(writer.Level))
+            writer.TextWithLength(ReasonText);
+    }
 
     internal static SFNA Read(CommandReader reader) => new()
     {
         ReasonCode = reader.Numeric(2).ToString("00"),
         RetryLater = ParseYesNo(reader.Alpha(1)),
-        ReasonText = reader.AtEnd ? "" : reader.TextWithLength(),
+        ReasonText = ProtocolLevels.HasOftp2Features(reader.Level) && !reader.AtEnd ? reader.TextWithLength() : "",
     };
 }
 
@@ -132,15 +163,24 @@ public sealed class EFID : OftpCommand
     /// <summary>Exact number of octets transmitted.</summary>
     public long UnitCount { get; init; }
 
-    internal override void Write(CommandWriter writer) => writer
-        .Numeric(RecordCount, 17)
-        .Numeric(UnitCount, 17);
-
-    internal static EFID Read(CommandReader reader) => new()
+    internal override void Write(CommandWriter writer)
     {
-        RecordCount = reader.Numeric(17),
-        UnitCount = reader.Numeric(17),
-    };
+        // The counts are shorter before OFTP 2.0: 9 and 12 digits.
+        var oftp2 = ProtocolLevels.HasOftp2Features(writer.Level);
+        writer
+            .Numeric(RecordCount, oftp2 ? 17 : 9)
+            .Numeric(UnitCount, oftp2 ? 17 : 12);
+    }
+
+    internal static EFID Read(CommandReader reader)
+    {
+        var oftp2 = ProtocolLevels.HasOftp2Features(reader.Level);
+        return new EFID
+        {
+            RecordCount = reader.Numeric(oftp2 ? 17 : 9),
+            UnitCount = reader.Numeric(oftp2 ? 17 : 12),
+        };
+    }
 }
 
 /// <summary>End File Positive Answer.</summary>
@@ -166,14 +206,19 @@ public sealed class EFNA : OftpCommand
     public string ReasonCode { get; init; } = AnswerReasonCodes.UnspecifiedReason;
     public string ReasonText { get; init; } = "";
 
-    internal override void Write(CommandWriter writer) => writer
-        .Numeric(int.Parse(ReasonCode), 2)
-        .TextWithLength(ReasonText);
+    internal override void Write(CommandWriter writer)
+    {
+        writer.Numeric(int.Parse(LevelReasonCode(ReasonCode, writer.Level)), 2);
+
+        // The reason text was added in OFTP 2.0.
+        if (ProtocolLevels.HasOftp2Features(writer.Level))
+            writer.TextWithLength(ReasonText);
+    }
 
     internal static EFNA Read(CommandReader reader) => new()
     {
         ReasonCode = reader.Numeric(2).ToString("00"),
-        ReasonText = reader.AtEnd ? "" : reader.TextWithLength(),
+        ReasonText = ProtocolLevels.HasOftp2Features(reader.Level) && !reader.AtEnd ? reader.TextWithLength() : "",
     };
 }
 
@@ -205,28 +250,38 @@ public sealed class EERP : OftpCommand
         Originator = file.Destination,
     };
 
-    internal override void Write(CommandWriter writer) => writer
-        .Alpha(DatasetName, 26)
-        .Alpha("", 3)
-        .Alpha(Date, 8)
-        .Alpha(Time, 10)
-        .Alpha(UserData, 8)
-        .Alpha(Destination, 25)
-        .Alpha(Originator, 25)
-        .BinaryWithLength(Hash)
-        .BinaryWithLength(Signature);
-
-    internal static EERP Read(CommandReader reader) => new()
+    internal override void Write(CommandWriter writer)
     {
-        DatasetName = reader.Alpha(26),
-        Date = reader.Skip(3).Alpha(8),
-        Time = reader.Alpha(10),
-        UserData = reader.Alpha(8),
-        Destination = reader.Alpha(25),
-        Originator = reader.Alpha(25),
-        Hash = reader.AtEnd ? [] : reader.BinaryWithLength(),
-        Signature = reader.AtEnd ? [] : reader.BinaryWithLength(),
-    };
+        writer.Alpha(DatasetName, 26);
+        WriteTimestamp(writer, Date, Time);
+        writer
+            .Alpha(UserData, 8)
+            .Alpha(Destination, 25)
+            .Alpha(Originator, 25);
+
+        // Hash and signature of the response were added in OFTP 2.0.
+        if (ProtocolLevels.HasOftp2Features(writer.Level))
+            writer.BinaryWithLength(Hash).BinaryWithLength(Signature);
+    }
+
+    internal static EERP Read(CommandReader reader)
+    {
+        var datasetName = reader.Alpha(26);
+        var (date, time) = ReadTimestamp(reader);
+        var oftp2 = ProtocolLevels.HasOftp2Features(reader.Level);
+
+        return new EERP
+        {
+            DatasetName = datasetName,
+            Date = date,
+            Time = time,
+            UserData = reader.Alpha(8),
+            Destination = reader.Alpha(25),
+            Originator = reader.Alpha(25),
+            Hash = oftp2 && !reader.AtEnd ? reader.BinaryWithLength() : [],
+            Signature = oftp2 && !reader.AtEnd ? reader.BinaryWithLength() : [],
+        };
+    }
 }
 
 /// <summary>Negative End Response, reports that a file could not be delivered to its final destination.</summary>
@@ -247,30 +302,39 @@ public sealed class NERP : OftpCommand
     public byte[] Hash { get; init; } = [];
     public byte[] Signature { get; init; } = [];
 
-    internal override void Write(CommandWriter writer) => writer
-        .Alpha(DatasetName, 26)
-        .Alpha("", 6)
-        .Alpha(Date, 8)
-        .Alpha(Time, 10)
-        .Alpha(Destination, 25)
-        .Alpha(Originator, 25)
-        .Alpha(Creator, 25)
-        .Numeric(int.Parse(ReasonCode), 2)
-        .TextWithLength(ReasonText)
-        .BinaryWithLength(Hash)
-        .BinaryWithLength(Signature);
-
-    internal static NERP Read(CommandReader reader) => new()
+    internal override void Write(CommandWriter writer)
     {
-        DatasetName = reader.Alpha(26),
-        Date = reader.Skip(6).Alpha(8),
-        Time = reader.Alpha(10),
-        Destination = reader.Alpha(25),
-        Originator = reader.Alpha(25),
-        Creator = reader.Alpha(25),
-        ReasonCode = reader.Numeric(2).ToString("00"),
-        ReasonText = reader.TextWithLength(),
-        Hash = reader.AtEnd ? [] : reader.BinaryWithLength(),
-        Signature = reader.AtEnd ? [] : reader.BinaryWithLength(),
-    };
+        writer
+            .Alpha(DatasetName, 26)
+            .Alpha("", 6)
+            .Alpha(ProtocolLevels.Date(Date, writer.Level), 8)
+            .Alpha(ProtocolLevels.Time(Time, writer.Level), 10)
+            .Alpha(Destination, 25)
+            .Alpha(Originator, 25)
+            .Alpha(Creator, 25)
+            .Numeric(int.Parse(LevelReasonCode(ReasonCode, writer.Level)), 2);
+
+        // The reason text, the hash and the signature of the response were added in OFTP 2.0.
+        if (ProtocolLevels.HasOftp2Features(writer.Level))
+            writer.TextWithLength(ReasonText).BinaryWithLength(Hash).BinaryWithLength(Signature);
+    }
+
+    internal static NERP Read(CommandReader reader)
+    {
+        var oftp2 = ProtocolLevels.HasOftp2Features(reader.Level);
+
+        return new NERP
+        {
+            DatasetName = reader.Alpha(26),
+            Date = reader.Skip(6).Alpha(8),
+            Time = reader.Alpha(10),
+            Destination = reader.Alpha(25),
+            Originator = reader.Alpha(25),
+            Creator = reader.Alpha(25),
+            ReasonCode = reader.Numeric(2).ToString("00"),
+            ReasonText = oftp2 && !reader.AtEnd ? reader.TextWithLength() : "",
+            Hash = oftp2 && !reader.AtEnd ? reader.BinaryWithLength() : [],
+            Signature = oftp2 && !reader.AtEnd ? reader.BinaryWithLength() : [],
+        };
+    }
 }

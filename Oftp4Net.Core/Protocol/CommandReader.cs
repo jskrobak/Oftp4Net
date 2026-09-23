@@ -6,11 +6,17 @@ namespace Oftp4Net.Core.Protocol;
 /// <summary>
 /// Reads fields of an OFTP exchange buffer. The first octet (command indicator) is skipped.
 /// </summary>
-internal sealed class CommandReader(byte[] buffer)
+internal sealed class CommandReader(byte[] buffer, int level = ProtocolLevels.Oftp2)
 {
     private int _position = 1;
 
+    /// <summary>Negotiated protocol release level the command is read with.</summary>
+    public int Level { get; } = level;
+
     public bool AtEnd => _position >= buffer.Length;
+
+    /// <summary>Nothing but the optional trailing carriage return is left in the buffer.</summary>
+    public bool AtEndOrCarriageReturn => AtEnd || buffer[_position] is (byte)'\r' or 0x8D;
 
     public string Alpha(int length)
     {

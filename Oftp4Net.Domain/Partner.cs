@@ -46,6 +46,14 @@ public class Partner: BaseParty
     public int EbcdicCodePage { get; set; } = 500;
 
     /// <summary>
+    /// Highest ODETTE-FTP release we offer the partner in SSIDLEV: 5 = OFTP 2.0, 4 = 1.4, 2 = 1.3, 1 = 1.2.
+    /// The session runs at the lower of the two announced levels; file level security and secure authentication
+    /// need level 5.
+    /// </summary>
+    [Range(1, 5)]
+    public int ProtocolLevel { get; set; } = 5;
+
+    /// <summary>
     /// Offers ODETTE-FTP buffer compression (SSIDCMPR): runs of equal octets are compressed in the data exchange
     /// buffers. Used only when the partner offers it too; buffers from the partner are always accepted compressed.
     /// </summary>

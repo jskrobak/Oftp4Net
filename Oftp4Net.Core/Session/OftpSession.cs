@@ -39,6 +39,7 @@ public sealed class OftpSession
         SecureAuthenticationAgreed = options.SecureAuthentication;
         BufferCompressionAgreed = options.BufferCompression;
         RestartAgreed = options.Restart;
+        Level = options.ProtocolLevel;
     }
 
     /// <summary>SSID received from the peer, available once the session has started.</summary>
@@ -61,6 +62,12 @@ public sealed class OftpSession
 
     /// <summary>Both sides offered restart (SSIDREST), so interrupted transfers may be continued.</summary>
     public bool RestartAgreed { get; private set; }
+
+    /// <summary>
+    /// Negotiated protocol release level (SSIDLEV): the lower of the two announced levels. It decides the layout
+    /// of the commands and which features may be used at all.
+    /// </summary>
+    public int Level { get; private set; } = ProtocolLevels.Oftp2;
 
     /// <summary>Unit of the restart position of an unstructured file (SFIDREST), see RFC 5024, section 5.3.3.</summary>
     public const int RestartBlockSize = 1024;
@@ -142,8 +149,8 @@ public sealed class OftpSession
         }
 
         _logger.LogInformation(
-            "OFTP session started with {Code} as {Role}, buffer size {BufferSize}, credit {Credit}{Features}",
-            RemoteSsid!.Code, _options.Role, ExchangeBufferSize, Credit, string.Concat(
+            "OFTP {Revision} session started with {Code} as {Role}, buffer size {BufferSize}, credit {Credit}{Features}",
+            ProtocolLevels.Name(Level), RemoteSsid!.Code, _options.Role, ExchangeBufferSize, Credit, string.Concat(
                 SecureAuthenticationAgreed ? ", secure authentication" : "",
                 BufferCompressionAgreed ? ", buffer compression" : "",
                 RestartAgreed ? ", restart" : ""));
@@ -154,6 +161,7 @@ public sealed class OftpSession
 
     private SSID CreateSsid(string code, string password, int bufferSize, int credit) => new()
     {
+        Level = Level,
         Code = code,
         Password = password,
         ExchangeBufferSize = bufferSize,
@@ -169,9 +177,17 @@ public sealed class OftpSession
     {
         RemoteSsid = remote;
 
-        if (remote.Level != SSID.Oftp2Level)
+        if (!ProtocolLevels.IsSupported(remote.Level))
             throw new OftpProtocolException(ReasonCodes.ModeOrCapabilitiesIncompatible,
-                $"Protocol release level {remote.Level} is not supported, only OFTP 2.0 (5).");
+                $"Protocol release level {remote.Level} is not supported.");
+
+        if (_options.Role == OftpRole.Initiator && remote.Level > _options.ProtocolLevel)
+            throw new OftpProtocolException(ReasonCodes.ModeOrCapabilitiesIncompatible,
+                $"Responder answered with protocol level {remote.Level}, higher than the offered {_options.ProtocolLevel}.");
+
+        // The lower of the two levels is used, and the rest of the session is encoded in its layout.
+        // A responder learns the level of the identified partner only with the authentication below.
+        Level = Math.Min(_options.ProtocolLevel, remote.Level);
 
         if (remote.ExchangeBufferSize < OftpSessionOptions.MinExchangeBufferSize)
             throw new OftpProtocolException(ReasonCodes.ExchangeBufferSizeError,
@@ -199,6 +215,9 @@ public sealed class OftpSession
             throw new OftpProtocolException(auth.ReasonCode, auth.ReasonText);
 
         State = auth.State;
+        if (auth.ProtocolLevel is { } partnerLevel)
+            Level = Math.Min(Level, partnerLevel);
+
         ExchangeBufferSize = Math.Min(_options.ExchangeBufferSize, remote.ExchangeBufferSize);
         Credit = Math.Min(_options.Credit, remote.Credit);
 
@@ -209,6 +228,10 @@ public sealed class OftpSession
         // Secure authentication is not negotiated: both sides have to require it (RFC 5024, section 5.3.2).
         // A responder learns the requirement of the peer together with its identity.
         SecureAuthenticationAgreed = auth.SecureAuthentication ?? _options.SecureAuthentication;
+        if (SecureAuthenticationAgreed && !ProtocolLevels.HasOftp2Features(Level))
+            throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
+                $"Secure authentication requires OFTP 2.0, the session runs at level {Level} ({ProtocolLevels.Name(Level)}).");
+
         if (SecureAuthenticationAgreed != remote.SecureAuthentication)
             throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
                 SecureAuthenticationAgreed
@@ -285,6 +308,13 @@ public sealed class OftpSession
             if (response is not (EERP or NERP))
                 throw new InvalidOperationException("Only EERP and NERP can be sent as end responses.");
 
+            if (response is NERP && !ProtocolLevels.HasNegativeEndResponse(Level))
+            {
+                _logger.LogWarning("NERP cannot be sent to {Code}: the session runs at level {Level} ({Revision})",
+                    RemoteSsid?.Code, Level, ProtocolLevels.Name(Level));
+                continue;
+            }
+
             await SendAsync(response, cancellationToken);
             await ReceiveAsync<RTR>(cancellationToken);
             await _handler.OnEndResponseSentAsync(response, cancellationToken);
@@ -308,6 +338,19 @@ public sealed class OftpSession
     /// <returns><c>true</c> when the listener requested change of direction in EFPA.</returns>
     private async Task<bool> SendFileAsync(OftpOutgoingFile file, CancellationToken cancellationToken)
     {
+        // File level security, the signed end response and the description exist only in OFTP 2.0.
+        if (!ProtocolLevels.HasOftp2Features(Level) &&
+            (file.SecurityLevel != SecurityLevels.None ||
+             file.Compression != FileCompressionAlgorithms.None ||
+             file.Enveloping != FileEnvelopingFormats.None ||
+             file.SignedEerpRequested))
+            throw new OftpProtocolException(ReasonCodes.ModeOrCapabilitiesIncompatible,
+                $"{file.DatasetName} uses file level security, which requires OFTP 2.0; " +
+                $"the session with {RemoteSsid?.Code} runs at level {Level} ({ProtocolLevels.Name(Level)}).");
+
+        file.SentDate = ProtocolLevels.Date(file.Date, Level);
+        file.SentTime = ProtocolLevels.Time(file.Time, Level);
+
         await using var content = await file.OpenAsync(cancellationToken);
         var sizeInBlocks = content.CanSeek ? ToBlocks(content.Length) : 0;
         var originalSizeInBlocks = file.OriginalSize is { } originalSize ? ToBlocks(originalSize) : sizeInBlocks;
@@ -567,7 +610,7 @@ public sealed class OftpSession
     private async Task SendAsync(OftpCommand command, CancellationToken cancellationToken)
     {
         _logger.LogDebug("OFTP >> {Command}", command);
-        await _transport.WriteAsync(command.Encode(), cancellationToken);
+        await _transport.WriteAsync(command.Encode(Level), cancellationToken);
     }
 
     private async Task TrySendAsync(OftpCommand command)
@@ -602,7 +645,7 @@ public sealed class OftpSession
         OftpCommand command;
         try
         {
-            command = OftpCommand.Decode(buffer);
+            command = OftpCommand.Decode(buffer, Level);
         }
         catch (OftpDecodingException ex)
         {

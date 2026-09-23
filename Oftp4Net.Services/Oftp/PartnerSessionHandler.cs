@@ -157,7 +157,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         return OftpAuthenticationResult.Accept(_listener.Identity.SSID, _listener.Identity.Password ?? "",
             secureAuthentication: partner.SecureAuthentication,
             bufferCompression: partner.BufferCompression,
-            restart: partner.Restart);
+            restart: partner.Restart,
+            protocolLevel: partner.ProtocolLevel);
     }
 
     /// <summary>
@@ -285,6 +286,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         item.SentDate = _timeService.GetCurrentTime();
         item.LastError = null;
         item.RestartPosition = 0;
+        // A partner below revision 1.4 got a shortened stamp and refers to it in its response.
+        item.FileDate = file.SentDate;
+        item.FileTime = file.SentTime;
         _inFlight = null;
         _inFlightFile = null;
         FilesSent++;
@@ -402,6 +406,11 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         var partner = Partner!;
         var settings = await _fileSecurity.ForSendingAsync(partner, cancellationToken);
         var originalSize = new FileInfo(item.FilePath).Length;
+
+        if ((settings.Any || partner.RequestSignedEndResponse) && !ProtocolLevels.HasOftp2Features(partner.ProtocolLevel))
+            throw new FileSecurityException(
+                $"File level security requires OFTP 2.0, partner {partner.Name} is configured for " +
+                $"ODETTE-FTP {ProtocolLevels.Name(partner.ProtocolLevel)}.");
 
         item.SignedResponseRequested = partner.RequestSignedEndResponse;
         item.CipherSuite = settings.Any ? settings.Suite.Code : null;
@@ -756,6 +765,19 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             if (!_claims.TryClaim(claim))
                 continue;
             _claimed.Add(claim);
+
+            if (record.Status == ReceiveStatus.NOT_DELIVERED &&
+                !ProtocolLevels.HasNegativeEndResponse(Partner!.ProtocolLevel))
+            {
+                // Revisions before 1.4 have no Negative End Response, so the partner cannot be told at all.
+                record.ConfirmedDate = _timeService.GetCurrentTime();
+                await SaveAsync(record);
+                Record(TransferEventCategory.EndResponse, TransferEventType.NerpSent, TransferEventLevel.Warning,
+                    $"{record.VirtualFileName} could not be reported as not delivered: {Partner.Name} uses " +
+                    $"ODETTE-FTP {ProtocolLevels.Name(Partner.ProtocolLevel)}, which has no NERP",
+                    e => Describe(e, record, null));
+                continue;
+            }
 
             // A file that could not be delivered to its final destination is reported with a NERP instead.
             OftpCommand response = record.Status == ReceiveStatus.NOT_DELIVERED

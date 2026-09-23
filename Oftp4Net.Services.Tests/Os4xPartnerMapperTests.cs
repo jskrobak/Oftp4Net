@@ -128,13 +128,29 @@ public class Os4xPartnerMapperTests
     }
 
     [Fact]
-    public void Oftp1PartnerCannotBeImported()
+    public void Oftp1PartnerIsImportedWithTheOlderRelease()
     {
-        var candidate = Os4xPartnerMapper.Map(Row(r => r.OftpVersion = 1));
+        var candidate = Os4xPartnerMapper.Map(Row(r =>
+        {
+            r.OftpVersion = 1;
+            r.Sign = true;
+            r.Encrypt = true;
+        }));
 
-        Assert.Null(candidate.Partner);
-        Assert.False(candidate.CanImport);
+        var partner = candidate.Partner!;
+        Assert.Equal(Oftp4Net.Core.Protocol.ProtocolLevels.Oftp14, partner.ProtocolLevel);
+        // File level security exists only in OFTP 2.0, so it is not taken over.
+        Assert.False(partner.SignFiles);
+        Assert.False(partner.EncryptFiles);
         Assert.Contains(candidate.Notes, n => n.Contains("OFTP 1"));
+    }
+
+    [Fact]
+    public void Oftp2PartnerKeepsTheCurrentRelease()
+    {
+        var candidate = Os4xPartnerMapper.Map(Row());
+
+        Assert.Equal(Oftp4Net.Core.Protocol.ProtocolLevels.Oftp2, candidate.Partner!.ProtocolLevel);
     }
 
     [Fact]

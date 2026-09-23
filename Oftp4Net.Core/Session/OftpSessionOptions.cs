@@ -30,6 +30,12 @@ public sealed class OftpSessionOptions
     public int Credit { get; init; } = 64;
 
     /// <summary>
+    /// Highest protocol release level we announce in SSID (<see cref="ProtocolLevels"/>). The session runs at the
+    /// lower of the two announced levels, so a partner on ODETTE-FTP 1.x is served with its own command layout.
+    /// </summary>
+    public int ProtocolLevel { get; init; } = ProtocolLevels.Oftp2;
+
+    /// <summary>
     /// Require secure authentication (SSIDAUTH). Both sides have to require it, otherwise the session is aborted;
     /// for a responder the requirement of the identified partner (<see cref="OftpAuthenticationResult"/>) wins.
     /// </summary>
@@ -59,5 +65,10 @@ public sealed class OftpSessionOptions
             throw new ArgumentOutOfRangeException(nameof(ExchangeBufferSize));
         if (Credit is < 1 or > 999)
             throw new ArgumentOutOfRangeException(nameof(Credit));
+        if (!ProtocolLevels.IsSupported(ProtocolLevel))
+            throw new ArgumentOutOfRangeException(nameof(ProtocolLevel));
+        if (SecureAuthentication && !ProtocolLevels.HasOftp2Features(ProtocolLevel))
+            throw new ArgumentException("Secure authentication requires protocol level 5 (OFTP 2.0).",
+                nameof(SecureAuthentication));
     }
 }

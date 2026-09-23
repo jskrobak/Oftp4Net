@@ -7,6 +7,7 @@
 @using Oftp4Net.Services.Encodings
 @using Oftp4Net.Services.Security
 @using Oftp4Net.Services.Import
+@using Oftp4Net.Core.Protocol
 <style>
     .scrollable-table-container {
         overflow: auto;
@@ -30,6 +31,16 @@
                     <HxInputText Label="Password" Hint="Password the partner sends in its SSID. Leave empty to not check it." Type="InputType.Password" @bind-Value="@currentPartner.Password" />
                     <HxInputText Label="Host" @bind-Value="@currentPartner.Host" />
                     <HxInputNumber Decimals="0" Type="InputType.Number" Label="Port" @bind-Value="@currentPartner.Port" />
+
+                    <HxSelect TItem="int"
+                              TValue="int"
+                              Label="ODETTE-FTP release"
+                              Hint="Highest release offered in SSID. The session runs at the lower of the two; file level security and secure authentication need 2.0."
+                              Data="ProtocolLevels.All"
+                              @bind-Value="@currentPartner.ProtocolLevel"
+                              TextSelector="@(l => $"{l} - ODETTE-FTP {ProtocolLevels.Name(l)}")"
+                              ValueSelector="@(l => l)"
+                              Nullable="false" />
 
                     <HxCheckbox Label="Use TLS" @bind-Value="@currentPartner.UseTls"></HxCheckbox>
                 
@@ -288,6 +299,9 @@
                 <HxGridColumn HeaderText="Host"
                               ItemTextSelector="@(d => d.Host)"
                               SortKeySelector="d => d.Host"/>
+                <HxGridColumn HeaderText="Release"
+                              ItemTextSelector="@(d => ProtocolLevels.Name(d.ProtocolLevel))"
+                              SortKeySelector="d => d.ProtocolLevel"/>
                 @* Not sortable: an enum sort key cannot be translated to SQL. *@
                 <HxGridColumn HeaderText="Encoding"
                               ItemTextSelector="@(d => EncodingDescription(d))"/>

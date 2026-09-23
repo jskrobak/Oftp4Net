@@ -26,8 +26,8 @@ public sealed class SSID : OftpCommand
 {
     public const char Id = 'X';
 
-    /// <summary>Protocol release level, 5 = OFTP 2.0.</summary>
-    public const int Oftp2Level = 5;
+    /// <summary>Protocol release level, 5 = OFTP 2.0. See <see cref="ProtocolLevels"/>.</summary>
+    public const int Oftp2Level = ProtocolLevels.Oftp2;
 
     public override char Indicator => Id;
 
@@ -43,27 +43,36 @@ public sealed class SSID : OftpCommand
     public bool SecureAuthentication { get; init; }
     public string UserData { get; init; } = "";
 
-    internal override void Write(CommandWriter writer) => writer
-        .Numeric(Level, 1)
-        .Alpha(Code, 25)
-        .Alpha(Password, 8)
-        .Numeric(ExchangeBufferSize, 5)
-        .Alpha(SendReceive, 1)
-        .Alpha(YesNo(BufferCompression), 1)
-        .Alpha(YesNo(Restart), 1)
-        .Alpha(YesNo(SpecialLogic), 1)
-        .Numeric(Credit, 3)
-        .Alpha(YesNo(SecureAuthentication), 1)
-        .Alpha("", 4)
-        .Alpha(UserData, 8)
-        .CarriageReturn();
+    internal override void Write(CommandWriter writer)
+    {
+        writer
+            .Numeric(Level, 1)
+            .Alpha(Code, 25)
+            .Alpha(Password, 8)
+            .Numeric(ExchangeBufferSize, 5)
+            .Alpha(SendReceive, 1)
+            .Alpha(YesNo(BufferCompression), 1)
+            .Alpha(YesNo(Restart), 1)
+            .Alpha(YesNo(SpecialLogic), 1)
+            .Numeric(Credit, 3);
+
+        // Secure authentication is an OFTP 2.0 field; before it the reserved area is one octet longer.
+        if (ProtocolLevels.HasOftp2Features(Level))
+            writer.Alpha(YesNo(SecureAuthentication), 1).Alpha("", 4);
+        else
+            writer.Alpha("", 5);
+
+        writer.Alpha(UserData, 8).CarriageReturn();
+    }
 
     internal static SSID Read(CommandReader reader)
     {
         // Object initializers evaluate in declaration order, which matches the field order of the command.
+        // SSID describes its own level, so the layout follows the field that was just read.
+        var level = (int)reader.Numeric(1);
         var ssid = new SSID
         {
-            Level = (int)reader.Numeric(1),
+            Level = level,
             Code = reader.Alpha(25),
             Password = reader.Alpha(8),
             ExchangeBufferSize = (int)reader.Numeric(5),
@@ -72,8 +81,8 @@ public sealed class SSID : OftpCommand
             Restart = ParseYesNo(reader.Alpha(1)),
             SpecialLogic = ParseYesNo(reader.Alpha(1)),
             Credit = (int)reader.Numeric(3),
-            SecureAuthentication = ParseYesNo(reader.Alpha(1)),
-            UserData = reader.Skip(4).Alpha(8),
+            SecureAuthentication = ProtocolLevels.HasOftp2Features(level) && ParseYesNo(reader.Alpha(1)),
+            UserData = reader.Skip(ProtocolLevels.HasOftp2Features(level) ? 4 : 5).Alpha(8),
         };
         reader.OptionalCarriageReturn();
         return ssid;
@@ -90,15 +99,23 @@ public sealed class ESID : OftpCommand
     public string ReasonCode { get; init; } = ReasonCodes.NormalTermination;
     public string ReasonText { get; init; } = "";
 
-    internal override void Write(CommandWriter writer) => writer
-        .Numeric(int.Parse(ReasonCode), 2)
-        .TextWithLength(ReasonText)
-        .CarriageReturn();
+    internal override void Write(CommandWriter writer)
+    {
+        writer.Numeric(int.Parse(ReasonCode), 2);
+
+        // The reason text was added in OFTP 2.0.
+        if (ProtocolLevels.HasOftp2Features(writer.Level))
+            writer.TextWithLength(ReasonText);
+
+        writer.CarriageReturn();
+    }
 
     internal static ESID Read(CommandReader reader)
     {
         var code = reader.Numeric(2).ToString("00");
-        var text = reader.AtEnd ? "" : reader.TextWithLength();
+        var text = ProtocolLevels.HasOftp2Features(reader.Level) && !reader.AtEndOrCarriageReturn
+            ? reader.TextWithLength()
+            : "";
         reader.OptionalCarriageReturn();
         return new ESID { ReasonCode = code, ReasonText = text };
     }
