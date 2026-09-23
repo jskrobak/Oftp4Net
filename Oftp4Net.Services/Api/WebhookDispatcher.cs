@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Oftp4Net.Domain;
+using Oftp4Net.Services.Health;
 using Oftp4Net.Services.TransferEvents;
 
 namespace Oftp4Net.Services.Api;
@@ -66,9 +67,12 @@ public sealed class WebhookDispatcher(
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    private readonly Channel<(string Url, string? Secret, WebhookPayload Payload)> _queue =
-        Channel.CreateBounded<(string, string?, WebhookPayload)>(
-            new BoundedChannelOptions(10_000) { SingleReader = true, FullMode = BoundedChannelFullMode.DropWrite });
+    private readonly MonitoredQueue<(string Url, string? Secret, WebhookPayload Payload)> _queue =
+        new("Webhook", 10_000, BoundedChannelFullMode.DropWrite,
+            dropped => logger.LogError("The webhook queue is full, {Count} webhook call(s) not made so far", dropped));
+
+    /// <summary>Webhook calls waiting to be made.</summary>
+    public QueueState Queue => _queue.State;
 
     /// <summary>Delays before retrying a failed call (configuration <c>Webhooks:RetryDelaysSeconds</c>, e.g. "5,30,120").</summary>
     private TimeSpan[] RetryDelays
@@ -90,8 +94,8 @@ public sealed class WebhookDispatcher(
 
     public void Dispatch(string url, string? secret, WebhookPayload payload)
     {
-        if (!_queue.Writer.TryWrite((url, secret, payload)))
-            logger.LogError("Webhook {Event} to {Url} was not sent: the queue is full", payload.Event, url);
+        // A full queue drops the call and reports it (MonitoredQueue).
+        _queue.Writer.TryWrite((url, secret, payload));
     }
 
     /// <summary>Checks that the URL can be called (http/https and, unless allowed, not a private address).</summary>

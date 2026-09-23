@@ -32,4 +32,8 @@ ENV DataDirectory=/data \
     DataProtection__KeysDirectory=/data/keys
 VOLUME ["/data"]
 USER $APP_UID
+# Liveness only (the process answers), so that a database outage does not restart the container. The image has
+# no curl, bash talks HTTP itself.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/live HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
 ENTRYPOINT ["dotnet", "Oftp4Net.Server.dll"]

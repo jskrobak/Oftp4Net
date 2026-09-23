@@ -77,6 +77,14 @@ public class ReceivedFileRepository(
             .ToListAsync(cancellationToken);
     }
 
+    public Task<int> CountUnconfirmedAsync(DateTime createdBefore, CancellationToken cancellationToken = default)
+    {
+        return Data
+            .Where(i => i.PartnerId != null && i.ConfirmedDate == null && i.Created < createdBefore
+                        && (i.Status == ReceiveStatus.RECEIVED || i.Status == ReceiveStatus.NOT_DELIVERED))
+            .CountAsync(cancellationToken);
+    }
+
     public async Task<bool> ExistsAsync(int partnerId, string virtualFileName, string fileDate, string fileTime,
         CancellationToken cancellationToken = default)
     {

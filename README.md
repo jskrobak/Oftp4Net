@@ -36,6 +36,8 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - A script that creates the certificates of the Odette interoperability tests, including the ones that must be refused
 - Import of partners from an existing OS4X installation
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
+- Health checks for Docker, Kubernetes and monitoring: database, storage, listeners, send service, certificates,
+  revocation lists and stuck files, shown on the dashboard and reported by webhook
 
 ## OFTP2 support
 
@@ -88,6 +90,8 @@ Not implemented, because the deployments this server is built for do not use it:
 | `Tls:GenerateCertificate` | Create a self-signed TLS certificate on startup when there is none with a private key (default `true`) |
 | `Tls:CertificateSubject` | Host name in the generated certificate (default: machine / container name) |
 | `ReverseProxy:TrustAll` | Trust `X-Forwarded-*` headers from any proxy |
+| `HealthChecks:MinFreeDiskSpaceMB` | Free disk space below which the storage is reported as degraded (default 1024) |
+| `HealthChecks:WebhookUrl`, `HealthChecks:WebhookSecret` | Webhook `health.changed` called when the state of a health check changes |
 
 Runtime settings (receive directory, send interval, retry count, buffer size, credit, timeouts, TLS client certificate)
 are edited on the *Settings → General* page and stored in the database.
@@ -193,6 +197,35 @@ To build the image locally:
 ```bash
 docker build -f Oftp4Net.Server/Dockerfile -t oftp4net-server .
 ```
+
+## Health checks
+
+| Endpoint | Checks | Access |
+|---|---|---|
+| `GET /health/live` | none, the process answers | anonymous |
+| `GET /health/ready` | `database`, `storage`, `listeners`, `send-service`; `503` when one of them is unhealthy | anonymous, the state only |
+| `GET /health/details` | all of them, as JSON with a description and data | API token (`Authorization: Bearer …`) |
+
+The liveness endpoint checks nothing on purpose: a database outage must not make the orchestrator restart the
+server again and again. The Docker image uses it in its `HEALTHCHECK`; readiness is for the load balancer or a
+Kubernetes readiness probe. The health endpoints are not redirected to HTTPS, so that probes can use the plain port.
+
+| Check | Unhealthy / degraded when |
+|---|---|
+| `database` | the database cannot be reached or migrations are missing (`Database:MigrateOnStartup=false`) |
+| `storage` | the receive or outbox directory or the data protection keys cannot be written; degraded when disk space runs low |
+| `listeners` | an enabled listener did not start (port taken, certificate missing) |
+| `send-service` | the service stopped or has not processed the queue for three send intervals and a minute; degraded while paused |
+| `trust-list` | degraded: the Odette trust list cannot be downloaded or is past its next update |
+| `revocation-lists` | degraded: a revocation list cannot be read or is older than *Maximum age of a revocation list* |
+| `certificates` | degraded: a certificate in use (ours, listeners, partners, per station and purpose) expired or expires within 30 days |
+| `send-queue` | degraded: a file waits to be sent for more than 24 hours, failed for good in the last 24 hours, or a received file waits for more than an hour for its End to End Response |
+| `internal-queues` | degraded: the queue of the transfer log, the webhooks or the hooks is 80 % full and about to drop items |
+
+The checks read the state the services keep and the database; none of them connects to a partner or downloads
+anything. The application runs them every 30 seconds, shows the result on the dashboard and writes every change
+to the log. With `HealthChecks:WebhookUrl` it also calls the webhook `health.changed` with the overall `status`
+and the problems in `error`, signed like the other webhooks when `HealthChecks:WebhookSecret` is set.
 
 ## Transfer log
 

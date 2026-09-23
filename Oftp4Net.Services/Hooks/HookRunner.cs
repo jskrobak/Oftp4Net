@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Oftp4Net.Domain;
+using Oftp4Net.Services.Health;
 using Oftp4Net.Services.TransferEvents;
 
 namespace Oftp4Net.Services.Hooks;
@@ -78,9 +79,12 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
     // Readable JSON for scripts (no \u escaping of '+' or diacritics); it is not embedded in HTML.
     private static readonly JsonSerializerOptions JsonOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    private readonly Channel<(HookEvent Event, string Command, Dictionary<string, string?> Parameters)> _queue =
-        Channel.CreateBounded<(HookEvent, string, Dictionary<string, string?>)>(
-            new BoundedChannelOptions(QueueCapacity) { SingleReader = true, FullMode = BoundedChannelFullMode.DropWrite });
+    private readonly MonitoredQueue<(HookEvent Event, string Command, Dictionary<string, string?> Parameters)> _queue =
+        new("Hook", QueueCapacity, BoundedChannelFullMode.DropWrite,
+            dropped => logger.LogError("The hook queue is full, {Count} hook(s) not run so far", dropped));
+
+    /// <summary>Hooks waiting to be run.</summary>
+    public QueueState Queue => _queue.State;
 
     private HookOptions Options => configuration.GetSection("Hooks").Get<HookOptions>() ?? new HookOptions();
 
@@ -108,8 +112,8 @@ public sealed class HookRunner(IConfiguration configuration, ILogger<HookRunner>
             ["timestamp"] = DateTimeOffset.Now.ToString("O"),
         };
 
-        if (!_queue.Writer.TryWrite((hookEvent, command, all)))
-            logger.LogError("Hook {Event} was not run: the hook queue is full", hookEvent);
+        // A full queue drops the hook and reports it (MonitoredQueue).
+        _queue.Writer.TryWrite((hookEvent, command, all));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

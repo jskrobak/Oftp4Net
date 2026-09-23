@@ -1,5 +1,6 @@
 @page "/"
 @rendermode InteractiveServer
+@using Microsoft.Extensions.Diagnostics.HealthChecks
 <style>
     .card-header {
         background-color: var(--bs-card-bg);
@@ -78,6 +79,45 @@
                             </HxListGroupItem>
                         }
                     </HxListGroup>
+                </BodyTemplate>
+            </HxCard>
+
+            <HxCard style="width: 40rem;">
+                <HeaderTemplate>
+                    <HxCardTitle>Health</HxCardTitle>
+                </HeaderTemplate>
+                <BodyTemplate>
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            @if (HealthMonitor.Report is { } report)
+                            {
+                                <HxBadge Color="@StatusColor(report.Status)">@report.Status</HxBadge>
+                                <div class="small text-body-secondary mt-1">Checked: @HealthMonitor.Checked?.ToString("g")</div>
+                            }
+                            else
+                            {
+                                <span class="text-body-secondary">The checks have not run yet.</span>
+                            }
+                        </div>
+                        <HxButton Color="ThemeColor.Secondary" Tooltip="Check now" OnClick="CheckHealthAsync" Icon="BootstrapIcon.ArrowClockwise" />
+                    </div>
+                    @if (HealthMonitor.Report is { } entries)
+                    {
+                        <HxListGroup>
+                            @foreach (var (name, entry) in entries.Entries)
+                            {
+                                <HxListGroupItem CssClass="d-flex justify-content-between align-items-start">
+                                    <div class="me-auto">
+                                        <div class="fw-bold">@name</div>
+                                        <div class="small @(entry.Status == HealthStatus.Healthy ? "text-body-secondary" : "")">
+                                            @(entry.Description ?? entry.Exception?.Message)
+                                        </div>
+                                    </div>
+                                    <HxBadge Color="@StatusColor(entry.Status)">@entry.Status</HxBadge>
+                                </HxListGroupItem>
+                            }
+                        </HxListGroup>
+                    }
                 </BodyTemplate>
             </HxCard>
         </div>

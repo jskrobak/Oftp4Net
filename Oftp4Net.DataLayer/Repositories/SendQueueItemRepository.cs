@@ -112,4 +112,18 @@ public class SendQueueItemRepository(
             .Include(i => i.Identity)
             .FirstOrDefaultAsync(cancellationToken);
     }
+
+    public Task<int> CountWaitingAsync(DateTime createdBefore, CancellationToken cancellationToken = default)
+    {
+        return Data
+            .Where(i => (i.Status == SendStatus.NEW || i.Status == SendStatus.ERROR) && i.Created < createdBefore)
+            .CountAsync(cancellationToken);
+    }
+
+    public Task<int> CountFailedAsync(DateTime failedSince, CancellationToken cancellationToken = default)
+    {
+        return Data
+            .Where(i => i.Status == SendStatus.FAILED && i.LastErrorDate >= failedSince)
+            .CountAsync(cancellationToken);
+    }
 }

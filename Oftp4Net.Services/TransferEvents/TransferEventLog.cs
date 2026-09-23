@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
+using Oftp4Net.Services.Health;
 
 namespace Oftp4Net.Services.TransferEvents;
 
@@ -28,8 +29,11 @@ public sealed class TransferEventLog(
     private const int MaxBatchSize = 200;
     private static readonly TimeSpan ArchiveInterval = TimeSpan.FromHours(24);
 
-    private readonly Channel<TransferEvent> _queue = Channel.CreateBounded<TransferEvent>(
-        new BoundedChannelOptions(10_000) { SingleReader = true, FullMode = BoundedChannelFullMode.DropOldest });
+    private readonly MonitoredQueue<TransferEvent> _queue = new("Transfer log", 10_000, BoundedChannelFullMode.DropOldest,
+        dropped => logger.LogError("The transfer log cannot keep up, {Count} record(s) lost so far", dropped));
+
+    /// <summary>Records waiting to be stored.</summary>
+    public QueueState Queue => _queue.State;
 
     private DateTime _nextArchive = DateTime.MinValue;
 

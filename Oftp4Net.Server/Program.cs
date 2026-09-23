@@ -23,6 +23,7 @@ using Oftp4Net.Server.Logging;
 using Oftp4Net.Services;
 using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.Api;
+using Oftp4Net.Services.Health;
 using Oftp4Net.Services.Hooks;
 using Oftp4Net.Services.Import;
 using Oftp4Net.Services.Pdx;
@@ -197,6 +198,7 @@ builder.Services.AddSingleton<ListenerService>();
 builder.Services.AddHostedService(serviceCollection => serviceCollection.GetRequiredService<ListenerService>());
 builder.Services.AddSingleton<SendService>();
 builder.Services.AddHostedService(serviceCollection => serviceCollection.GetRequiredService<SendService>());
+builder.Services.AddOftpHealthChecks();
 
 builder.Services.AddResponseCompression(opts =>
 {
@@ -231,7 +233,8 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
-    app.UseHttpsRedirection();
+    // Probes of the orchestrator come over plain HTTP from inside and do not follow a redirect.
+    app.UseWhen(context => !context.Request.Path.StartsWithSegments("/health"), branch => branch.UseHttpsRedirection());
 }
 
 // Fingerprinted static files (no stale CSS after an update); they are public, unlike the rest of the app.
@@ -245,6 +248,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapApi();
+app.MapHealth();
 
 // API description and its documentation; both require a signed in administrator (fallback policy).
 app.MapOpenApi();

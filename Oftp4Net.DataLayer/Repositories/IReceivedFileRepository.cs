@@ -22,6 +22,12 @@ public interface IReceivedFileRepository: IRepository<ReceivedFile, int>
     /// <summary>Partners that have received files with an End to End Response still to be delivered.</summary>
     Task<List<ReceivedFile>> GetAllUnconfirmedAsync(DateTime createdBefore, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Received files received before the given time whose End to End Response has not reached the partner yet
+    /// (files held for a decision of the administrator are not counted).
+    /// </summary>
+    Task<int> CountUnconfirmedAsync(DateTime createdBefore, CancellationToken cancellationToken = default);
+
     Task<bool> ExistsAsync(int partnerId, string virtualFileName, string fileDate, string fileTime,
         CancellationToken cancellationToken = default);
 

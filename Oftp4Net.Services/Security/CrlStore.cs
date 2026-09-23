@@ -28,6 +28,12 @@ public enum CrlResult
 
 public sealed record CrlVerdict(CrlResult Result, string? Problem = null);
 
+/// <summary>A revocation list the store knows, for the health check.</summary>
+/// <param name="Read">When the list in use was read; without a list, when reading it was last tried.</param>
+/// <param name="HasList">A list was read; otherwise every attempt failed with <paramref name="Error"/>.</param>
+/// <param name="Error">Why the last attempt failed; a list read before stays in use until it is too old.</param>
+public sealed record CrlListState(string Url, DateTime Read, bool HasList, string? Error);
+
 /// <summary>
 /// Downloads the certificate revocation lists of the certification authorities and keeps them (Odette OP08 2.6):
 /// a list is fetched again after <see cref="GlobalSettings.CrlRefreshHours"/> or when the issuer announced a newer
@@ -87,6 +93,12 @@ public class CrlStore(IHttpClientFactory httpClientFactory, GlobalSettingsServic
 
         return new CrlVerdict(CrlResult.Unknown, string.Join("; ", problems));
     }
+
+    /// <summary>The lists read so far, and those that could not be read.</summary>
+    public IReadOnlyList<CrlListState> Lists =>
+        _lists.Select(l => new CrlListState(l.Key, l.Value.Read, l.Value.List is not null, l.Value.Error))
+            .OrderBy(l => l.Url)
+            .ToList();
 
     /// <summary>Forgets everything that was read, e.g. after the periods were changed.</summary>
     public void Clear() => _lists.Clear();

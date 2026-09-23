@@ -47,6 +47,9 @@ public class SendService(ILogger<SendService> logger,
     public bool IsPaused { get; private set; }
     public DateTime? LastRun { get; private set; }
 
+    /// <summary>When the service started, the reference for the first run.</summary>
+    public DateTime? Started { get; private set; }
+
     /// <summary>Number of sessions with partners running at the moment.</summary>
     public int ActiveSessions => _active.Count;
 
@@ -75,6 +78,7 @@ public class SendService(ILogger<SendService> logger,
     {
         logger.LogInformation("Send service started");
 
+        Started = timeService.GetCurrentTime();
         IsRunning = true;
         try
         {

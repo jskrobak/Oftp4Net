@@ -28,4 +28,10 @@ public interface ISendQueueItemRepository: IRepository<SendQueueItem, int>
     /// <summary>Finds a sent item by the virtual file identification echoed in an End to End Response.</summary>
     Task<SendQueueItem?> FindSentAsync(string virtualFileName, string fileDate, string fileTime,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Items still waiting to be sent (new or to be retried) that were queued before the given time.</summary>
+    Task<int> CountWaitingAsync(DateTime createdBefore, CancellationToken cancellationToken = default);
+
+    /// <summary>Items that failed for good since the given time.</summary>
+    Task<int> CountFailedAsync(DateTime failedSince, CancellationToken cancellationToken = default);
 }
