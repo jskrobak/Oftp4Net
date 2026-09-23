@@ -6,6 +6,7 @@
 @using Oftp4Net.Domain
 @using Oftp4Net.Services.Encodings
 @using Oftp4Net.Services.Security
+@using Oftp4Net.Services.Import
 <style>
     .scrollable-table-container {
         overflow: auto;
@@ -155,6 +156,84 @@
     </BodyTemplate>
 </HxModal>
 
+<HxModal @ref="importModal" ShowCloseButton="true" Size="ModalSize.Large">
+    <HeaderTemplate>
+        Import partners from OS4X
+    </HeaderTemplate>
+    <BodyTemplate>
+        <EditForm Model="@importOptions" OnValidSubmit="LoadOs4xPartners">
+            <DataAnnotationsValidator />
+
+            <div class="row g-2">
+                <div class="col-md-4"><HxInputText Label="Host" @bind-Value="@importOptions.Host" /></div>
+                <div class="col-md-2"><HxInputNumber Label="Port" Decimals="0" @bind-Value="@importOptions.Port" /></div>
+                <div class="col-md-3"><HxInputText Label="Database" @bind-Value="@importOptions.Database" /></div>
+                <div class="col-md-3"><HxInputText Label="Table prefix" @bind-Value="@importOptions.TablePrefix" /></div>
+                <div class="col-md-4"><HxInputText Label="User" @bind-Value="@importOptions.User" /></div>
+                <div class="col-md-4">
+                    <HxInputText Label="Password" Type="InputType.Password" @bind-Value="@importOptions.Password"
+                                 Hint="Used for this import only, it is not stored." />
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <HxSubmit Color="ThemeColor.Secondary" Icon="BootstrapIcon.Search" Spinner="importLoading">Load partners</HxSubmit>
+                </div>
+            </div>
+        </EditForm>
+
+        @if (importCandidates is not null)
+        {
+            <hr />
+            @if (importCandidates.Count == 0)
+            {
+                <p class="mb-0">The partner table of the installation is empty.</p>
+            }
+            else
+            {
+                <table class="table table-sm align-middle">
+                    <thead>
+                    <tr>
+                        <th style="width: 2rem;"></th>
+                        <th>Name</th>
+                        <th>SSID</th>
+                        <th>Address</th>
+                        <th>Security</th>
+                        <th>Identity</th>
+                        <th>State</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var candidate in importCandidates)
+                    {
+                        <tr class="@(candidate.CanImport ? "" : "text-body-secondary")">
+                            <td>
+                                <HxCheckbox @bind-Value="candidate.Selected" Enabled="candidate.CanImport" />
+                            </td>
+                            <td>@candidate.Name</td>
+                            <td>@candidate.Ssid</td>
+                            <td>@candidate.Address</td>
+                            <td>@candidate.Security</td>
+                            <td>@(string.IsNullOrEmpty(candidate.IdentitySsid) ? "-" : candidate.IdentitySsid)</td>
+                            <td>
+                                @candidate.Status
+                                @foreach (var note in candidate.Notes)
+                                {
+                                    <div class="small text-body-secondary">@note</div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+
+                <HxButton Color="ThemeColor.Primary" Icon="BootstrapIcon.Download" Spinner="importRunning"
+                          OnClick="ImportOs4xPartners">
+                    Import selected (@importCandidates.Count(c => c.Selected))
+                </HxButton>
+            }
+        }
+    </BodyTemplate>
+</HxModal>
+
 <HxListLayout Title="Partners" TFilterModel="PartnerFilter"
               @bind-FilterModel="filterModel"
               @bind-FilterModel:after="gridComponent.RefreshDataAsync">
@@ -162,6 +241,9 @@
         <HxButton Text="New partner"
                   Color="ThemeColor.Primary"
                   Icon="BootstrapIcon.PlusLg" OnClick="HandleNewItemClicked" />
+        <HxButton Text="Import from OS4X"
+                  Color="ThemeColor.Secondary"
+                  Icon="BootstrapIcon.BoxArrowInDown" OnClick="HandleImportClicked" />
         <HxDropdownButtonGroup>
             <HxDropdownToggleButton CssClass="contextDropdownToggleButton" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ThreeDots">
             </HxDropdownToggleButton>

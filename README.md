@@ -17,6 +17,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Secure authentication (SSIDAUTH with SECD/AUCH/AURP): both sides prove they hold the private key of their certificate
 - Restart of interrupted transfers and ODETTE-FTP buffer compression, both negotiated per partner
 - REST API with bearer tokens and webhooks, scripts run on transfer events, persistent transfer log
+- Import of partners from an existing OS4X installation
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
 
 ## OFTP2 support
@@ -322,6 +323,33 @@ scripts and point the configuration to them:
 ```bash
 docker run ... -v ./hooks:/scripts:ro -e Hooks__OnReceived=/scripts/on_received.sh ghcr.io/jskrobak/oftp4net:latest
 ```
+
+## Importing partners from OS4X
+
+*Partners* → *Import from OS4X* reads the partner table of an OS4X installation (MariaDB / MySQL) and creates the
+partners that are not here yet. The dialog asks for the connection (host, port, database, user, password and the
+table prefix from `os4x.conf`, by default `os4x_`); the password is used for that one import and is not stored.
+
+The list that appears is a preview: nothing is written until *Import selected* is pressed. Each row says what will
+happen — *new*, *already exists* (an existing partner is never changed) or *cannot be imported* with the reason,
+for example an OFTP 1.x partner.
+
+OS4X keeps both sides of a relation in one row, so the identity of a partner comes from the same record: its
+`my_ssid` / `my_sfid` / `my_password` become an identity here, reused when one with that code already exists.
+
+| OS4X | Oftp4Net |
+|---|---|
+| `shortname`, `longname` | name and description |
+| `his_ssid`, `his_sfid`, `his_password` | partner codes and password |
+| `my_ssid`, `my_sfid`, `my_password` | identity |
+| `address`, `port` / `port_tls`, `use_tls` | host, port and TLS |
+| `oftp2_cipher_suite` | cipher suite (`01`–`06`) |
+| `oftpv2_sign`, `oftpv2_encrypt`, `oftp2_compression_level` | file signing, encryption and compression |
+| `oftpv2_sec_auth_req`, `oftpv2_req_sig_eerp` | secure authentication, signed end responses |
+
+Certificates are not part of the OS4X partner table, so the trusted certificate of a TLS connection and the
+partner's certificate for file security are assigned after the import. Buffer size and credit are per partner in
+OS4X but global here, so they are not taken over.
 
 ## Setting up a partner
 

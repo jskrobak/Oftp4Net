@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Components;
 using Oftp4Net.DataLayer.Filters;
 using Oftp4Net.Domain;
 using Oftp4Net.Services;
+using Oftp4Net.Services.Import;
 
 namespace Oftp4Net.Server.Components.Pages;
 
@@ -22,6 +23,14 @@ public partial class Partners : ComponentBase
     private HxModal partnerEditModal = null!;
     
     private List<Certificate> availableCertificates = [];
+
+    [Inject] protected Os4xPartnerImporter Os4xImporter { get; set; } = null!;
+
+    private HxModal importModal = null!;
+    private readonly Os4xImportOptions importOptions = new();
+    private List<Os4xPartnerCandidate>? importCandidates;
+    private bool importLoading;
+    private bool importRunning;
 
     protected override async Task OnInitializedAsync()
     {
@@ -125,6 +134,75 @@ public partial class Partners : ComponentBase
         selectedItems.Clear();
         await gridComponent.RefreshDataAsync();
     }
+
+    #region Import from OS4X
+
+    private async Task HandleImportClicked()
+    {
+        importCandidates = null;
+        await importModal.ShowAsync();
+    }
+
+    /// <summary>Reads the partner table of the OS4X installation and shows what the import would create.</summary>
+    private async Task LoadOs4xPartners()
+    {
+        importLoading = true;
+        try
+        {
+            importCandidates = await Os4xImporter.LoadAsync(importOptions);
+            var importable = importCandidates.Count(c => c.CanImport);
+            Messenger.AddInformation($"{importCandidates.Count} partner(s) found, {importable} can be imported.");
+        }
+        catch (Exception ex)
+        {
+            importCandidates = null;
+            Messenger.AddError($"Reading the OS4X database failed: {ex.Message}");
+        }
+        finally
+        {
+            importLoading = false;
+        }
+    }
+
+    private async Task ImportOs4xPartners()
+    {
+        if (importCandidates is null)
+            return;
+
+        var selected = importCandidates.Where(c => c is { Selected: true, CanImport: true }).ToList();
+        if (selected.Count == 0)
+        {
+            Messenger.AddWarning("No partner is selected.");
+            return;
+        }
+
+        importRunning = true;
+        try
+        {
+            var result = await Os4xImporter.ImportAsync(selected);
+
+            foreach (var error in result.Errors)
+                Messenger.AddWarning(error);
+
+            Messenger.AddInformation(result.Identities > 0
+                ? $"{result.Partners} partner(s) and {result.Identities} identity(ies) imported."
+                : $"{result.Partners} partner(s) imported.");
+
+            await importModal.HideAsync();
+            importCandidates = null;
+            await gridComponent.RefreshDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Messenger.AddError($"Import failed: {ex.Message}");
+        }
+        finally
+        {
+            importRunning = false;
+        }
+    }
+
+    #endregion
 
     private async Task SavePartner()
     {

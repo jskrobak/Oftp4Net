@@ -23,6 +23,7 @@ using Oftp4Net.Services;
 using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.Api;
 using Oftp4Net.Services.Hooks;
+using Oftp4Net.Services.Import;
 using Oftp4Net.Services.TransferEvents;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
@@ -126,6 +127,7 @@ builder.AddBlazorCookies();
 
 builder.Services.AddSingleton<TransferClaims>();
 builder.Services.AddScoped<ApiTokenService>();
+builder.Services.AddScoped<Os4xPartnerImporter>();
 builder.Services.AddHttpClient(WebhookDispatcher.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<WebhookDispatcher>();
 builder.Services.AddSingleton<IWebhookDispatcher>(sp => sp.GetRequiredService<WebhookDispatcher>());

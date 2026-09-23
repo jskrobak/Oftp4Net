@@ -12,6 +12,8 @@
 
     <ItemGroup>
       <PackageReference Include="Havit.Blazor.Components.Web.Bootstrap" />
+      <!-- Reading the partner table of an OS4X installation (MariaDB / MySQL). -->
+      <PackageReference Include="MySqlConnector" />
     </ItemGroup>
 
 </Project>
