@@ -210,6 +210,63 @@ The liveness endpoint checks nothing on purpose: a database outage must not make
 server again and again. The Docker image uses it in its `HEALTHCHECK`; readiness is for the load balancer or a
 Kubernetes readiness probe. The health endpoints are not redirected to HTTPS, so that probes can use the plain port.
 
+`live` and `ready` answer with the overall state as plain text, `Healthy`, `Degraded` or `Unhealthy`. The status
+code is `200` for the first two and `503` for `Unhealthy`, so a probe fails only when the server cannot work; a
+degraded state (e.g. the send service paused by an administrator) does not take it out of service.
+
+```bash
+curl -i http://localhost:8080/health/ready
+```
+
+The details need an API token, created in *Settings → API tokens* (see *REST API* below):
+
+```bash
+curl -H "Authorization: Bearer <token>" http://localhost:8080/health/details
+```
+
+```json
+{
+  "status": "Degraded",
+  "duration": 10.7,
+  "checks": {
+    "listeners": {
+      "status": "Healthy",
+      "description": "1 listener(s) running.",
+      "duration": 0.1,
+      "tags": [ "ready" ],
+      "data": { "Loopback TLS (127.0.0.1:16619)": "running" },
+      "error": null
+    },
+    "certificates": {
+      "status": "Degraded",
+      "description": "Certificate CN=oftp.example.com (TLS client certificate) expires on 10/15/2026.",
+      "duration": 10.3,
+      "tags": [ "operational" ],
+      "data": { "CN=oftp.example.com (#3)": "valid to 2026-10-15T12:00:00; TLS client certificate" },
+      "error": null
+    }
+  }
+}
+```
+
+`status` is the worst state of all the checks, `duration` in milliseconds and `data` the values the check looked
+at. `error` holds the message of a check that failed with an exception (e.g. a timeout after 5 seconds).
+
+In Kubernetes:
+
+```yaml
+livenessProbe:
+  httpGet: { path: /health/live, port: 8080 }
+  periodSeconds: 30
+  failureThreshold: 3
+readinessProbe:
+  httpGet: { path: /health/ready, port: 8080 }
+  periodSeconds: 15
+```
+
+In the web UI the same result is on the *Dashboard* (the start page), in the card *Health*: the overall state,
+the time of the last check, every check with its description and a button that runs them right away.
+
 | Check | Unhealthy / degraded when |
 |---|---|
 | `database` | the database cannot be reached or migrations are missing (`Database:MigrateOnStartup=false`) |
