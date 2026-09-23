@@ -22,6 +22,28 @@ public class TrustServiceListTests
         Assert.NotEmpty(list.TrustAnchors);
     }
 
+    /// <summary>
+    /// Each entry of the Odette list carries the OFTP2 authority and its root, which is there to verify that
+    /// authority only (Odette OP08 2.7). The roots must be told apart, an end entity certificate issued directly
+    /// by one of them is not a valid OFTP2 certificate.
+    /// </summary>
+    [Fact]
+    public void RootsForVerificationAreToldApartFromTheAuthorities()
+    {
+        var list = TrustServiceList.Parse(Sample());
+
+        var roots = list.VerificationRoots;
+        var authorities = list.TrustAnchors.Where(a => roots.All(r => r.Thumbprint != a.Thumbprint)).ToList();
+
+        Assert.NotEmpty(roots);
+        Assert.NotEmpty(authorities);
+        // A root is self signed and issued one of the authorities of its entry.
+        Assert.All(roots, root => Assert.Equal(root.SubjectName.Name, root.IssuerName.Name));
+        Assert.All(roots, root => Assert.Contains(authorities, a => a.IssuerName.Name == root.SubjectName.Name));
+        // An authority that is listed as an authority somewhere is never among the roots.
+        Assert.All(authorities, a => Assert.DoesNotContain(roots, r => r.Thumbprint == a.Thumbprint));
+    }
+
     [Fact]
     public void ChangedListIsRefused()
     {

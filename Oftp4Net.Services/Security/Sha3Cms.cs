@@ -24,6 +24,13 @@ public static class Sha3Cms
     private const string EnvelopedData = "1.2.840.113549.1.7.3";
     private const string RsaesOaep = "1.2.840.113549.1.1.7";
     private const string Aes256Cbc = "2.16.840.1.101.3.4.1.42";
+    private const string Sha1 = "1.3.14.3.2.26";
+    private const string Sha256 = "2.16.840.1.101.3.4.2.1";
+    private const string Sha384 = "2.16.840.1.101.3.4.2.2";
+    private const string Sha512 = "2.16.840.1.101.3.4.2.3";
+    private const string Sha3_256 = "2.16.840.1.101.3.4.2.8";
+    private const string Sha3_384 = "2.16.840.1.101.3.4.2.9";
+    private const string Sha3_512 = "2.16.840.1.101.3.4.2.10";
 
     /// <summary>The signature of this package can only be made and checked here.</summary>
     public static bool IsHandled(CipherSuite suite) =>
@@ -297,7 +304,17 @@ public static class Sha3Cms
     }
 
     /// <summary>Unwraps a package written by <see cref="Encrypt"/> with our own private key.</summary>
-    public static byte[] Decrypt(byte[] envelope, X509Certificate2 certificate, CipherSuite suite)
+    public static byte[] Decrypt(byte[] envelope, X509Certificate2 certificate, CipherSuite suite) =>
+        Decrypt(envelope, certificate, suite.EncryptionPadding);
+
+    /// <summary>
+    /// Unwraps a package whose cipher suite we do not know, e.g. an authentication challenge: the padding of the
+    /// key transport is read from the package. Used where the CMS classes of .NET refuse the algorithm.
+    /// </summary>
+    public static byte[] Decrypt(byte[] envelope, X509Certificate2 certificate) =>
+        Decrypt(envelope, certificate, padding: null);
+
+    private static byte[] Decrypt(byte[] envelope, X509Certificate2 certificate, RSAEncryptionPadding? padding)
     {
         using var key = certificate.GetRSAPrivateKey()
             ?? throw new FileSecurityException(Core.Protocol.AnswerReasonCodes.FileDecryptionFailure,
@@ -321,12 +338,13 @@ public static class Sha3Cms
                 recipient.ReadInteger();
                 // The recipient is identified by issuer and serial number; we only have one certificate.
                 recipient.ReadEncodedValue();
-                recipient.ReadSequence();
+                var keyAlgorithm = recipient.ReadSequence();
+                var keyPadding = padding ?? ReadKeyEncryptionPadding(keyAlgorithm);
                 var encryptedKey = recipient.ReadOctetString();
 
                 try
                 {
-                    contentKey = key.Decrypt(encryptedKey, suite.EncryptionPadding);
+                    contentKey = key.Decrypt(encryptedKey, keyPadding);
                 }
                 catch (CryptographicException)
                 {
@@ -366,6 +384,40 @@ public static class Sha3Cms
                 "The content could not be decrypted: " + ex.Message, ex);
         }
     }
+
+    /// <summary>
+    /// The padding of the key transport as the package announces it: RSAES-OAEP with the digest it names, or
+    /// PKCS#1 v1.5 (RFC 4055, sections 4.1 and 5).
+    /// </summary>
+    private static RSAEncryptionPadding ReadKeyEncryptionPadding(AsnReader algorithm)
+    {
+        var oid = algorithm.ReadObjectIdentifier();
+        if (oid != RsaesOaep)
+            return RSAEncryptionPadding.Pkcs1;
+
+        // The parameters are optional; without them OAEP uses SHA-1.
+        if (!algorithm.HasData)
+            return RSAEncryptionPadding.OaepSHA1;
+
+        var parameters = algorithm.ReadSequence();
+        var hashTag = new Asn1Tag(TagClass.ContextSpecific, 0);
+        var hash = parameters.HasData && parameters.PeekTag().HasSameClassAndValue(hashTag)
+            ? parameters.ReadSequence(hashTag).ReadSequence().ReadObjectIdentifier()
+            : Sha1;
+
+        return Padding(hash);
+    }
+
+    private static RSAEncryptionPadding Padding(string hash) => hash switch
+    {
+        Sha256 => RSAEncryptionPadding.OaepSHA256,
+        Sha384 => RSAEncryptionPadding.OaepSHA384,
+        Sha512 => RSAEncryptionPadding.OaepSHA512,
+        Sha3_256 => RSAEncryptionPadding.OaepSHA3_256,
+        Sha3_384 => RSAEncryptionPadding.OaepSHA3_384,
+        Sha3_512 => RSAEncryptionPadding.OaepSHA3_512,
+        _ => RSAEncryptionPadding.OaepSHA1,
+    };
 
     /// <summary>RSAES-OAEP with MGF1, both with the hash of the suite (RFC 4055, section 4.1).</summary>
     private static void WriteKeyEncryptionAlgorithm(AsnWriter writer, CipherSuite suite)

@@ -2,6 +2,7 @@ using System.Security.Cryptography.X509Certificates;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using Oftp4Net.Services.Security;
+using Oftp4Net.Services.Tsl;
 
 namespace Oftp4Net.Services.Oftp;
 
@@ -9,9 +10,14 @@ namespace Oftp4Net.Services.Oftp;
 /// Certificates and limits of file level security within one session: our own certificate comes from the global
 /// settings, the partner's certificate from the partner. Loaded certificates are cached for the session.
 /// </summary>
-public sealed class SessionFileSecurity(ICertificateRepository certificates, GlobalSettings settings) : IDisposable
+/// <param name="trustAnchors">
+/// Certification authorities of the Odette trust list, used to find the revocation list of a certificate.
+/// </param>
+public sealed class SessionFileSecurity(ICertificateRepository certificates, GlobalSettings settings,
+    X509Certificate2Collection? trustAnchors = null) : IDisposable
 {
     private readonly Dictionary<int, X509Certificate2> _loaded = [];
+    private readonly Dictionary<string, string?> _checked = [];
 
     /// <summary>Files larger than this are not signed, compressed or encrypted (everything is done in memory).</summary>
     public long MaxSecuredFileSize => (long)settings.MaxSecuredFileSizeMb * 1024 * 1024;
@@ -45,6 +51,36 @@ public sealed class SessionFileSecurity(ICertificateRepository certificates, Glo
             SigningCertificate = station.SignFiles ? await GetOwnCertificateAsync(cancellationToken) : null,
             EncryptionCertificate = station.EncryptFiles ? await GetPartnerCertificateAsync(partner, cancellationToken) : null,
         };
+    }
+
+    /// <summary>
+    /// Why a certificate must not be used for file level security any more: it expired, it is not valid yet, or
+    /// its issuer put it on a revocation list (Odette OP08 2.6 and 1.10). <c>null</c> when it can be used. The
+    /// answer is kept for the session, the revocation lists are read at most once per certificate.
+    /// </summary>
+    public string? CheckUsable(X509Certificate2? certificate)
+    {
+        if (certificate is null)
+            return null;
+
+        if (_checked.TryGetValue(certificate.Thumbprint, out var known))
+            return known;
+
+        var problem = Check(certificate);
+        _checked[certificate.Thumbprint] = problem;
+        return problem;
+    }
+
+    private string? Check(X509Certificate2 certificate)
+    {
+        var now = DateTime.Now;
+        if (now < certificate.NotBefore || now > certificate.NotAfter)
+            return $"Certificate '{certificate.Subject}' is valid from {certificate.NotBefore:g} to " +
+                   $"{certificate.NotAfter:g} only.";
+
+        return CertificateTrust.IsRevoked(certificate, [], trustAnchors ?? [], settings.RevocationPolicy, out var problem)
+            ? $"Certificate '{certificate.Subject}' was revoked by its issuer: {problem}"
+            : null;
     }
 
     private async Task<X509Certificate2?> GetAsync(int? id, CancellationToken cancellationToken)

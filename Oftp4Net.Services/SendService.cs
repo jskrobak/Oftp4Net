@@ -145,7 +145,7 @@ public class SendService(ILogger<SendService> logger,
 
         try
         {
-            var tls = partner.UseTls ? await CreateTlsOptionsAsync(scope.ServiceProvider, partner, settings, tsl.TrustAnchors, stoppingToken) : null;
+            var tls = partner.UseTls ? await CreateTlsOptionsAsync(scope.ServiceProvider, partner, settings, tsl.TrustAnchors, tsl.VerificationRoots, stoppingToken) : null;
 
             logger.LogInformation("Connecting to {Partner} at {Host}:{Port} ({Security})",
                 partner.Name, partner.Host, partner.Port, tls is null ? "plain TCP" : "TLS");
@@ -189,8 +189,12 @@ public class SendService(ILogger<SendService> logger,
     }
 
     /// <param name="tslAnchors">Certification authorities of the Odette TSL, trusted for every partner.</param>
+    /// <param name="tslVerificationRoots">
+    /// Certificates of the TSL that are only there to verify the authorities above them.
+    /// </param>
     private static async Task<OftpTlsOptions> CreateTlsOptionsAsync(IServiceProvider services, Partner partner,
         GlobalSettings settings, System.Security.Cryptography.X509Certificates.X509Certificate2Collection tslAnchors,
+        System.Security.Cryptography.X509Certificates.X509Certificate2Collection tslVerificationRoots,
         CancellationToken cancellationToken)
     {
         var certificates = services.GetRequiredService<ICertificateRepository>();
@@ -209,6 +213,7 @@ public class SendService(ILogger<SendService> logger,
         {
             Protocols = partner.Tls == SslProtocols.None ? SslProtocols.Tls12 | SslProtocols.Tls13 : partner.Tls,
             TrustedCertificates = trusted,
+            VerificationOnlyCertificates = tslVerificationRoots,
             LocalCertificate = clientCertificate,
             Revocation = settings.RevocationPolicy,
         };

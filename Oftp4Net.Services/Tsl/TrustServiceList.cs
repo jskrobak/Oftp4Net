@@ -39,6 +39,34 @@ public sealed class TrustServiceList
     public X509Certificate2Collection TrustAnchors =>
         new(Providers.Where(p => p.Trusted).SelectMany(p => p.Certificates).DistinctBy(c => c.Thumbprint).ToArray());
 
+    /// <summary>
+    /// Certificates that are in the list to verify the certification authority above them and not to issue
+    /// certificates of their own: Odette lists the root of every OFTP2 authority for that reason. Within one
+    /// service entry these are the certificates that issued another certificate of the same entry; a certificate
+    /// that is an authority in its own entry somewhere else is not one of them.
+    /// </summary>
+    public X509Certificate2Collection VerificationRoots
+    {
+        get
+        {
+            var trusted = Providers.Where(p => p.Trusted).ToList();
+            var authorities = trusted
+                .SelectMany(p => p.Certificates.Where(c => !IssuedAnother(c, p.Certificates)))
+                .Select(c => c.Thumbprint)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            return new X509Certificate2Collection(trusted
+                .SelectMany(p => p.Certificates.Where(c => IssuedAnother(c, p.Certificates)))
+                .Where(c => !authorities.Contains(c.Thumbprint))
+                .DistinctBy(c => c.Thumbprint)
+                .ToArray());
+        }
+    }
+
+    private static bool IssuedAnother(X509Certificate2 certificate, IReadOnlyList<X509Certificate2> others) =>
+        others.Any(other => !ReferenceEquals(other, certificate) &&
+                            other.IssuerName.RawData.AsSpan().SequenceEqual(certificate.SubjectName.RawData));
+
     /// <summary>SHA-256 thumbprint of <see cref="Signer"/>.</summary>
     public string SignerThumbprint => Signer.GetCertHashString(HashAlgorithmName.SHA256);
 

@@ -254,6 +254,31 @@ public class FileSecurityTests
         Assert.Throws<FileSecurityException>(() => FileSecurity.DecryptChallenge(envelope, Ours));
     }
 
+    public static TheoryData<string> SupportedSuites()
+    {
+        var data = new TheoryData<string>();
+        foreach (var suite in CipherSuite.Supported)
+            data.Add(suite.Code);
+        return data;
+    }
+
+    /// <summary>
+    /// A challenge carries no cipher suite, so the partner may use any of them (Odette test case 5.2 requires
+    /// PKCS#1 v1.5 as well as v2.2). What .NET cannot read is unwrapped by hand.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SupportedSuites))]
+    public void AuthenticationChallengeIsDecryptedWithoutKnowingTheCipherSuite(string code)
+    {
+        var suite = CipherSuite.Get(code)!;
+        var challenge = Oftp4Net.Core.Protocol.SecureAuthentication.CreateChallenge();
+
+        var envelope = FileSecurity.EncryptChallenge(challenge, Partner, suite);
+
+        Assert.Equal(challenge, FileSecurity.DecryptChallenge(envelope, Partner));
+        Assert.Throws<FileSecurityException>(() => FileSecurity.DecryptChallenge(envelope, Ours));
+    }
+
     [Fact]
     public void EndResponseSignatureIsVerifiedAgainstItsContent()
     {

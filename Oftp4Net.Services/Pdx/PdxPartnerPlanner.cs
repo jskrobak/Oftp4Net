@@ -27,6 +27,9 @@ public sealed record PdxPlanContext
 
     /// <summary>Certification authorities of the Odette TSL; certificates issued by them are trusted.</summary>
     public X509Certificate2Collection TrustAnchors { get; init; } = [];
+
+    /// <summary>Certificates of the TSL that are only there to verify the authority above them.</summary>
+    public X509Certificate2Collection TrustVerificationRoots { get; init; } = [];
 }
 
 /// <summary>
@@ -441,7 +444,8 @@ public static class PdxPartnerPlanner
             var intermediates = certificate.CaCertificates.Select(X509CertificateLoader.LoadCertificate).ToList();
             try
             {
-                if (CertificateTrust.Check(x509, intermediates, context.TrustAnchors, out var problem) == CertificateTrustSource.None)
+                if (CertificateTrust.Check(x509, intermediates, context.TrustAnchors, out var problem,
+                        verificationOnly: context.TrustVerificationRoots) == CertificateTrustSource.None)
                     Warning($"The certificate '{certificate.Name}' ({x509.Subject}) is not issued by a certification authority of the " +
                             "Odette TSL or of the system" + (string.IsNullOrEmpty(problem) ? "." : $": {problem}"));
             }

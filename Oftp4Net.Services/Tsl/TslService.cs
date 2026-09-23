@@ -50,6 +50,7 @@ public class TslService(
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly SemaphoreSlim _trigger = new(0, 1);
     private X509Certificate2Collection _anchors = [];
+    private X509Certificate2Collection _verificationRoots = [];
 
     public TslStatus Status { get; private set; } = new();
 
@@ -58,6 +59,12 @@ public class TslService(
 
     /// <summary>Certification authorities of the list that are trusted; empty when the TSL is disabled.</summary>
     public X509Certificate2Collection TrustAnchors => _anchors;
+
+    /// <summary>
+    /// Certificates of <see cref="TrustAnchors"/> that are there to verify the authority above them and must not
+    /// issue end entity certificates themselves (the roots of the listed OFTP2 authorities).
+    /// </summary>
+    public X509Certificate2Collection VerificationRoots => _verificationRoots;
 
     /// <summary>Downloads the list now.</summary>
     public async Task<TslStatus> RefreshAsync(CancellationToken cancellationToken = default)
@@ -242,6 +249,7 @@ public class TslService(
     private void Use(TrustServiceList? list, DateTime? loadedDate, string? error, string? sourceUrl)
     {
         _anchors = list?.TrustAnchors ?? [];
+        _verificationRoots = list?.VerificationRoots ?? [];
         Status = new TslStatus
         {
             List = list,

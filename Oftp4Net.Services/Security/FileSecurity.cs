@@ -257,8 +257,17 @@ public static class FileSecurity
         }
         catch (CryptographicException ex)
         {
-            throw new FileSecurityException(AnswerReasonCodes.FileDecryptionFailure,
-                "The content could not be decrypted: " + ex.Message, ex);
+            // The cipher suite is not always known beforehand: an authentication challenge carries none, and .NET
+            // refuses a key wrapped with OAEP and a SHA3 digest. Such a package is unwrapped by hand.
+            try
+            {
+                return Sha3Cms.Decrypt(content, certificate);
+            }
+            catch (FileSecurityException)
+            {
+                throw new FileSecurityException(AnswerReasonCodes.FileDecryptionFailure,
+                    "The content could not be decrypted: " + ex.Message, ex);
+            }
         }
 
         return enveloped.ContentInfo.Content;

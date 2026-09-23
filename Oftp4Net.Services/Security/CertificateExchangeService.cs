@@ -116,7 +116,8 @@ public class CertificateExchangeService(
 
             var stored = await GetPartnerCertificatesAsync(partner, cancellationToken);
             var replaced = Match(certificate, record.Description, stored);
-            var trust = CertificateTrust.Check(certificate, [], tsl.TrustAnchors, out var problem, settings.RevocationPolicy);
+            var trust = CertificateTrust.Check(certificate, [], tsl.TrustAnchors, out var problem,
+                settings.RevocationPolicy, tsl.VerificationRoots);
 
             if (trust == CertificateTrustSource.None)
             {

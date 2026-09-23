@@ -95,7 +95,10 @@ public class ListenerService(
         try
         {
             foreach (var tls in _tlsOptions)
+            {
                 tls.TrustedCertificates = LoadTrustedCertificates(partnerCertificates);
+                tls.VerificationOnlyCertificates = tsl.VerificationRoots;
+            }
         }
         finally
         {
@@ -157,6 +160,9 @@ public class ListenerService(
                     Protocols = listener.Tls == SslProtocols.None ? SslProtocols.Tls12 | SslProtocols.Tls13 : listener.Tls,
                     RequireClientCertificate = listener.RequireClientCertificate,
                     TrustedCertificates = LoadTrustedCertificates(partnerCertificates),
+                    // The roots the trust list carries only to verify its authorities must not issue a partner's
+                    // certificate themselves (Odette OP08 2.7).
+                    VerificationOnlyCertificates = tsl.VerificationRoots,
                     Revocation = revocation,
                 };
                 _tlsOptions.Add(tls);

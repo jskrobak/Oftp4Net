@@ -48,6 +48,7 @@ public class PdxImporter(
             HasTlsClientCertificate = settings.OftpClientCertificateId is not null,
             HasFileSecurityCertificate = settings.FileSecurityCertificateId is not null,
             TrustAnchors = tsl.TrustAnchors,
+            TrustVerificationRoots = tsl.VerificationRoots,
         });
         plan.Content = PdxParser.ToText(content);
         plan.Warnings.InsertRange(0, parsed.Warnings);

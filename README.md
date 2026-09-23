@@ -271,6 +271,11 @@ so that transfers do not stop, with the stricter setting the certificate is refu
 
 A certificate pinned for a partner is trusted by itself and not through a chain, so no list is read for it.
 
+The same applies to file level security: before a file is signed or encrypted and before a signature of a partner
+is verified, the certificate is checked for its validity period and against the revocation list of its issuer. A
+file secured with a certificate that must not be used any more is refused with the reason *file decryption failure*
+or *invalid file signature*, and a queued file is not sent at all.
+
 ## Files that cannot be delivered
 
 A file that arrives correctly but cannot be handed over to its final destination — the ERP system refuses it, the
@@ -516,6 +521,10 @@ in partner datasheets without being added one by one. *Settings* → *Odette tru
 its signature is verified and the certificate it is signed with is pinned at the first download, a list signed by
 another certificate is refused until the pinned signer is cleared. A local copy is used when the download fails. On a
 server without access to the internet, switch the trust list off.
+
+Every entry of the list carries the OFTP2 certification authority and its root, which is there to verify that
+authority only. A certificate issued directly by such a root is refused although its chain is sound, because only
+the listed authority may issue the certificate of a partner (Odette OP08 2.7).
 
 ## Requesting a certificate
 

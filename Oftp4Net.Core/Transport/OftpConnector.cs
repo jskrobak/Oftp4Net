@@ -31,7 +31,7 @@ public static class OftpConnector
                         ClientCertificates = tls.LocalCertificate is null ? null : [tls.LocalCertificate],
                         RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
                             OftpCertificateValidator.Validate(certificate, errors, tls.TrustedCertificates,
-                                certificateRequired: true, tls.Revocation),
+                                certificateRequired: true, tls.Revocation, tls.VerificationOnlyCertificates),
                     }, cancellationToken);
                 }
                 catch

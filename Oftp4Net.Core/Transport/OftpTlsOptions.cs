@@ -21,6 +21,14 @@ public sealed class OftpTlsOptions
     /// </summary>
     public X509Certificate2Collection TrustedCertificates { get; set; } = [];
 
+    /// <summary>
+    /// Certificates of <see cref="TrustedCertificates"/> that are trusted only to verify the certification
+    /// authority above them and must not issue the certificate of a partner: the roots that the Odette trust list
+    /// carries for verification. A certificate whose chain reaches no other trusted certificate is refused, even
+    /// though the chain itself is sound. The collection is read on every handshake.
+    /// </summary>
+    public X509Certificate2Collection VerificationOnlyCertificates { get; set; } = [];
+
     /// <summary>Listener only: require the client to present a certificate.</summary>
     public bool RequireClientCertificate { get; init; }
 
@@ -35,7 +43,7 @@ internal static class OftpCertificateValidator
 {
     public static bool Validate(X509Certificate? certificate, SslPolicyErrors errors,
         X509Certificate2Collection trusted, bool certificateRequired,
-        CertificateRevocationPolicy? revocation = null)
+        CertificateRevocationPolicy? revocation = null, X509Certificate2Collection? verificationOnly = null)
     {
         if (certificate is null)
             return !certificateRequired;
@@ -65,8 +73,32 @@ internal static class OftpCertificateValidator
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
         chain.ChainPolicy.CustomTrustStore.AddRange(trusted);
         (revocation ?? new CertificateRevocationPolicy()).ApplyTo(chain.ChainPolicy);
-        return chain.Build(leaf);
+        return chain.Build(leaf) && IssuedByAnAuthority(chain, trusted, verificationOnly);
     }
+
+    /// <summary>
+    /// Whether the chain passes through a certificate that may issue: a chain that only reaches certificates which
+    /// are trusted to verify an authority (the roots of the Odette trust list) is not enough, the certificate has
+    /// to come from the authority itself (Odette OP08 2.7).
+    /// </summary>
+    private static bool IssuedByAnAuthority(X509Chain chain, X509Certificate2Collection trusted,
+        X509Certificate2Collection? verificationOnly)
+    {
+        if (verificationOnly is not { Count: > 0 })
+            return true;
+
+        for (var i = 1; i < chain.ChainElements.Count; i++)
+        {
+            var element = chain.ChainElements[i].Certificate;
+            if (Contains(trusted, element) && !Contains(verificationOnly, element))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool Contains(X509Certificate2Collection collection, X509Certificate2 certificate) =>
+        collection.Any(c => c.RawDataMemory.Span.SequenceEqual(certificate.RawDataMemory.Span));
 
     /// <summary>A certificate that is not valid yet or expired is refused whatever else speaks for it.</summary>
     private static bool IsTimeValid(X509Certificate2 certificate)
