@@ -78,6 +78,12 @@ public static class ServiceCollectionExtensions
         services.TryAddTransient<IEntityKeyAccessor<ApiToken, int>, DbEntityKeyAccessor<ApiToken, int>>();
         services.TryAddSingleton<IRepositoryQueryProvider<ApiToken, int>, ApiTokenDbRepositoryQueryProvider>();
 
+        //CertificateSigningRequest
+        services.TryAddScoped<ICertificateSigningRequestRepository, CertificateSigningRequestRepository>();
+        services.TryAddScoped<IRepository<CertificateSigningRequest, int>>(sp => sp.GetRequiredService<ICertificateSigningRequestRepository>());
+        services.TryAddTransient<IEntityKeyAccessor<CertificateSigningRequest, int>, DbEntityKeyAccessor<CertificateSigningRequest, int>>();
+        services.TryAddSingleton<IRepositoryQueryProvider<CertificateSigningRequest, int>, CertificateSigningRequestDbRepositoryQueryProvider>();
+
         //PartnerSetupDocument
         services.TryAddScoped<IPartnerSetupDocumentRepository, PartnerSetupDocumentRepository>();
         services.TryAddScoped<IRepository<PartnerSetupDocument, int>>(sp => sp.GetRequiredService<IPartnerSetupDocumentRepository>());

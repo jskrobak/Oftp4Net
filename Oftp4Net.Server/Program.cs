@@ -25,6 +25,7 @@ using Oftp4Net.Services.Api;
 using Oftp4Net.Services.Hooks;
 using Oftp4Net.Services.Import;
 using Oftp4Net.Services.Pdx;
+using Oftp4Net.Services.Certificates;
 using Oftp4Net.Services.Tsl;
 using Oftp4Net.Services.TransferEvents;
 using Microsoft.OpenApi;
@@ -133,6 +134,7 @@ builder.Services.AddScoped<Os4xPartnerImporter>();
 builder.Services.AddScoped<PdxImporter>();
 builder.Services.AddScoped<PartnerSetupService>();
 builder.Services.AddScoped<PdxExporter>();
+builder.Services.AddScoped<CertificateSigningRequestService>();
 builder.Services.AddSingleton<PartnerSetupScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PartnerSetupScheduler>());
 builder.Services.AddHttpClient(WebhookDispatcher.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
@@ -285,6 +287,14 @@ app.MapPost("/upload/outbox", async ([FromForm] IFormFile file, OutboxStorage ou
   .ExcludeFromDescription();
 
 // Public part of a stored certificate (PEM), e.g. to send our certificate to a partner.
+// A certificate signing request (PEM) to be submitted to a certification authority.
+app.MapGet("/certificate-requests/{id:int}/csr", async (int id, ICertificateSigningRequestRepository requests) =>
+{
+    var request = await requests.GetObjectAsync(id);
+    var fileName = string.Concat(request.Name.Select(c => char.IsLetterOrDigit(c) || c is '-' or '.' ? c : '_')) + ".csr";
+    return Results.File(System.Text.Encoding.ASCII.GetBytes(request.Csr), "application/pkcs10", fileName);
+}).ExcludeFromDescription();
+
 app.MapGet("/certificates/{id:int}/download", async (int id, ICertificateRepository certificates) =>
 {
     var certificate = (await certificates.GetAllAsync()).FirstOrDefault(c => c.Id == id);

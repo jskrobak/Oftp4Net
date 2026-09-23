@@ -485,10 +485,29 @@ its signature is verified and the certificate it is signed with is pinned at the
 another certificate is refused until the pinned signer is cleared. A local copy is used when the download fails. On a
 server without access to the internet, switch the trust list off.
 
+## Requesting a certificate
+
+*Certificates* → *Request certificate* creates a key pair on the server and a certificate signing request (CSR) for a
+certification authority of the TSL, e.g. the [Odette CA](https://www.odette.org/services/odette-ca). The request has
+the profile of the OFTP2 Certificate Policy: RSA (2048, 3072 or 4096 bit) with SHA-256, the host name partners call as
+common name and subject alternative name, the Odette ID (SSID) as serial number, key usage digital signature and key
+encipherment and the extended key usages TLS server and client authentication. The form is filled in from the station
+profile (*Settings*).
+
+Download the CSR and submit it to the CA. When the signed certificate arrives (PEM, DER or PKCS#7, with or without its
+chain), *Import certificate* at the request stores it together with the private key; the key never leaves the server
+and is removed from the request. The certificate then serves as TLS server certificate of a listener, TLS client
+certificate and file security certificate at the same time.
+
+Public TLS certificate authorities no longer issue certificates for TLS client authentication (from 2026) and shorten
+their validity to months, so a certificate of a CA specialised in OFTP2 (Odette CA, mendelson CA and others of the TSL)
+is the better choice.
+
 ## Setting up a partner
 
 1. *Identities*: create your own identity (SSID code, SFID code, password you send to partners).
-2. *Certificates*: import the TLS server certificate with its private key (PFX) and, if needed, the partner's certificate or CA.
+2. *Certificates*: request a certificate from a CA (*Request certificate*) or import one with its private key (PFX), and,
+   if needed, the partner's certificate or CA.
 3. *Listeners*: create a listener (port 6619 for TLS), assign the identity and the server certificate.
 4. *Partners*: add the partner with its SSID/SFID codes, the password it sends to you, host and port, and, for a
    mainframe partner, the character set conversion — or import its datasheet (*Import PDX*) and send it ours.

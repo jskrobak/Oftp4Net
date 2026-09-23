@@ -37,6 +37,7 @@
         <HxButton Text="Import certificate"
                   Color="ThemeColor.Primary"
                   Icon="BootstrapIcon.Upload" OnClick="HandleNewItemClicked" />
+        <CertificateRequests OnCertificateCreated="() => gridComponent.RefreshDataAsync()" />
         <HxDropdownButtonGroup>
             <HxDropdownToggleButton CssClass="contextDropdownToggleButton" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ThreeDots">
             </HxDropdownToggleButton>

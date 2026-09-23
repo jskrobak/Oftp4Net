@@ -1,0 +1,209 @@
+@using Oftp4Net.Domain
+@using Oftp4Net.DataLayer.Repositories
+@using Oftp4Net.Services.Certificates
+
+@* Certificate signing requests for a certification authority (e.g. the Odette CA) and the import of their answers. *@
+<HxButton Text="@(openRequests.Count > 0 ? $"Certificate requests ({openRequests.Count})" : "Request certificate")"
+          Color="ThemeColor.Secondary"
+          Icon="BootstrapIcon.FileEarmarkPlus" OnClick="ShowAsync" />
+
+<HxModal @ref="modal" ShowCloseButton="true" Size="ModalSize.Large">
+    <HeaderTemplate>
+        Certificate requests (CSR)
+    </HeaderTemplate>
+    <BodyTemplate>
+        <p class="small text-body-secondary">
+            A key pair is created on this server and the request is sent to a certification authority, e.g. the
+            <a href="https://www.odette.org/services/odette-ca" target="_blank" rel="noopener">Odette CA</a>. The private key
+            never leaves the server: when the signed certificate arrives, import it to its request and it is stored as a
+            certificate with a private key, usable for TLS and file security.
+        </p>
+
+        @if (openRequests.Count > 0)
+        {
+            <h6>Waiting for the certification authority</h6>
+            <div class="table-responsive mb-3">
+                <table class="table table-sm align-middle small">
+                    <thead>
+                    <tr><th>Name</th><th>Subject</th><th>Created</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var request in openRequests)
+                    {
+                        <tr>
+                            <td>@request.Name<div class="text-body-secondary">RSA @request.KeySize</div></td>
+                            <td class="text-break">@request.Subject</td>
+                            <td class="text-nowrap">@request.Created.ToString("g")</td>
+                            <td class="text-nowrap text-end">
+                                <a class="btn btn-sm btn-outline-secondary" href="@($"certificate-requests/{request.Id}/csr")" download title="Download the request (.csr)">
+                                    <HxIcon Icon="BootstrapIcon.Download" /> CSR
+                                </a>
+                                <HxButton Size="ButtonSize.Small" Color="ThemeColor.Link" OnClick="() => Toggle(request.Id)">
+                                    @(shownCsr == request.Id ? "Hide" : "Show")
+                                </HxButton>
+                                <label class="btn btn-sm btn-primary mb-0" title="Import the certificate signed by the CA (.crt, .cer, .pem or .p7b)">
+                                    <HxIcon Icon="BootstrapIcon.Upload" /> Import certificate
+                                    <InputFile class="d-none" accept=".crt,.cer,.pem,.der,.p7b,.p7c" OnChange="e => ImportAsync(request, e)" />
+                                </label>
+                                <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Trash"
+                                          OnClick="() => DeleteAsync(request)" Tooltip="Delete the request and its private key" />
+                            </td>
+                        </tr>
+                        @if (shownCsr == request.Id)
+                        {
+                            <tr>
+                                <td colspan="4"><pre class="small mb-0" style="white-space: pre-wrap;">@request.Csr</pre></td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <h6>New request</h6>
+        @if (options is not null)
+        {
+            <EditForm Model="options" OnValidSubmit="CreateAsync">
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <HxInputText Label="Host name (common name)" Hint="The name partners call, e.g. oftp.example.com." @bind-Value="options.CommonName" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputText Label="Further host names or addresses" Hint="Separated by commas; the host name above is always included." @bind-Value="AlternativeNamesText" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputText Label="Organization" @bind-Value="options.Organization" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputText Label="Organizational unit" @bind-Value="options.OrganizationalUnit" />
+                    </div>
+                    <div class="col-md-4">
+                        <HxInputText Label="City" @bind-Value="options.Locality" />
+                    </div>
+                    <div class="col-md-4">
+                        <HxInputText Label="State or region" @bind-Value="options.State" />
+                    </div>
+                    <div class="col-md-4">
+                        <HxInputText Label="Country" Hint="ISO code, e.g. CZ" MaxLength="2" @bind-Value="options.Country" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputText Label="Odette ID (SSID)" Hint="Put into the serial number of the subject, as the OFTP2 Certificate Policy recommends." @bind-Value="options.OdetteId" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputText Label="E-mail" @bind-Value="options.Email" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputText Label="Name" Hint="How the request and the certificate are called here." @bind-Value="name" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxSelect TItem="int" TValue="int" Label="Key size (RSA)" Data="CsrBuilder.KeySizes"
+                                  @bind-Value="options.KeySize" TextSelector="@(s => $"{s} bit")" ValueSelector="@(s => s)" Nullable="false" />
+                    </div>
+                </div>
+                <div class="form-text mb-2">
+                    SHA-256, key usage digital signature and key encipherment, TLS server and client authentication — the
+                    profile of the Odette OFTP2 Certificate Policy, suitable for TLS and file security.
+                </div>
+                <HxSubmit Color="ThemeColor.Primary" Icon="BootstrapIcon.FileEarmarkPlus" Spinner="creating">Create request</HxSubmit>
+            </EditForm>
+        }
+    </BodyTemplate>
+</HxModal>
+
+@code {
+    // Its own scope (database context): the page around it works with the context of the circuit at the same time.
+    [Inject] protected IServiceScopeFactory ScopeFactory { get; set; } = null!;
+    [Inject] protected IHxMessengerService Messenger { get; set; } = null!;
+    [Inject] protected IHxMessageBoxService MessageBox { get; set; } = null!;
+
+    /// <summary>A certificate was created from a request.</summary>
+    [Parameter] public EventCallback OnCertificateCreated { get; set; }
+
+    private HxModal modal = null!;
+    private List<CertificateSigningRequest> openRequests = [];
+    private CsrOptions? options;
+    private string? name;
+    private int? shownCsr;
+    private bool creating;
+
+    private string? AlternativeNamesText
+    {
+        get => options is null ? null : string.Join(", ", options.AlternativeNames);
+        set => options!.AlternativeNames = (value ?? "").Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var scope = ScopeFactory.CreateScope();
+        openRequests = await scope.ServiceProvider.GetRequiredService<ICertificateSigningRequestRepository>().GetOpenAsync();
+    }
+
+    private async Task ShowAsync()
+    {
+        using (var scope = ScopeFactory.CreateScope())
+            options = await scope.ServiceProvider.GetRequiredService<CertificateSigningRequestService>().GetDefaultsAsync();
+        name = null;
+        await LoadAsync();
+        await modal.ShowAsync();
+    }
+
+    private void Toggle(int id) => shownCsr = shownCsr == id ? null : id;
+
+    private async Task CreateAsync()
+    {
+        creating = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var request = await scope.ServiceProvider.GetRequiredService<CertificateSigningRequestService>().CreateAsync(name ?? "", options!);
+            Messenger.AddInformation($"Request {request.Name} created. Download the CSR and submit it to the certification authority.");
+            shownCsr = request.Id;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Messenger.AddError($"Creating the request failed: {ex.Message}");
+        }
+        finally
+        {
+            creating = false;
+        }
+    }
+
+    private async Task ImportAsync(CertificateSigningRequest request, InputFileChangeEventArgs args)
+    {
+        try
+        {
+            if (args.File.Size > CertificateSigningRequestService.MaxCertificateFileSize)
+                throw new InvalidOperationException("The file is too large for a certificate.");
+
+            using var content = new MemoryStream();
+            await args.File.OpenReadStream(CertificateSigningRequestService.MaxCertificateFileSize).CopyToAsync(content);
+
+            using var scope = ScopeFactory.CreateScope();
+            var certificate = await scope.ServiceProvider.GetRequiredService<CertificateSigningRequestService>()
+                .CompleteAsync(request.Id, content.ToArray());
+            Messenger.AddInformation($"Certificate {certificate.Name} (valid to {certificate.ValidTo:d}) stored with its private key. Select it in the settings or at a listener.");
+            await LoadAsync();
+            await OnCertificateCreated.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Messenger.AddError($"Importing the certificate failed: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteAsync(CertificateSigningRequest request)
+    {
+        if (!await MessageBox.ConfirmAsync("Delete request",
+                $"Delete the request {request.Name}? Its private key is deleted as well, so a certificate issued for it can no longer be used."))
+            return;
+
+        using var scope = ScopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<CertificateSigningRequestService>().DeleteAsync(request.Id);
+        await LoadAsync();
+    }
+}
