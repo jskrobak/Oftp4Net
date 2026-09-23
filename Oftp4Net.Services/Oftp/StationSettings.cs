@@ -13,6 +13,9 @@ public sealed record StationSettings
     /// <summary>SFID of the station (SFIDDEST of files we send, SFIDORIG of files we receive).</summary>
     public required string Sfid { get; init; }
 
+    /// <summary>The partner the station belongs to.</summary>
+    public required Partner Partner { get; init; }
+
     public PartnerSubStation? SubStation { get; init; }
 
     public bool SignFiles { get; init; }
@@ -34,6 +37,7 @@ public sealed record StationSettings
         return new StationSettings
         {
             Sfid = sub?.SFID ?? partner.SFID,
+            Partner = partner,
             SubStation = sub,
             SignFiles = sub?.SignFiles ?? partner.SignFiles,
             EncryptFiles = sub?.EncryptFiles ?? partner.EncryptFiles,
@@ -45,6 +49,19 @@ public sealed record StationSettings
             FileCipherSuite = sub?.FileCipherSuite ?? partner.FileCipherSuite,
         };
     }
+
+    /// <summary>
+    /// The partner's certificate for one purpose: the one assigned to this station, otherwise the one assigned to
+    /// the partner, otherwise its single certificate (Odette OP08 2.5).
+    /// </summary>
+    public int? CertificateFor(CertificateUsage usage) =>
+        Partner.FindCertificate(Sfid, usage)?.CertificateId ?? Partner.SecurityCertificateId;
+
+    /// <summary>The certificate that was replaced and is still accepted during the roll-over period.</summary>
+    public int? PreviousCertificateFor(CertificateUsage usage) =>
+        Partner.FindCertificate(Sfid, usage) is { } assignment
+            ? assignment.PreviousCertificateId
+            : Partner.PreviousSecurityCertificateId;
 
     public static PartnerSubStation? FindSubStation(Partner partner, string? sfid) =>
         string.IsNullOrWhiteSpace(sfid)

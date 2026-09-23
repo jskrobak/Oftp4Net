@@ -80,6 +80,48 @@ public class StationSettingsTests
         Assert.Null(plant.CheckIncoming(Security(SecurityLevels.Encrypted)));
     }
 
+    /// <summary>
+    /// Certificates of a partner are resolved from the most specific assignment: the one of the station, then the
+    /// one of the partner, then its single certificate (Odette OP08 2.5).
+    /// </summary>
+    [Fact]
+    public void CertificateOfTheStationBeatsTheOneOfThePartner()
+    {
+        var partner = Partner();
+        partner.SecurityCertificateId = 1;
+        partner.PreviousSecurityCertificateId = 8;
+        partner.Certificates =
+        [
+            new CertificateAssignment { Usage = CertificateUsage.FileEncryption, CertificateId = 2 },
+            new CertificateAssignment
+            {
+                Usage = CertificateUsage.FileEncryption, Sfid = "O0013PLANT", CertificateId = 3, PreviousCertificateId = 4,
+            },
+        ];
+
+        var main = StationSettings.For(partner, null);
+        var plant = StationSettings.For(partner, "O0013PLANT");
+
+        Assert.Equal(3, plant.CertificateFor(CertificateUsage.FileEncryption));
+        Assert.Equal(4, plant.PreviousCertificateFor(CertificateUsage.FileEncryption));
+        Assert.Equal(2, main.CertificateFor(CertificateUsage.FileEncryption));
+        // Nothing is assigned for signatures, so the single certificate of the partner is used.
+        Assert.Equal(1, plant.CertificateFor(CertificateUsage.FileSignature));
+        Assert.Equal(8, plant.PreviousCertificateFor(CertificateUsage.FileSignature));
+    }
+
+    [Fact]
+    public void StationWithoutAssignmentsUsesTheSingleCertificate()
+    {
+        var partner = Partner();
+        partner.SecurityCertificateId = 1;
+
+        var settings = StationSettings.For(partner, "O0013PLANT");
+
+        foreach (var usage in Enum.GetValues<CertificateUsage>())
+            Assert.Equal(1, settings.CertificateFor(usage));
+    }
+
     [Fact]
     public void RequiredCompressionIsChecked()
     {

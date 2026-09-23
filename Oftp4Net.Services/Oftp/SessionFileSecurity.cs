@@ -24,20 +24,28 @@ public sealed class SessionFileSecurity(ICertificateRepository certificates, Glo
 
     public string MaxSecuredFileSizeText => $"{settings.MaxSecuredFileSizeMb} MB";
 
-    /// <summary>Our certificate with the private key: signs outgoing files and responses, decrypts incoming files.</summary>
-    public Task<X509Certificate2?> GetOwnCertificateAsync(CancellationToken cancellationToken) =>
-        GetAsync(settings.FileSecurityCertificateId, cancellationToken);
+    /// <summary>
+    /// Our certificate with the private key for one purpose of one of our stations: signs outgoing files and
+    /// responses, decrypts incoming files and answers authentication challenges. A station that assigns none uses
+    /// the certificate from the settings.
+    /// </summary>
+    public Task<X509Certificate2?> GetOwnCertificateAsync(Identity? identity, CertificateUsage usage,
+        CancellationToken cancellationToken) =>
+        GetAsync(identity?.FindCertificate(null, usage)?.CertificateId ?? settings.FileSecurityCertificateId, cancellationToken);
 
     /// <summary>The partner's certificate: encrypts files for it and verifies its signatures.</summary>
-    public Task<X509Certificate2?> GetPartnerCertificateAsync(Partner partner, CancellationToken cancellationToken) =>
-        GetAsync(partner.SecurityCertificateId, cancellationToken);
+    public Task<X509Certificate2?> GetPartnerCertificateAsync(StationSettings station, CertificateUsage usage,
+        CancellationToken cancellationToken) =>
+        GetAsync(station.CertificateFor(usage), cancellationToken);
 
     /// <summary>The partner's certificate before it was replaced, still accepted for signatures made before.</summary>
-    public Task<X509Certificate2?> GetPreviousPartnerCertificateAsync(Partner partner, CancellationToken cancellationToken) =>
-        GetAsync(partner.PreviousSecurityCertificateId, cancellationToken);
+    public Task<X509Certificate2?> GetPreviousPartnerCertificateAsync(StationSettings station, CertificateUsage usage,
+        CancellationToken cancellationToken) =>
+        GetAsync(station.PreviousCertificateFor(usage), cancellationToken);
 
     /// <summary>What is applied to files sent to <paramref name="partner"/> (or one of its sub-stations).</summary>
-    public async Task<FileSecuritySettings> ForSendingAsync(Partner partner, StationSettings station, CancellationToken cancellationToken)
+    public async Task<FileSecuritySettings> ForSendingAsync(Partner partner, StationSettings station, Identity? identity,
+        CancellationToken cancellationToken)
     {
         var suite = CipherSuite.Get(station.FileCipherSuite)
             ?? throw new FileSecurityException($"Cipher suite '{station.FileCipherSuite}' of partner {partner.Name} is not supported.");
@@ -48,8 +56,12 @@ public sealed class SessionFileSecurity(ICertificateRepository certificates, Glo
             Compress = station.CompressFiles,
             Encrypt = station.EncryptFiles,
             Suite = suite,
-            SigningCertificate = station.SignFiles ? await GetOwnCertificateAsync(cancellationToken) : null,
-            EncryptionCertificate = station.EncryptFiles ? await GetPartnerCertificateAsync(partner, cancellationToken) : null,
+            SigningCertificate = station.SignFiles
+                ? await GetOwnCertificateAsync(identity, CertificateUsage.FileSignature, cancellationToken)
+                : null,
+            EncryptionCertificate = station.EncryptFiles
+                ? await GetPartnerCertificateAsync(station, CertificateUsage.FileEncryption, cancellationToken)
+                : null,
         };
     }
 

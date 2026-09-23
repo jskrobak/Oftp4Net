@@ -34,6 +34,42 @@ public class PdxPartnerPlannerTests
         return partner;
     }
 
+    /// <summary>
+    /// A datasheet that names a different certificate per feature keeps them apart instead of using one for
+    /// everything (Odette OP08 2.5, test case 6.3.3).
+    /// </summary>
+    [Fact]
+    public void CertificatesAreAssignedPerFeature()
+    {
+        // The partner authenticates with its TLS certificate and secures files with another one.
+        var document = Document("C", xml => xml.Replace(
+            "<ocs:SecureAuthentication usage=\"required\">\n\t\t\t<ocs:CertificateRef>filecert</ocs:CertificateRef>",
+            "<ocs:SecureAuthentication usage=\"required\">\n\t\t\t<ocs:CertificateRef>tlscert</ocs:CertificateRef>"));
+
+        var plan = PdxPartnerPlanner.Plan(document, null, Context());
+        Assert.True(plan.CanApply, string.Join(Environment.NewLine, plan.Errors));
+
+        var created = new List<Certificate>();
+        var partner = new Partner();
+        plan.Apply(partner, c =>
+        {
+            var existing = created.FirstOrDefault(e => e.Name == c.Name);
+            if (existing is not null)
+                return existing;
+
+            var certificate = new Certificate { Id = created.Count + 1, Name = c.Name, Base64Data = Convert.ToBase64String(c.Certificate) };
+            created.Add(certificate);
+            return certificate;
+        });
+
+        var authentication = partner.FindCertificate(null, CertificateUsage.Authentication);
+        var encryption = partner.FindCertificate(null, CertificateUsage.FileEncryption);
+        Assert.NotNull(authentication);
+        Assert.NotNull(encryption);
+        Assert.Equal("tlscert", created.Single(c => c.Id == authentication.CertificateId).Name);
+        Assert.Equal("filecert", created.Single(c => c.Id == encryption.CertificateId).Name);
+    }
+
     [Fact]
     public void NewPartnerIsCreatedFromTheSimpleSample()
     {

@@ -89,6 +89,15 @@ public class PdxImporter(
     {
         var partner = plan.Existing ?? new Partner();
         var stored = await LoadStoredCertificatesAsync(cancellationToken);
+
+        // The certificates are stored first: an assignment of the partner refers to a certificate by its
+        // identifier, which a new record only has once it is in the database.
+        var isNew = false;
+        foreach (var certificate in plan.UsedCertificates)
+            isNew |= GetCertificate(certificate, stored).Id == 0;
+        if (isNew)
+            await unitOfWork.CommitAsync(cancellationToken);
+
         plan.Apply(partner, pdxCertificate => GetCertificate(pdxCertificate, stored));
 
         if (plan.IsNew)

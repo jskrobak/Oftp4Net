@@ -49,6 +49,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private readonly Identity? _identity;
     private readonly Listener? _listener;
     private readonly List<string> _claimed = [];
+    private readonly Dictionary<string, Identity?> _identityCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<OftpCommand, ReceivedFile> _pendingResponses = new(ReferenceEqualityComparer.Instance);
     private Queue<SendQueueItem>? _outgoing;
     private SendQueueItem? _inFlight;
@@ -93,6 +94,30 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
     /// <summary>The partner of the session; for a responder known after authentication.</summary>
     public Partner? Partner { get; private set; }
+
+    /// <summary>
+    /// The identity the session runs under: the one we call the partner with, or the one of the listener the
+    /// partner called. A file may still be addressed to another of our identities (a sub-station).
+    /// </summary>
+    private Identity? SessionIdentity => _identity ?? _listener?.Identity;
+
+    /// <summary>
+    /// Our identity a file is addressed to (SFIDDEST), which decides the certificates used for it. Falls back to
+    /// the identity of the session when the code belongs to none.
+    /// </summary>
+    private async Task<Identity?> IdentityForAsync(string? sfid, CancellationToken cancellationToken)
+    {
+        var code = sfid?.Trim() ?? "";
+        if (code.Length == 0)
+            return SessionIdentity;
+
+        if (_identityCache.TryGetValue(code, out var cached))
+            return cached;
+
+        var identity = await _identities.FindBySfidAsync(code, cancellationToken) ?? SessionIdentity;
+        _identityCache[code] = identity;
+        return identity;
+    }
 
     public int FilesSent { get; private set; }
 
@@ -174,7 +199,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     /// </summary>
     public override async ValueTask<byte[]> EncryptChallengeAsync(byte[] challenge, CancellationToken cancellationToken)
     {
-        var certificate = await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken)
+        var certificate = await _fileSecurity.GetPartnerCertificateAsync(
+                StationSettings.For(Partner!, null), CertificateUsage.Authentication, cancellationToken)
             ?? throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
                 $"Partner {Partner!.Name} has no certificate configured to authenticate it with.");
 
@@ -193,7 +219,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     /// <summary>Secure authentication: decrypts the challenge of the partner with our own private key.</summary>
     public override async ValueTask<byte[]> DecryptChallengeAsync(byte[] challenge, CancellationToken cancellationToken)
     {
-        var certificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken)
+        var certificate = await _fileSecurity.GetOwnCertificateAsync(SessionIdentity, CertificateUsage.Authentication, cancellationToken)
             ?? throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
                 "No certificate for file security is configured (setting FileSecurityCertificateId).");
 
@@ -446,8 +472,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         var settings = isCertificate
             ? new FileSecuritySettings { Suite = CipherSuite.Get(station.FileCipherSuite) ?? CipherSuite.Default }
             : isSetup
-                ? await ForSetupAsync(station, cancellationToken)
-                : await _fileSecurity.ForSendingAsync(partner, station, cancellationToken);
+                ? await ForSetupAsync(station, item.Identity, cancellationToken)
+                : await _fileSecurity.ForSendingAsync(partner, station, item.Identity, cancellationToken);
         var originalSize = new FileInfo(item.FilePath).Length;
 
         if ((settings.Any || (!isSetup && !isCertificate && station.RequestSignedEndResponse)) && !ProtocolLevels.HasOftp2Features(partner.ProtocolLevel))
@@ -516,9 +542,10 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     /// A datasheet is never encrypted or compressed; it is signed when we have a certificate for it, so that the
     /// partner can apply it without asking its administrator.
     /// </summary>
-    private async Task<FileSecuritySettings> ForSetupAsync(StationSettings station, CancellationToken cancellationToken)
+    private async Task<FileSecuritySettings> ForSetupAsync(StationSettings station, Identity? identity,
+        CancellationToken cancellationToken)
     {
-        var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken);
+        var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(identity, CertificateUsage.FileSignature, cancellationToken);
         return new FileSecuritySettings
         {
             // Signatures exist from OFTP 2.0 on; a partner on an older revision gets the datasheet unsigned.
@@ -756,15 +783,18 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     {
         var identity = await _identities.FindBySfidAsync(record.Destination, cancellationToken);
         var content = await File.ReadAllBytesAsync(record.FilePath, cancellationToken);
-        var result = await _certificateExchange.ReceiveAsync(Partner!, identity?.Id, record, content, cancellationToken);
+        var result = await _certificateExchange.ReceiveAsync(Partner!, identity, record, content, cancellationToken);
 
-        if (result.Answer is null || _outgoing is null || identity is null)
+        if (_outgoing is null || identity is null)
             return;
 
-        // The queue of this session was already read from the database, so the answer is added to it by hand.
-        result.Answer.Identity = identity;
-        result.Answer.Partner = Partner!;
-        _outgoing.Enqueue(result.Answer);
+        // The queue of this session was already read from the database, so the answers are added to it by hand.
+        foreach (var answer in result.Answers)
+        {
+            answer.Identity = identity;
+            answer.Partner = Partner!;
+            _outgoing.Enqueue(answer);
+        }
     }
 
     private async Task MarkReceiveFailedAsync(ReceivedFile record, string reason,
@@ -822,27 +852,40 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             return OftpStartFileDecision.Reject(AnswerReasonCodes.CompressionNotAllowed,
                 $"Compression algorithm '{header.Compression}' is not supported.");
 
-        var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken);
+        // The certificates belong to the stations the file runs between: our identity it is addressed to and the
+        // station of the partner that created it (Odette OP08 2.5).
+        var identity = await IdentityForAsync(header.Destination, cancellationToken);
+        var station = StationSettings.For(Partner!, header.Originator);
 
-        if ((security.Encrypted || header.SignedEerpRequested) && ownCertificate is null)
-            return OftpStartFileDecision.Reject(
-                security.Encrypted ? AnswerReasonCodes.FileDecryptionFailure : AnswerReasonCodes.UnspecifiedReason,
-                "No certificate for file security is configured (setting FileSecurityCertificateId).");
+        if (security.Encrypted || header.SignedEerpRequested)
+        {
+            var usage = security.Encrypted ? CertificateUsage.FileEncryption : CertificateUsage.EndResponse;
+            var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(identity, usage, cancellationToken);
+            if (ownCertificate is null)
+                return OftpStartFileDecision.Reject(
+                    security.Encrypted ? AnswerReasonCodes.FileDecryptionFailure : AnswerReasonCodes.UnspecifiedReason,
+                    "No certificate for file security is configured (setting FileSecurityCertificateId).");
 
-        // A revoked or expired certificate must not be used any more, not even for a file that is already on its
-        // way: the partner encrypted for our certificate and signed with its own (Odette OP08 2.6).
-        if ((security.Encrypted || header.SignedEerpRequested) && _fileSecurity.CheckUsable(ownCertificate) is { } ownProblem)
-            return OftpStartFileDecision.Reject(AnswerReasonCodes.FileDecryptionFailure, ownProblem);
+            // A revoked or expired certificate must not be used any more, not even for a file that is already on
+            // its way: the partner encrypted for our certificate and signed with its own (Odette OP08 2.6).
+            if (_fileSecurity.CheckUsable(ownCertificate) is { } ownProblem)
+                return OftpStartFileDecision.Reject(AnswerReasonCodes.FileDecryptionFailure, ownProblem);
+        }
 
-        if (security.Signed &&
-            _fileSecurity.CheckUsable(await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken)) is { } partnerProblem)
-            return OftpStartFileDecision.Reject(AnswerReasonCodes.InvalidFileSignature, partnerProblem);
+        if (security.Signed)
+        {
+            var partnerCertificate = await _fileSecurity.GetPartnerCertificateAsync(station,
+                CertificateUsage.FileSignature, cancellationToken);
 
-        // A datasheet or a certificate signed with a certificate we do not know yet is still accepted: the
-        // datasheet then waits for approval, the certificate is checked on its own.
-        if (security.Signed && !isConfiguration && await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken) is null)
-            return OftpStartFileDecision.Reject(AnswerReasonCodes.InvalidFileSignature,
-                $"Partner {Partner!.Name} has no certificate configured to verify file signatures with.");
+            if (_fileSecurity.CheckUsable(partnerCertificate) is { } partnerProblem)
+                return OftpStartFileDecision.Reject(AnswerReasonCodes.InvalidFileSignature, partnerProblem);
+
+            // A datasheet or a certificate signed with a certificate we do not know yet is still accepted: the
+            // datasheet then waits for approval, the certificate is checked on its own.
+            if (!isConfiguration && partnerCertificate is null)
+                return OftpStartFileDecision.Reject(AnswerReasonCodes.InvalidFileSignature,
+                    $"Partner {Partner!.Name} has no certificate configured to verify file signatures with.");
+        }
 
         // Unpacking is done in memory. SFIDFSIZ is in 1K blocks and only an estimate, the real size is checked again.
         if (security.Any && header.FileSize * 1024 > _fileSecurity.MaxSecuredFileSize)
@@ -891,10 +934,12 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             return PartnerSetupSignature.None;
         }
 
-        var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken);
-        var partnerCertificate = await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken);
+        var identity = await IdentityForAsync(record.Destination, cancellationToken);
+        var station = StationSettings.For(Partner!, record.Originator);
+        var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(identity, CertificateUsage.FileEncryption, cancellationToken);
+        var partnerCertificate = await _fileSecurity.GetPartnerCertificateAsync(station, CertificateUsage.FileSignature, cancellationToken);
         var previousCertificate = security.Signed
-            ? await _fileSecurity.GetPreviousPartnerCertificateAsync(Partner!, cancellationToken)
+            ? await _fileSecurity.GetPreviousPartnerCertificateAsync(station, CertificateUsage.FileSignature, cancellationToken)
             : null;
         var signature = security.Signed ? PartnerSetupSignature.Valid : PartnerSetupSignature.None;
         byte[] plain;
@@ -1025,7 +1070,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
         try
         {
-            var certificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken)
+            var certificate = await _fileSecurity.GetOwnCertificateAsync(
+                    await IdentityForAsync(record.Destination, cancellationToken), CertificateUsage.EndResponse, cancellationToken)
                 ?? throw new FileSecurityException("No certificate for file security is configured (setting FileSecurityCertificateId).");
             var suite = CipherSuite.Get(record.CipherSuite) ?? CipherSuite.Default;
 
@@ -1201,12 +1247,13 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
         try
         {
-            var certificate = await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken)
+            var station = StationSettings.For(Partner!, item.DestinationSfid);
+            var certificate = await _fileSecurity.GetPartnerCertificateAsync(station, CertificateUsage.EndResponse, cancellationToken)
                 ?? throw new FileSecurityException($"partner {Partner!.Name} has no certificate configured");
             if (_fileSecurity.CheckUsable(certificate) is { } problem)
                 throw new FileSecurityException(problem);
 
-            var previous = await _fileSecurity.GetPreviousPartnerCertificateAsync(Partner!, cancellationToken);
+            var previous = await _fileSecurity.GetPreviousPartnerCertificateAsync(station, CertificateUsage.EndResponse, cancellationToken);
             try
             {
                 FileSecurity.VerifyEndResponse(signature, signedContent, certificate,

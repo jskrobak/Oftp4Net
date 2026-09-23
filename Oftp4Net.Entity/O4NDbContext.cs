@@ -42,6 +42,8 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
         modelBuilder.Entity<Identity>(entity =>
         {
             entity.HasKey(e => e.Id);
+            // Our certificates per purpose; plain JSON, like the lists of a partner.
+            JsonColumn(entity.Property(e => e.Certificates));
         });
         
         modelBuilder.Entity<Partner>(entity =>
@@ -79,6 +81,7 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
             JsonColumn(entity.Property(e => e.InboundDsnPatterns));
             JsonColumn(entity.Property(e => e.OutboundDsnPatterns));
             JsonColumn(entity.Property(e => e.SubStations));
+            JsonColumn(entity.Property(e => e.Certificates));
             // Stored as text so the table stays readable without the application.
             entity.Property(e => e.OutgoingEncoding).HasConversion<string>().HasMaxLength(10);
         });

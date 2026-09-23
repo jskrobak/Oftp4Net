@@ -510,8 +510,23 @@ certificates that replace one the partner already has here (default), those plus
 ends with a trusted certification authority, or nothing at all. A self signed certificate is only accepted as the
 renewal of one that is already configured, as OP08 requires.
 
-Certificates are assigned per partner, not per sub-station or per document type; a setup that needs a different
-certificate for each sub-station or file type has to be maintained by hand.
+## Certificates per station and purpose
+
+A station that uses one certificate for everything needs nothing beyond the *Partner certificate* of a partner and
+the file security certificate in the settings. Where that is not enough, certificates are assigned per purpose —
+file signatures, file encryption, end response signatures and secure authentication — and, for a partner, per
+sub-station (Odette OP08 2.5). The partner dialog holds the certificates of the partner, the identity dialog ours;
+what is not assigned falls back to the single certificate.
+
+The assignment decides which certificate signs and encrypts a file, verifies the signature of a received file,
+signs and verifies End to End Responses and answers an authentication challenge. A roll-over keeps the replaced
+certificate of the assignment valid until it expires.
+
+A datasheet that names a different certificate per feature is imported the same way, and the automatic exchange
+moves a received certificate on exactly where the one it replaces was used: an ODETTE_CERTIFICATE_DELIVER for the
+signing certificate of a sub-station leaves the encryption certificate and the certificates of other stations
+alone. A certificate request is answered with every certificate of the station addressed, each in its own file as
+the specification requires.
 
 ## Odette trust list (TSL)
 

@@ -16,10 +16,14 @@ namespace Oftp4Net.Services.Security;
 /// <summary>What happened with a received certificate file.</summary>
 /// <param name="Accepted">The certificate was taken over; the partner gets an EERP.</param>
 /// <param name="Message">What was done, or why the certificate was refused (it then goes into the NERP).</param>
-/// <param name="Answer">
-/// Our certificate queued as an answer to an ODETTE_CERTIFICATE_REQUEST; it can still be sent in this session.
+/// <param name="Answers">
+/// Our certificates queued as an answer to an ODETTE_CERTIFICATE_REQUEST, one file per certificate; they can still
+/// be sent in this session.
 /// </param>
-public sealed record CertificateExchangeResult(bool Accepted, string Message, SendQueueItem? Answer = null);
+public sealed record CertificateExchangeResult(bool Accepted, string Message, IReadOnlyList<SendQueueItem> Answers)
+{
+    public CertificateExchangeResult(bool accepted, string message) : this(accepted, message, []) { }
+}
 
 /// <summary>
 /// Automatic exchange of certificates over OFTP (Odette OP08 2.5): the virtual files ODETTE_CERTIFICATE_REQUEST,
@@ -85,8 +89,8 @@ public class CertificateExchangeService(
     /// was taken over (an EERP follows), NOT_DELIVERED with the reason otherwise (a NERP follows). The caller
     /// commits the changes together with the file.
     /// </summary>
-    /// <param name="identityId">Our identity the file was addressed to; an answer is sent under it.</param>
-    public async Task<CertificateExchangeResult> ReceiveAsync(Partner partner, int? identityId, ReceivedFile record,
+    /// <param name="identity">Our identity the file was addressed to; an answer is sent under it.</param>
+    public async Task<CertificateExchangeResult> ReceiveAsync(Partner partner, Identity? identity, ReceivedFile record,
         byte[] content, CancellationToken cancellationToken)
     {
         var kind = CertificateExchange.KindOf(record.VirtualFileName)
@@ -114,7 +118,8 @@ public class CertificateExchangeService(
                 return Refuse(partner, record, kind,
                     $"The certificate {certificate.Subject} is valid from {certificate.NotBefore:g} to {certificate.NotAfter:g} only.");
 
-            var stored = await GetPartnerCertificatesAsync(partner, cancellationToken);
+            // The certificate belongs to the station that sent it, and only its assignments are touched.
+            var stored = await GetPartnerCertificatesAsync(partner, record.Originator, cancellationToken);
             var replaced = Match(certificate, record.Description, stored);
             var trust = CertificateTrust.Check(certificate, [], tsl.TrustAnchors, out var problem,
                 settings.RevocationPolicy, tsl.VerificationRoots);
@@ -135,20 +140,20 @@ public class CertificateExchangeService(
             }
 
             var entity = await StoreAsync(partner, certificate, kind, cancellationToken);
-            var changes = Assign(partner, entity, kind, replaced);
+            var changes = Assign(partner, record.Originator, entity, kind, replaced);
             unitOfWork.AddForUpdate(partner);
 
-            var answer = kind == CertificateExchangeKind.Request
-                ? await AnswerAsync(partner, identityId, record, settings, cancellationToken)
-                : null;
+            var answers = kind == CertificateExchangeKind.Request
+                ? await AnswerAsync(partner, identity, record, settings, cancellationToken)
+                : [];
 
             var message = $"Certificate {certificate.Subject} of {partner.Name} taken over " +
                           $"({string.Join(", ", changes)}), trusted by the {Describe(trust)}" +
-                          (answer is null ? "" : "; our certificate is sent back");
+                          (answers.Count == 0 ? "" : $"; {answers.Count} certificate(s) of ours are sent back");
             record.Status = ReceiveStatus.RECEIVED;
             Record(partner, record, TransferEventType.CertificateReceived, TransferEventLevel.Information, message);
             logger.LogInformation("{Message}", message);
-            return new CertificateExchangeResult(true, message, answer);
+            return new CertificateExchangeResult(true, message, answers);
         }
     }
 
@@ -190,10 +195,28 @@ public class CertificateExchangeService(
     /// Assigns the certificate to the partner. A delivered certificate replaces the one it belongs to and the old
     /// one stays valid for the roll-over period (OP08 2.5 F); a replacement takes the old one out of use at once.
     /// </summary>
-    internal static List<string> Assign(Partner partner, Certificate entity, CertificateExchangeKind kind, Certificate? replaced)
+    internal static List<string> Assign(Partner partner, string? sfid, Certificate entity, CertificateExchangeKind kind,
+        Certificate? replaced)
     {
         var changes = new List<string>();
         var replacedId = replaced?.Id;
+
+        // A station that assigns certificates per purpose keeps them apart: only the assignments that hold the
+        // replaced certificate are moved on (Odette OP08 2.5).
+        foreach (var assignment in Assignments(partner, sfid).Where(a => a.CertificateId == replacedId).ToList())
+        {
+            if (assignment.CertificateId == entity.Id)
+                continue;
+
+            assignment.PreviousCertificateId = kind == CertificateExchangeKind.Replace ? null : assignment.CertificateId;
+            assignment.CertificateId = entity.Id;
+            changes.Add(Describe(assignment.Usage) + Where(assignment.Sfid));
+        }
+
+        // When the certificate found its purposes, the single certificate of the partner is left alone.
+        if (changes.Count > 0)
+            return changes;
+
         var previousSecurityId = partner.SecurityCertificateId;
 
         // The certificate takes the place of the one it replaces; when nothing is configured yet, it fills the
@@ -233,6 +256,25 @@ public class CertificateExchangeService(
 
         return changes;
     }
+
+    /// <summary>The assignments that apply to one station of the partner: its own and the ones of the partner.</summary>
+    private static IEnumerable<CertificateAssignment> Assignments(Partner partner, string? sfid)
+    {
+        var station = sfid?.Trim() ?? "";
+        return partner.Certificates.Where(a => string.IsNullOrEmpty(a.Sfid) ||
+                                               string.Equals(a.Sfid.Trim(), station, StringComparison.OrdinalIgnoreCase) ||
+                                               string.Equals(a.Sfid.Trim(), partner.SFID.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string Describe(CertificateUsage usage) => usage switch
+    {
+        CertificateUsage.FileSignature => "file signatures",
+        CertificateUsage.FileEncryption => "file encryption",
+        CertificateUsage.EndResponse => "end response signatures",
+        _ => "secure authentication",
+    };
+
+    private static string Where(string? sfid) => string.IsNullOrEmpty(sfid) ? "" : $" of {sfid}";
 
     /// <summary>The certificate as a record of the database; an identical one that is already stored is reused.</summary>
     private async Task<Certificate> StoreAsync(Partner partner, X509Certificate2 certificate, CertificateExchangeKind kind,
@@ -274,21 +316,29 @@ public class CertificateExchangeService(
     }
 
     /// <summary>Answers an ODETTE_CERTIFICATE_REQUEST with our own certificate (OP08 2.5 D).</summary>
-    private async Task<SendQueueItem?> AnswerAsync(Partner partner, int? identityId, ReceivedFile record,
+    /// <summary>
+    /// Answers an ODETTE_CERTIFICATE_REQUEST with our own certificates (OP08 2.5 D). A station that uses different
+    /// certificates for different purposes sends each of them in its own file, as the specification requires.
+    /// </summary>
+    private async Task<IReadOnlyList<SendQueueItem>> AnswerAsync(Partner partner, Identity? identity, ReceivedFile record,
         GlobalSettings settings, CancellationToken cancellationToken)
     {
-        if (settings.FileSecurityCertificateId is not { } ownId)
-        {
-            logger.LogWarning("The certificate request of {Partner} cannot be answered: no certificate for file " +
-                              "security is configured (setting FileSecurityCertificateId)", partner.Name);
-            return null;
-        }
-
-        if (identityId is not { } identity)
+        if (identity is null)
         {
             logger.LogWarning("The certificate request of {Partner} cannot be answered: {Destination} is not one of " +
                               "our identities", partner.Name, record.Destination);
-            return null;
+            return [];
+        }
+
+        var own = identity.Certificates.Select(a => a.CertificateId).ToList();
+        if (own.Count == 0 && settings.FileSecurityCertificateId is { } single)
+            own.Add(single);
+
+        if (own.Count == 0)
+        {
+            logger.LogWarning("The certificate request of {Partner} cannot be answered: no certificate for file " +
+                              "security is configured (setting FileSecurityCertificateId)", partner.Name);
+            return [];
         }
 
         // The answer goes back to the station that asked for it.
@@ -296,16 +346,29 @@ public class CertificateExchangeService(
             ? null
             : record.Originator;
 
-        return await QueueAsync(partner, identity, CertificateExchangeKind.Deliver, ownId,
-            destinationSfid: destination, cancellationToken: cancellationToken);
+        var answers = new List<SendQueueItem>();
+        foreach (var certificateId in own.Distinct())
+            answers.Add(await QueueAsync(partner, identity.Id, CertificateExchangeKind.Deliver, certificateId,
+                destinationSfid: destination, cancellationToken: cancellationToken));
+
+        return answers;
     }
 
+    /// <summary>
+    /// The certificates the partner has here for the station a file came from: the ones assigned per purpose and
+    /// the single certificates of the partner. A received certificate can only replace one of them.
+    /// </summary>
     private async Task<IReadOnlyList<(Certificate Entity, X509Certificate2 Loaded)>> GetPartnerCertificatesAsync(
-        Partner partner, CancellationToken cancellationToken)
+        Partner partner, string? sfid, CancellationToken cancellationToken)
     {
+        var assigned = Assignments(partner, sfid)
+            .SelectMany(a => new[] { a.CertificateId, a.PreviousCertificateId ?? 0 })
+            .Where(id => id > 0);
         var result = new List<(Certificate, X509Certificate2)>();
-        foreach (var id in new[] { partner.SecurityCertificateId, partner.PreviousSecurityCertificateId, partner.TrustedCertificateId }
-                     .OfType<int>().Distinct())
+        foreach (var id in assigned
+                     .Concat(new[] { partner.SecurityCertificateId, partner.PreviousSecurityCertificateId, partner.TrustedCertificateId }
+                         .OfType<int>())
+                     .Distinct())
         {
             var entity = await certificates.GetObjectAsync(id, cancellationToken);
             try

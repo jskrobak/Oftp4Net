@@ -179,6 +179,12 @@
                                   ValueSelector="@(c => c.Id)"
                                   Nullable="true"
                                   NullText="-none-" />
+
+                        <CertificateAssignments Assignments="currentPartner.Certificates"
+                                                Certificates="availableCertificates"
+                                                Stations="currentPartner.SubStations.Select(s => s.SFID).ToList()"
+                                                Label="Certificates of the partner per purpose"
+                                                Hint="For a partner that uses a different certificate for signing, encryption, end responses or authentication, or a different one per sub-station. What is not listed here uses the certificate above." />
                     }
 
                     @if (openSetups.Where(d => d.PartnerId == currentPartner.Id && currentPartner.Id != 0).ToList() is { Count: > 0 } partnerSetups)

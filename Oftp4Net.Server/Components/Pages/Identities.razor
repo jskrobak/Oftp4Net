@@ -23,6 +23,11 @@
                     <HxInputText Label="SSID" @bind-Value="@currentIdentity.SSID" />
                     <HxInputText Label="SFID" @bind-Value="@currentIdentity.SFID" />
                     <HxInputText Label="Password" Hint="Password we send in our SSID." Type="InputType.Password" @bind-Value="@currentIdentity.Password" />
+
+                    <CertificateAssignments Assignments="currentIdentity.Certificates"
+                                            Certificates="ownCertificates"
+                                            Label="Our certificates of this station per purpose"
+                                            Hint="For a station that signs, encrypts, signs end responses or authenticates with a different certificate. What is not listed here uses the file security certificate from the settings." />
                 
                     <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
 

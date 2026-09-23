@@ -18,7 +18,13 @@ public partial class Identities : ComponentBase
     private IdentityFilter filterModel = new();
     private HxGrid<Identity> gridComponent = null!;
     private HxModal identityEditModal = null!;
-    
+
+    /// <summary>Our certificates, i.e. the ones with a private key.</summary>
+    private List<Certificate> ownCertificates = [];
+
+    protected override async Task OnInitializedAsync() =>
+        ownCertificates = (await DataService.GetAllCertificatesAsync()).Where(c => c.HasPrivateKey).ToList();
+
     
     private async Task<GridDataProviderResult<Identity>> GetGridData(GridDataProviderRequest<Identity> request)
     {

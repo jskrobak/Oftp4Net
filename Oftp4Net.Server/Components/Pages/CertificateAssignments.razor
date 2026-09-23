@@ -1,0 +1,91 @@
+@using Oftp4Net.Domain
+
+@* Certificates of a station per purpose (Odette OP08 2.5); empty means one certificate serves everything. *@
+<div class="mb-2">
+    <label class="form-label">@Label</label>
+    <div class="form-text mt-0 mb-1">@Hint</div>
+
+    @if (Assignments.Count > 0)
+    {
+        <table class="table table-sm align-middle mb-1">
+            <tbody>
+            @foreach (var assignment in Assignments)
+            {
+                <tr>
+                    <td class="p-1" style="width: 11rem;">
+                        <select class="form-select form-select-sm" value="@assignment.Usage"
+                                @onchange="e => assignment.Usage = Enum.Parse<CertificateUsage>((string)e.Value!)">
+                            @foreach (var usage in Enum.GetValues<CertificateUsage>())
+                            {
+                                <option value="@usage">@Text(usage)</option>
+                            }
+                        </select>
+                    </td>
+                    @if (Stations.Count > 0)
+                    {
+                        <td class="p-1" style="width: 12rem;">
+                            <select class="form-select form-select-sm" value="@assignment.Sfid"
+                                    @onchange="e => assignment.Sfid = (string?)e.Value">
+                                <option value="">all stations</option>
+                                @foreach (var station in Stations)
+                                {
+                                    <option value="@station">@station</option>
+                                }
+                            </select>
+                        </td>
+                    }
+                    <td class="p-1">
+                        <select class="form-select form-select-sm" value="@assignment.CertificateId"
+                                @onchange="e => assignment.CertificateId = int.Parse((string)e.Value!)">
+                            @foreach (var certificate in Certificates)
+                            {
+                                <option value="@certificate.Id">@certificate.Name (valid to @certificate.ValidTo.ToString("d"))</option>
+                            }
+                        </select>
+                        @if (Certificates.FirstOrDefault(c => c.Id == assignment.PreviousCertificateId) is { } previous)
+                        {
+                            <div class="form-text mt-0">replaced @previous.Name, still accepted</div>
+                        }
+                    </td>
+                    <td class="p-1" style="width: 2.5rem;">
+                        <HxButton Size="ButtonSize.Small" Color="ThemeColor.None" Icon="BootstrapIcon.Trash"
+                                  OnClick="() => Assignments.Remove(assignment)" />
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+
+    <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.PlusLg"
+              Enabled="Certificates.Count > 0" OnClick="Add">Add certificate</HxButton>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<CertificateAssignment> Assignments { get; set; } = [];
+
+    /// <summary>Certificates to choose from: the partner's ones, or ours with a private key.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<Certificate> Certificates { get; set; } = [];
+
+    /// <summary>Stations an assignment can be limited to (the sub-stations of a partner).</summary>
+    [Parameter] public IReadOnlyList<string> Stations { get; set; } = [];
+
+    [Parameter] public string Label { get; set; } = "Certificates per purpose";
+
+    [Parameter] public string Hint { get; set; } = "";
+
+    private void Add()
+    {
+        // The purposes that are not assigned yet come first, so that clicking several times is useful.
+        var usage = Enum.GetValues<CertificateUsage>().FirstOrDefault(u => Assignments.All(a => a.Usage != u));
+        Assignments.Add(new CertificateAssignment { Usage = usage, CertificateId = Certificates[0].Id });
+    }
+
+    private static string Text(CertificateUsage usage) => usage switch
+    {
+        CertificateUsage.FileSignature => "file signatures",
+        CertificateUsage.FileEncryption => "file encryption",
+        CertificateUsage.EndResponse => "end responses",
+        _ => "authentication",
+    };
+}

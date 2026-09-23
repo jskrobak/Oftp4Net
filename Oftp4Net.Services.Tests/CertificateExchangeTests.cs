@@ -137,7 +137,7 @@ public class CertificateExchangeTests
         var partner = new Partner { SecurityCertificateId = 1, TrustedCertificateId = 1 };
         var received = new Certificate { Id = 2, Name = "new" };
 
-        CertificateExchangeService.Assign(partner, received, CertificateExchangeKind.Deliver, Entity(1, old));
+        CertificateExchangeService.Assign(partner, null, received, CertificateExchangeKind.Deliver, Entity(1, old));
 
         Assert.Equal(2, partner.SecurityCertificateId);
         Assert.Equal(1, partner.PreviousSecurityCertificateId);
@@ -152,7 +152,7 @@ public class CertificateExchangeTests
         var partner = new Partner { SecurityCertificateId = 1, PreviousSecurityCertificateId = 3, TrustedCertificateId = 1 };
         var received = new Certificate { Id = 2, Name = "new" };
 
-        CertificateExchangeService.Assign(partner, received, CertificateExchangeKind.Replace, Entity(1, old));
+        CertificateExchangeService.Assign(partner, null, received, CertificateExchangeKind.Replace, Entity(1, old));
 
         Assert.Equal(2, partner.SecurityCertificateId);
         Assert.Null(partner.PreviousSecurityCertificateId);
@@ -167,11 +167,63 @@ public class CertificateExchangeTests
         var partner = new Partner { TrustedCertificateId = 1 };
         var received = new Certificate { Id = 2, Name = "delivered" };
 
-        CertificateExchangeService.Assign(partner, received, CertificateExchangeKind.Deliver, Entity(1, old));
+        CertificateExchangeService.Assign(partner, null, received, CertificateExchangeKind.Deliver, Entity(1, old));
 
         Assert.Equal(2, partner.SecurityCertificateId);
         Assert.Null(partner.PreviousSecurityCertificateId);
         Assert.Equal(2, partner.TrustedCertificateId);
+    }
+
+    /// <summary>
+    /// A station that uses different certificates for different purposes keeps them apart: a delivered
+    /// certificate only moves on where the one it replaces was used (Odette test cases 6.3.3 and 6.3.7).
+    /// </summary>
+    [Fact]
+    public void CertificatePerPurposeReplacesOnlyItsOwnAssignment()
+    {
+        using var old = CreateCertificate("CN=Signing of invoices", X509KeyUsageFlags.DigitalSignature, serverAuthentication: false);
+        var partner = new Partner
+        {
+            SFID = "O0013PARTNER",
+            SecurityCertificateId = 9,
+            TrustedCertificateId = 9,
+            Certificates =
+            [
+                new CertificateAssignment { Usage = CertificateUsage.FileSignature, Sfid = "O0013PLANT", CertificateId = 1 },
+                new CertificateAssignment { Usage = CertificateUsage.FileEncryption, Sfid = "O0013PLANT", CertificateId = 3 },
+            ],
+        };
+        var received = new Certificate { Id = 2, Name = "new signing certificate" };
+
+        var changes = CertificateExchangeService.Assign(partner, "O0013PLANT", received, CertificateExchangeKind.Deliver, Entity(1, old));
+
+        Assert.Equal(2, partner.Certificates[0].CertificateId);
+        Assert.Equal(1, partner.Certificates[0].PreviousCertificateId);
+        // The certificate for encryption and the single certificates of the partner are untouched.
+        Assert.Equal(3, partner.Certificates[1].CertificateId);
+        Assert.Equal(9, partner.SecurityCertificateId);
+        Assert.Equal(9, partner.TrustedCertificateId);
+        Assert.Contains("file signatures of O0013PLANT", string.Join(", ", changes));
+    }
+
+    [Fact]
+    public void CertificateOfAnotherStationLeavesTheAssignmentsAlone()
+    {
+        var partner = new Partner
+        {
+            SFID = "O0013PARTNER",
+            SecurityCertificateId = 9,
+            Certificates = [new CertificateAssignment { Usage = CertificateUsage.FileSignature, Sfid = "O0013PLANT", CertificateId = 1 }],
+        };
+        var received = new Certificate { Id = 2, Name = "new" };
+
+        // A certificate of another station replaces none of the assignments, so it takes the place of the single
+        // certificate of the partner and the one of the plant stays as it is.
+        CertificateExchangeService.Assign(partner, "O0013OTHER", received, CertificateExchangeKind.Deliver, replaced: null);
+
+        Assert.Equal(1, partner.Certificates[0].CertificateId);
+        Assert.Equal(2, partner.SecurityCertificateId);
+        Assert.Equal(9, partner.PreviousSecurityCertificateId);
     }
 
     [Fact]
@@ -181,7 +233,7 @@ public class CertificateExchangeTests
         var received = new Certificate { Id = 2, Name = "new" };
 
         // The certificate does not replace one we know: it becomes the one for file security, TLS stays as it is.
-        CertificateExchangeService.Assign(partner, received, CertificateExchangeKind.Deliver, replaced: null);
+        CertificateExchangeService.Assign(partner, null, received, CertificateExchangeKind.Deliver, replaced: null);
 
         Assert.Equal(2, partner.SecurityCertificateId);
         Assert.Equal(1, partner.PreviousSecurityCertificateId);

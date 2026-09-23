@@ -59,6 +59,12 @@ public sealed class PdxImportPlan
     internal List<Action<Partner, Func<PdxCertificate, Certificate>>> Setters { get; } = [];
 
     /// <summary>
+    /// Certificates of the datasheet the changes refer to. They are stored before the changes are written, so that
+    /// an assignment can refer to a new certificate by its identifier.
+    /// </summary>
+    internal List<PdxCertificate> UsedCertificates { get; } = [];
+
+    /// <summary>
     /// Writes the changes to <paramref name="partner"/>; <paramref name="certificates"/> returns the stored
     /// certificate for a certificate of the datasheet (an existing one or a new one).
     /// </summary>
@@ -391,24 +397,25 @@ public static class PdxPartnerPlanner
                 SetCertificate("TLS certificate", existing?.TrustedCertificate, tls, (p, c) => p.TrustedCertificate = c);
             }
 
-            // One certificate serves all file security features here; the datasheet may name one per feature.
-            var references = new[]
-                {
-                    document.InboundFileSettings?.FileEncryption,
-                    document.OutboundFileSettings?.FileSignature,
-                    document.Session.SecureAuthentication,
-                    document.InboundFileSettings?.EerpSignature,
-                }
-                .Where(s => s is not null)
-                .SelectMany(s => s!.CertificateRefs)
+            // The datasheet may name one certificate per feature; they are then kept apart (Odette OP08 2.5).
+            var perUsage = new[]
+            {
+                (Usage: CertificateUsage.FileEncryption, Support: document.InboundFileSettings?.FileEncryption),
+                (Usage: CertificateUsage.FileSignature, Support: document.OutboundFileSettings?.FileSignature),
+                (Usage: CertificateUsage.EndResponse, Support: document.InboundFileSettings?.EerpSignature),
+                (Usage: CertificateUsage.Authentication, Support: document.Session.SecureAuthentication),
+            };
+
+            var references = perUsage
+                .Where(u => u.Support is not null)
+                .SelectMany(u => u.Support!.CertificateRefs)
                 .Select(document.FindCertificate)
                 .OfType<PdxCertificate>()
                 .DistinctBy(c => Thumbprint(c.Certificate))
                 .ToList();
 
             if (references.Count > 1)
-                Warning($"The partner uses different certificates for file security ({string.Join(", ", references.Select(r => r.Name))}); " +
-                        $"only one partner certificate is supported, '{references[0].Name}' is used.");
+                PlanCertificatesPerUsage(perUsage);
 
             var security = references.FirstOrDefault();
             if (security is null && (flags.Encrypt == true || flags.RequireSigned == true || flags.RequestSignedEndResponse == true))
@@ -430,6 +437,54 @@ public static class PdxPartnerPlanner
             if (SetCertificate("Partner certificate", previous, security, (p, c) => p.SecurityCertificate = c) && previous is not null)
                 _plan.Setters.Add((p, _) => p.PreviousSecurityCertificate = previous);
         }
+
+        /// <summary>
+        /// Assigns a certificate to every feature the datasheet names one for, so that a station that uses
+        /// different certificates for signing, encryption, end responses and authentication keeps them apart.
+        /// The single certificate of the partner stays as the fallback for what the datasheet does not name.
+        /// </summary>
+        private void PlanCertificatesPerUsage((CertificateUsage Usage, PdxSupport? Support)[] perUsage)
+        {
+            foreach (var (usage, support) in perUsage)
+            {
+                var certificate = support?.CertificateRefs.Select(document.FindCertificate).OfType<PdxCertificate>().FirstOrDefault();
+                if (certificate is null)
+                    continue;
+
+                CheckTrust(certificate);
+                _plan.UsedCertificates.Add(certificate);
+                var current = existing?.FindCertificate(null, usage);
+                var currentEntity = current is null ? null : existing?.SecurityCertificate;
+                using var x509 = X509CertificateLoader.LoadCertificate(certificate.Certificate);
+
+                _plan.Changes.Add(new PdxChange($"Certificate for {Name(usage)}",
+                    currentEntity is null ? null : $"{currentEntity.Name}", $"{x509.Subject} (valid to {x509.NotAfter:d})"));
+                _plan.Setters.Add((p, certificates) =>
+                {
+                    var entity = certificates(certificate);
+                    var assignment = p.Certificates.FirstOrDefault(a => a.Usage == usage && string.IsNullOrEmpty(a.Sfid));
+                    if (assignment is null)
+                    {
+                        p.Certificates.Add(new CertificateAssignment { Usage = usage, CertificateId = entity.Id });
+                        return;
+                    }
+
+                    if (assignment.CertificateId == entity.Id)
+                        return;
+
+                    assignment.PreviousCertificateId = assignment.CertificateId;
+                    assignment.CertificateId = entity.Id;
+                });
+            }
+        }
+
+        private static string Name(CertificateUsage usage) => usage switch
+        {
+            CertificateUsage.FileSignature => "file signatures",
+            CertificateUsage.FileEncryption => "file encryption",
+            CertificateUsage.EndResponse => "end response signatures",
+            _ => "secure authentication",
+        };
 
         /// <summary>Validity and trust: an untrusted certificate is only a warning, the user decides (OP09 PDX 1.1).</summary>
         private void CheckTrust(PdxCertificate certificate)
@@ -539,6 +594,7 @@ public static class PdxPartnerPlanner
             if (current is not null && CurrentThumbprint(current) == Thumbprint(value.Certificate))
                 return false;
 
+            _plan.UsedCertificates.Add(value);
             using var x509 = X509CertificateLoader.LoadCertificate(value.Certificate);
             _plan.Changes.Add(new PdxChange(field, current is null ? null : $"{current.Name} (valid to {current.ValidTo:d})",
                 $"{x509.Subject} (valid to {x509.NotAfter:d})"));
