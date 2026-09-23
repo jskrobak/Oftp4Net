@@ -34,8 +34,10 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
   roll-overs and replacements taken over without the administrator
 - Certificate signing requests (CSR) with the profile of the OFTP2 Certificate Policy, for the Odette CA and others
 - A script that creates the certificates of the Odette interoperability tests, including the ones that must be refused
+- A load test that puts many partners on the server at once, with the throughput and the memory it takes
 - Import of partners from an existing OS4X installation
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
+- Signing in with a password or with Microsoft Entra ID, where the list of users decides who may come in
 - Health checks for Docker, Kubernetes and monitoring: database, storage, listeners, send service, certificates,
   revocation lists and stuck files, shown on the dashboard and reported by webhook
 - Retention: old data removed every night and written to compressed archive files first, nothing unfinished touched
