@@ -11,6 +11,8 @@ using Oftp4Net.Domain;
 using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.TransferEvents;
 
+using Oftp4Net.Services.Tsl;
+
 namespace Oftp4Net.Services;
 
 public sealed record ListenerStatus(int ListenerId, string Name, string EndPoint, bool Running, string? Error, int ActiveSessions);
@@ -22,6 +24,7 @@ public class ListenerService(
     ILogger<ListenerService> logger,
     IServiceScopeFactory serviceScopeFactory,
     GlobalSettingsService globalSettingsService,
+    TslService tsl,
     ITransferEventLog transferEvents) : IHostedService, IAsyncDisposable
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -37,6 +40,7 @@ public class ListenerService(
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        tsl.Changed += OnTrustListChanged;
         try
         {
             await ReloadAsync();
@@ -50,6 +54,7 @@ public class ListenerService(
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        tsl.Changed -= OnTrustListChanged;
         await _lock.WaitAsync(cancellationToken);
         try
         {
@@ -58,6 +63,19 @@ public class ListenerService(
         finally
         {
             _lock.Release();
+        }
+    }
+
+    /// <summary>Another trust list is in use: the listeners trust its certification authorities from now on.</summary>
+    private async void OnTrustListChanged()
+    {
+        try
+        {
+            await RefreshTrustedCertificatesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Reloading the trusted certificates of the listeners failed");
         }
     }
 
@@ -166,7 +184,8 @@ public class ListenerService(
     private System.Security.Cryptography.X509Certificates.X509Certificate2Collection LoadTrustedCertificates(
         IReadOnlyList<Certificate> certificates)
     {
-        var collection = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection();
+        // Certificates issued by a certification authority of the Odette TSL are accepted from any partner.
+        var collection = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection(tsl.TrustAnchors);
         foreach (var certificate in certificates)
         {
             try

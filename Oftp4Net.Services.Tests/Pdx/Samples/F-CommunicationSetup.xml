@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ocs:OftpCommunicationSetup version="1.2" docid="a7c6e9ab-97a2-4fb4-9100-c837ca13cea4" docdate="2023-08-03T11:16:00Z" validfrom="2023-08-03T11:16:00Z" xmlns:ocs="http://www.odette.org/OFTPCommunicationSetup/1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.odette.org/OFTPCommunicationSetup/1.2 OftpCommunicationSetup-1p2_2023-08.xsd">
+	<ocs:StationInformation>
+		<ocs:Name>Wiley E. Coyote Corporation</ocs:Name>
+		<ocs:CompanyInfo>
+			<ocs:Name>Wiley E. Coyote Corporation</ocs:Name>
+		</ocs:CompanyInfo>
+		<ocs:IssuerIDCode>O017700000000COYOTE000001</ocs:IssuerIDCode>
+	</ocs:StationInformation>
+	<ocs:CipherSetting>
+		<ocs:PrimaryCipher>04</ocs:PrimaryCipher>
+		<ocs:AlternateCipher>07</ocs:AlternateCipher>
+	</ocs:CipherSetting>
+	<ocs:SessionSettings>
+		<ocs:OdetteIDCodeSSID>O017700000000COYOTEGATEW1</ocs:OdetteIDCodeSSID>
+	</ocs:SessionSettings>
+	<ocs:SubStations>
+		<ocs:SubStationInformation>
+			<ocs:Name>CAD</ocs:Name>
+			<ocs:OdetteIDCodeSFID>O017700000000COYOTE000CAD</ocs:OdetteIDCodeSFID>
+			<ocs:OutboundFileSettings>
+				<ocs:FileSignature usage="optional"/>
+				<ocs:FileEncryption usage="required"/>
+				<ocs:FileCompression usage="preferred"/>
+				<ocs:EERPSignature usage="required"/>
+			</ocs:OutboundFileSettings>
+			<ocs:InboundFileSettings>
+				<ocs:FileSignature usage="optional"/>
+				<ocs:FileEncryption usage="required">
+					<ocs:CertificateRef>filecert</ocs:CertificateRef>
+				</ocs:FileEncryption>
+				<ocs:FileCompression usage="preferred"/>
+				<ocs:EERPSignature usage="optional"/>
+			</ocs:InboundFileSettings>
+		</ocs:SubStationInformation>
+	</ocs:SubStations>
+	<ocs:Certificates>
+		<ocs:Certificate name="filecert">
+			<ocs:SubjectName>/C=US/ST=California/L=Burbank/O=Wiley E. Coyote Corp/OU=Traps &amp; Explosives/CN=Wiley E. Coyote Corp. TLS/E=service@wileyecoyote.example</ocs:SubjectName>
+			<ocs:X509Certificate>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</ocs:X509Certificate>
+		</ocs:Certificate>
+	</ocs:Certificates>
+</ocs:OftpCommunicationSetup>

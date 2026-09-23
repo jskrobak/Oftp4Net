@@ -12,6 +12,7 @@ using System.Diagnostics;
 using Oftp4Net.Services.Api;
 using Oftp4Net.Services.Encodings;
 using Oftp4Net.Services.Hooks;
+using Oftp4Net.Services.Pdx;
 using Oftp4Net.Services.Security;
 using Oftp4Net.Services.TransferEvents;
 
@@ -38,6 +39,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private readonly IWebhookDispatcher _webhooks;
     private readonly ApiTokenService _apiTokens;
     private readonly SessionFileSecurity _fileSecurity;
+    private readonly PartnerSetupService _setups;
     private readonly string _remoteEndPoint;
     private readonly Stopwatch _fileStopwatch = new();
     private readonly ILogger _logger;
@@ -65,6 +67,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _webhooks = scopedServices.GetRequiredService<IWebhookDispatcher>();
         _apiTokens = scopedServices.GetRequiredService<ApiTokenService>();
         _fileSecurity = new SessionFileSecurity(scopedServices.GetRequiredService<ICertificateRepository>(), settings);
+        _setups = scopedServices.GetRequiredService<PartnerSetupService>();
         _remoteEndPoint = remoteEndPoint;
         _settings = settings;
         _settingsService = scopedServices.GetRequiredService<GlobalSettingsService>();
@@ -256,7 +259,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             {
                 DatasetName = item.VirtualFileName,
                 Originator = item.Identity.SFID,
-                Destination = Partner!.SFID,
+                Destination = StationSettings.For(Partner!, item.DestinationSfid).Sfid,
                 Date = date,
                 Time = time,
                 Description = item.Description ?? "",
@@ -404,21 +407,30 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     private async Task<SecuredContent> SecureAsync(SendQueueItem item, CancellationToken cancellationToken)
     {
         var partner = Partner!;
-        var settings = await _fileSecurity.ForSendingAsync(partner, cancellationToken);
+        var station = StationSettings.For(partner, item.DestinationSfid);
+        var isSetup = PartnerSetupService.IsSetupFile(item.VirtualFileName);
+        var settings = isSetup
+            ? await ForSetupAsync(station, cancellationToken)
+            : await _fileSecurity.ForSendingAsync(partner, station, cancellationToken);
         var originalSize = new FileInfo(item.FilePath).Length;
 
-        if ((settings.Any || partner.RequestSignedEndResponse) && !ProtocolLevels.HasOftp2Features(partner.ProtocolLevel))
+        if ((settings.Any || (!isSetup && station.RequestSignedEndResponse)) && !ProtocolLevels.HasOftp2Features(partner.ProtocolLevel))
             throw new FileSecurityException(
                 $"File level security requires OFTP 2.0, partner {partner.Name} is configured for " +
                 $"ODETTE-FTP {ProtocolLevels.Name(partner.ProtocolLevel)}.");
 
-        item.SignedResponseRequested = partner.RequestSignedEndResponse;
+        // A datasheet must be sent without a signed EERP (Odette OP08 part 3, "Transfer parameters").
+        item.SignedResponseRequested = !isSetup && station.RequestSignedEndResponse;
         item.CipherSuite = settings.Any ? settings.Suite.Code : null;
         item.ContentHash = null;
 
-        // The content is converted to the encoding configured for the partner before it is secured.
-        Stream OpenContent() => PartnerEncoding.ForSending(partner,
-            new FileStream(item.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true));
+        // The content is converted to the encoding configured for the partner before it is secured; a datasheet is
+        // XML with its own encoding and is sent as it is.
+        Stream OpenContent()
+        {
+            var file = new FileStream(item.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+            return isSetup ? file : PartnerEncoding.ForSending(partner, file);
+        }
 
         if (!settings.Any)
         {
@@ -455,6 +467,22 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             _ => ValueTask.FromResult<Stream>(new MemoryStream(secured, writable: false)));
     }
 
+    /// <summary>
+    /// A datasheet is never encrypted or compressed; it is signed when we have a certificate for it, so that the
+    /// partner can apply it without asking its administrator.
+    /// </summary>
+    private async Task<FileSecuritySettings> ForSetupAsync(StationSettings station, CancellationToken cancellationToken)
+    {
+        var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken);
+        return new FileSecuritySettings
+        {
+            // Signatures exist from OFTP 2.0 on; a partner on an older revision gets the datasheet unsigned.
+            Sign = ownCertificate is not null && ProtocolLevels.HasOftp2Features(Partner!.ProtocolLevel),
+            Suite = CipherSuite.Get(station.FileCipherSuite) ?? CipherSuite.Default,
+            SigningCertificate = ownCertificate,
+        };
+    }
+
     /// <summary>The content of the file was signed, compressed or encrypted, so it cannot be continued.</summary>
     private static bool IsSecured(OftpOutgoingFile file) =>
         file.SecurityLevel != SecurityLevels.None ||
@@ -476,7 +504,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         if (await _identities.FindBySfidAsync(header.Destination, cancellationToken) is null)
             return OftpStartFileDecision.Reject(AnswerReasonCodes.InvalidDestination, $"Unknown destination {header.Destination}.");
 
-        if (!SameCode(header.Originator, partner.SFID))
+        var station = StationSettings.For(partner, header.Originator);
+        if (!SameCode(header.Originator, station.Sfid))
             _logger.LogInformation("File {VirtualFileName} from {Partner} was created by {Originator}",
                 header.DatasetName, partner.Name, header.Originator);
 
@@ -484,7 +513,16 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             return OftpStartFileDecision.Reject(AnswerReasonCodes.DuplicateFile, "File was already received.");
 
         var security = FileSecurityDescriptor.From(header);
-        if (await CheckIncomingSecurityAsync(header, security, cancellationToken) is { } refusal)
+        var isSetup = PartnerSetupService.IsSetupFile(header.DatasetName);
+        if (isSetup && security.Encrypted)
+            return OftpStartFileDecision.Reject(AnswerReasonCodes.EncryptedFileNotAllowed,
+                "An OFTP2 Communication Setup must not be encrypted.");
+
+        // A datasheet may come unsigned (it then waits for approval), so what we require of files does not apply.
+        if (!isSetup && station.CheckIncoming(security) is { } required)
+            return OftpStartFileDecision.Reject(required.ReasonCode, required.ReasonText);
+
+        if (await CheckIncomingSecurityAsync(header, security, isSetup, cancellationToken) is { } refusal)
             return refusal;
 
         var directory = Path.Combine(_settingsService.ResolvePath(_settings.ReceiveDirectory), SafeFileName(partner.SSID));
@@ -523,7 +561,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 restartPosition > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
             // Secured content is stored as received and unpacked (and converted) when the transfer is complete;
             // plain content is converted from EBCDIC to ANSI while it is written when the partner is configured so.
-            stream = security.Any ? file : PartnerEncoding.ForReceiving(partner, file);
+            // A datasheet is XML with its own encoding and is never converted.
+            stream = security.Any || isSetup ? file : PartnerEncoding.ForReceiving(partner, file);
         }
         catch (IOException ex)
         {
@@ -583,9 +622,11 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     public override async ValueTask<OftpAnswer> OnFileReceivedAsync(OftpIncomingFile file, CancellationToken cancellationToken)
     {
         var record = (ReceivedFile)file.State!;
+        var isSetup = PartnerSetupService.IsSetupFile(record.VirtualFileName);
+        PartnerSetupSignature signature;
         try
         {
-            await StoreContentAsync(file.Header, record, cancellationToken);
+            signature = await StoreContentAsync(file.Header, record, isSetup, cancellationToken);
         }
         catch (FileSecurityException ex)
         {
@@ -603,6 +644,12 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         record.RestartedFrom = file.RestartPosition;
         record.Status = ReceiveStatus.RECEIVED;
         FilesReceived++;
+
+        // A datasheet is checked before the end response: it decides between EERP, NERP and waiting for approval.
+        if (isSetup)
+            await _setups.ReceiveAsync(Partner!, record, await File.ReadAllBytesAsync(record.FilePath, cancellationToken),
+                signature, cancellationToken);
+
         await SaveAsync(record);
         Record(TransferEventCategory.Incoming, TransferEventType.FileReceived, TransferEventLevel.Information,
             $"{record.VirtualFileName} received from {Partner?.Name}", e => Describe(e, record, _fileStopwatch.ElapsedMilliseconds));
@@ -662,7 +709,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     /// the partner what is wrong (RFC 5024, section 5.3.4).
     /// </summary>
     private async Task<OftpStartFileDecision?> CheckIncomingSecurityAsync(SFID header, FileSecurityDescriptor security,
-        CancellationToken cancellationToken)
+        bool isSetup, CancellationToken cancellationToken)
     {
         if (!security.Any && !header.SignedEerpRequested)
             return null;
@@ -682,7 +729,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 security.Encrypted ? AnswerReasonCodes.FileDecryptionFailure : AnswerReasonCodes.UnspecifiedReason,
                 "No certificate for file security is configured (setting FileSecurityCertificateId).");
 
-        if (security.Signed && await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken) is null)
+        // A datasheet signed with a certificate we do not know yet is still accepted, it then waits for approval.
+        if (security.Signed && !isSetup && await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken) is null)
             return OftpStartFileDecision.Reject(AnswerReasonCodes.InvalidFileSignature,
                 $"Partner {Partner!.Name} has no certificate configured to verify file signatures with.");
 
@@ -698,7 +746,12 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     /// Moves the received content to its final place: secured content is hashed for the End to End Response,
     /// then decrypted, decompressed, signature checked and converted to the local encoding.
     /// </summary>
-    private async Task StoreContentAsync(SFID header, ReceivedFile record, CancellationToken cancellationToken)
+    /// <returns>
+    /// How the content was signed. Only a datasheet (<paramref name="isSetup"/>) is accepted with a signature that
+    /// cannot be verified: it may be signed with a new certificate, and it then waits for approval.
+    /// </returns>
+    private async Task<PartnerSetupSignature> StoreContentAsync(SFID header, ReceivedFile record, bool isSetup,
+        CancellationToken cancellationToken)
     {
         var security = FileSecurityDescriptor.From(header);
         var partial = record.FilePath + ".part";
@@ -706,7 +759,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         if (!security.Any && !header.SignedEerpRequested)
         {
             File.Move(partial, record.FilePath, overwrite: true);
-            return;
+            return PartnerSetupSignature.None;
         }
 
         var transferred = new FileInfo(partial).Length;
@@ -725,15 +778,54 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         if (!security.Any)
         {
             File.Move(partial, record.FilePath, overwrite: true);
-            return;
+            return PartnerSetupSignature.None;
         }
 
-        var plain = FileSecurity.Unprotect(content, security,
-            await _fileSecurity.GetOwnCertificateAsync(cancellationToken),
-            await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken));
+        var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(cancellationToken);
+        var partnerCertificate = await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken);
+        var previousCertificate = security.Signed
+            ? await _fileSecurity.GetPreviousPartnerCertificateAsync(Partner!, cancellationToken)
+            : null;
+        var signature = security.Signed ? PartnerSetupSignature.Valid : PartnerSetupSignature.None;
+        byte[] plain;
+        try
+        {
+            plain = FileSecurity.Unprotect(content, security, ownCertificate, partnerCertificate);
+        }
+        catch (FileSecurityException ex) when (ex.ReasonCode == AnswerReasonCodes.InvalidFileSignature &&
+                                               (previousCertificate is not null || isSetup))
+        {
+            string? problem = ex.Message;
+            plain = [];
+            if (previousCertificate is not null)
+            {
+                // Files already on their way when the partner replaced its certificate are signed with the old one.
+                try
+                {
+                    plain = FileSecurity.Unprotect(content, security, ownCertificate, previousCertificate);
+                    problem = null;
+                    _logger.LogInformation("File {VirtualFileName} from {Partner} is signed with the previous certificate of the partner",
+                        record.VirtualFileName, Partner?.Name);
+                }
+                catch (FileSecurityException again) when (isSetup && again.ReasonCode == AnswerReasonCodes.InvalidFileSignature)
+                {
+                }
+            }
 
-        await using (var destination = PartnerEncoding.ForReceiving(Partner!,
-                         new FileStream(record.FilePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true)))
+            if (problem is not null)
+            {
+                // Only a datasheet gets here: it may be signed with the partner's new certificate.
+                plain = FileSecurity.Unprotect(content, security, ownCertificate, partnerCertificate, out problem);
+                signature = PartnerSetupSignature.Invalid;
+                _logger.LogWarning("Signature of the OFTP2 Communication Setup from {Partner} cannot be verified: {Problem}",
+                    Partner?.Name, problem);
+            }
+        }
+
+        await using (var destination = isSetup
+                         ? new FileStream(record.FilePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true)
+                         : PartnerEncoding.ForReceiving(Partner!,
+                             new FileStream(record.FilePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true)))
         {
             await destination.WriteAsync(plain, cancellationToken);
         }
@@ -742,6 +834,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
         _logger.LogInformation("File {VirtualFileName} from {Partner} unpacked: {Transferred} B -> {Plain} B",
             record.VirtualFileName, Partner?.Name, content.Length, plain.Length);
+        return signature;
     }
 
     private static string SafeFileName(string value)
@@ -812,8 +905,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     }
 
     /// <summary>
-    /// Signs the End to End Response when the partner asked for it (SFIDSIGN). A response that cannot be signed is
-    /// still sent unsigned: the file was handled and the partner decides whether it accepts that.
+    /// Signs the End to End Response (EERP or NERP) when the partner asked for it (SFIDSIGN). A response that cannot
+    /// be signed is still sent unsigned: the file was handled and the partner decides whether it accepts that.
     /// </summary>
     private async Task<OftpCommand> SignResponseAsync(OftpCommand response, ReceivedFile record, CancellationToken cancellationToken)
     {
@@ -877,21 +970,25 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         if (!_pendingResponses.Remove(response, out var record))
             return;
 
-        // A file reported as not delivered keeps that state, the response only records that the partner knows.
-        var negative = response is NERP;
-        if (!negative)
-            record.Status = ReceiveStatus.CONFIRMED;
-
         record.ConfirmedDate = _timeService.GetCurrentTime();
-        await SaveAsync(record);
+        if (response is NERP)
+        {
+            // A file reported as not delivered keeps that state, the response only records that the partner knows.
+            await SaveAsync(record);
+            Record(TransferEventCategory.EndResponse, TransferEventType.NerpSent, TransferEventLevel.Warning,
+                $"NERP for {record.VirtualFileName} sent to {Partner?.Name} ({record.NotDeliveredReasonCode}): {record.LastError}",
+                e => Describe(e, record, null));
+            return;
+        }
 
-        Record(TransferEventCategory.EndResponse,
-            negative ? TransferEventType.NerpSent : TransferEventType.EerpSent,
-            negative ? TransferEventLevel.Warning : TransferEventLevel.Information,
-            negative
-                ? $"NERP for {record.VirtualFileName} sent to {Partner?.Name} ({record.NotDeliveredReasonCode}): {record.LastError}"
-                : $"EERP for {record.VirtualFileName} sent to {Partner?.Name}",
-            e => Describe(e, record, null));
+        record.Status = ReceiveStatus.CONFIRMED;
+        await SaveAsync(record);
+        Record(TransferEventCategory.EndResponse, TransferEventType.EerpSent, TransferEventLevel.Information,
+            $"EERP for {record.VirtualFileName} sent to {Partner?.Name}", e => Describe(e, record, null));
+
+        // The new settings of a datasheet take effect after its EERP, which was still sent with the old ones.
+        if (PartnerSetupService.IsSetupFile(record.VirtualFileName))
+            await _setups.OnEndResponseSentAsync(record, cancellationToken);
     }
 
     public override async ValueTask OnEndResponseReceivedAsync(OftpCommand response, CancellationToken cancellationToken)
@@ -996,7 +1093,17 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         {
             var certificate = await _fileSecurity.GetPartnerCertificateAsync(Partner!, cancellationToken)
                 ?? throw new FileSecurityException($"partner {Partner!.Name} has no certificate configured");
-            FileSecurity.VerifyEndResponse(signature, signedContent, certificate);
+            var previous = await _fileSecurity.GetPreviousPartnerCertificateAsync(Partner!, cancellationToken);
+            try
+            {
+                FileSecurity.VerifyEndResponse(signature, signedContent, certificate);
+            }
+            catch (FileSecurityException) when (previous is not null)
+            {
+                // A response to a file sent before the partner replaced its certificate.
+                FileSecurity.VerifyEndResponse(signature, signedContent, previous);
+            }
+
             return null;
         }
         catch (FileSecurityException ex)
@@ -1027,7 +1134,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             PartnerName = Partner?.Name,
             PartnerSsid = Partner?.SSID,
             Originator = item.Identity?.SFID,
-            Destination = Partner?.SFID,
+            Destination = string.IsNullOrEmpty(item.DestinationSfid) ? Partner?.SFID : item.DestinationSfid,
             Status = item.Status.ToString(),
             Error = item.LastError,
             SentDate = item.SentDate,
@@ -1145,7 +1252,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         parameters["description"] = item.Description;
         parameters["identityName"] = item.Identity?.Name;
         parameters["originator"] = item.Identity?.SFID;
-        parameters["destination"] = Partner?.SFID;
+        parameters["destination"] = string.IsNullOrEmpty(item.DestinationSfid) ? Partner?.SFID : item.DestinationSfid;
         parameters["status"] = item.Status.ToString();
         return parameters;
     }

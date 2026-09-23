@@ -71,7 +71,8 @@ public class ReceivedFileRepository(
         CancellationToken cancellationToken = default)
     {
         return await Data
-            .Where(i => i.PartnerId != null && i.ConfirmedDate == null && i.Created < createdBefore
+            .Where(i => i.PartnerId != null && i.ConfirmedDate == null
+                        && (i.Created < createdBefore || i.DecidedDate != null)
                         && (i.Status == ReceiveStatus.RECEIVED || i.Status == ReceiveStatus.NOT_DELIVERED))
             .ToListAsync(cancellationToken);
     }

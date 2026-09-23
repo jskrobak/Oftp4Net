@@ -81,4 +81,10 @@ public class ReceivedFile
 
     /// <summary>Hash of the transferred content, sent back in EERPHSH.</summary>
     public byte[]? ContentHash { get; set; }
+
+    /// <summary>
+    /// When the administrator decided about a held file. Its End to End Response is sent right away then: the session
+    /// the file came in is long over.
+    /// </summary>
+    public DateTime? DecidedDate { get; set; }
 }

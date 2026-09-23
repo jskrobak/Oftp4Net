@@ -1,0 +1,2295 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!-- edited with XMLSpy v2022 rel. 2 (x64) (http://www.altova.com) by JOERG WALTHER (ODETTE INTERNATIONAL) -->
+<!-- 2023-07-25 V 1.2 -->
+<schema xmlns="http://www.w3.org/2001/XMLSchema" xmlns:ns1="http://www.odette.org/OFTPCommunicationSetup" xmlns:ocs="http://www.odette.org/OFTPCommunicationSetup/1.2" targetNamespace="http://www.odette.org/OFTPCommunicationSetup/1.2" elementFormDefault="qualified">
+	<element name="OftpCommunicationSetup" type="ocs:OftpCommunicationSetupType"/>
+	<simpleType name="dateTimeTZ">
+		<restriction base="dateTime">
+			<pattern value="\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(.\d\d\d|)(Z|[+\-]\d\d:\d\d){1}"/>
+		</restriction>
+	</simpleType>
+	<simpleType name="CertificateDataType">
+		<restriction base="base64Binary"/>
+	</simpleType>
+	<simpleType name="CertificateRefType">
+		<annotation>
+			<documentation>Reference to a certificate using its @ name</documentation>
+		</annotation>
+		<restriction base="string"/>
+	</simpleType>
+	<complexType name="CertificatesType">
+		<annotation>
+			<documentation>Certificates being used for session setup or file transfer</documentation>
+		</annotation>
+		<sequence>
+			<element name="Certificate" type="ocs:CertificateType" minOccurs="1" maxOccurs="unbounded"/>
+		</sequence>
+	</complexType>
+	<complexType name="CertificateType">
+		<annotation>
+			<documentation>Certificate data of one particular certificate including its chain of CA-certificates</documentation>
+		</annotation>
+		<sequence>
+			<element name="SubjectName" type="string" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>The subject DN of the certificate</documentation>
+				</annotation>
+			</element>
+			<element name="X509Certificate" type="ocs:CertificateDataType" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>The main certificate</documentation>
+				</annotation>
+			</element>
+			<element name="X509CACertificate" type="ocs:CertificateDataType" minOccurs="0" maxOccurs="unbounded">
+				<annotation>
+					<documentation>Additional CA certificates that are part of the chain</documentation>
+				</annotation>
+			</element>
+		</sequence>
+		<attribute name="name" type="string" use="required">
+			<annotation>
+				<documentation>The name identifying this particular certificate to be used within this document where certificate-informations are provided</documentation>
+			</annotation>
+		</attribute>
+	</complexType>
+	<complexType name="CipherSettingType">
+		<annotation>
+			<documentation>Information about the cipher(s) to be used for session establishment and file transfer.</documentation>
+		</annotation>
+		<sequence>
+			<element name="PrimaryCipher" type="ocs:CipherValueType" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>The cipher, the stations prefers to be used</documentation>
+				</annotation>
+			</element>
+			<element name="AlternateCipher" type="ocs:CipherValueType" minOccurs="0" maxOccurs="unbounded">
+				<annotation>
+					<documentation>Ciphers the station will accept as well, if the primary cipher isn't supported by the peer</documentation>
+				</annotation>
+			</element>
+		</sequence>
+	</complexType>
+	<simpleType name="CipherValueType">
+		<annotation>
+			<documentation>
+Valid values (at the time of the creation of this XSD:
+
+ - 01 (3DES, RSA, SHA-1)
+ - 02 (AES-256, RSA, SHA-1)
+ - 03 (3DES, RSA, SHA-256)
+ - 04 (AES-256, RSA, SHA-256)
+ - 05 (3DES, RSA, SHA-512)
+ - 06 (AES-256, RSA, SHA-512)
+ - 07 (AES-256, RSA, SHA3-512)
+      </documentation>
+		</annotation>
+		<restriction base="string">
+			<enumeration value="01">
+				<annotation>
+					<documentation source="Name">3DES, RSA, SHA-1</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="02">
+				<annotation>
+					<documentation source="Name">AES-256, RSA, SHA-1</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="03">
+				<annotation>
+					<documentation source="Name">3DES, RSA, SHA-256</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="04">
+				<annotation>
+					<documentation source="Name">AES-256, RSA, SHA-256</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="05">
+				<annotation>
+					<documentation source="Name">3DES, RSA, SHA-512</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="06">
+				<annotation>
+					<documentation source="Name">AES-256, RSA, SHA-512</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="07">
+				<annotation>
+					<documentation source="Name">AES-256, RSA, SHA3-512</documentation>
+				</annotation>
+			</enumeration>
+		</restriction>
+	</simpleType>
+	<complexType name="CompanyInfoType">
+		<annotation>
+			<documentation>Information about the company that owns the station</documentation>
+		</annotation>
+		<sequence>
+			<element name="Name" type="string" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Name of the company</documentation>
+				</annotation>
+			</element>
+			<element name="AddressLine" type="string" minOccurs="0" maxOccurs="unbounded">
+				<annotation>
+					<documentation>Street / location etc.</documentation>
+				</annotation>
+			</element>
+			<element name="City" type="string" minOccurs="0" maxOccurs="1"/>
+			<element name="ZIPCode" type="string" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>Post code</documentation>
+				</annotation>
+			</element>
+			<element name="Country" type="ocs:CountryCodeType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>Country coded according ISO 3166-1  alpha-2 code </documentation>
+				</annotation>
+			</element>
+		</sequence>
+	</complexType>
+	<complexType name="ConnectionSettingType">
+		<sequence>
+			<element name="TLSVersion" type="ocs:TLSVersionType" minOccurs="0" maxOccurs="4">
+				<annotation>
+					<documentation>The exact TLS version required for a connection. If omitted, TLS negotiation is allowed.</documentation>
+				</annotation>
+			</element>
+		</sequence>
+		<attribute name="type" default="TLS">
+			<annotation>
+				<documentation>
+TLS - port 6619 - default setting for public internet
+TCP - port 3305 (e.g. used over VPN connections such as ENX)
+
+        </documentation>
+			</annotation>
+			<simpleType>
+				<restriction base="string">
+					<enumeration value="TCP"/>
+					<enumeration value="TLS"/>
+				</restriction>
+			</simpleType>
+		</attribute>
+	</complexType>
+	<complexType name="ContactsType">
+		<annotation>
+			<documentation>Contact informations that can be contacted in case of different scenarios</documentation>
+		</annotation>
+		<sequence>
+			<element name="Contact" type="ocs:ContactType" minOccurs="1" maxOccurs="unbounded"/>
+		</sequence>
+	</complexType>
+	<complexType name="ContactType">
+		<annotation>
+			<documentation>Contact information. At least a phone-number or an email-address must be provided</documentation>
+		</annotation>
+		<sequence>
+			<element name="Name" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Short name identifying the type of contact</documentation>
+				</annotation>
+				<simpleType>
+					<restriction base="string">
+						<minLength value="1"/>
+						<maxLength value="35"/>
+					</restriction>
+				</simpleType>
+			</element>
+			<element name="Description" type="string" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>Description of the contact</documentation>
+				</annotation>
+			</element>
+			<element name="Phone" type="string" minOccurs="0" maxOccurs="unbounded">
+				<annotation>
+					<documentation>Phone number</documentation>
+				</annotation>
+			</element>
+			<element name="Email" type="string" minOccurs="0" maxOccurs="unbounded">
+				<annotation>
+					<documentation>Email address</documentation>
+				</annotation>
+			</element>
+			<element name="URL" type="string" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>URL for e.g. a ticket system</documentation>
+				</annotation>
+			</element>
+		</sequence>
+	</complexType>
+	<simpleType name="CountryCodeType">
+		<annotation>
+			<documentation>ISO 3166-1 alpha 2 code </documentation>
+		</annotation>
+		<restriction base="string">
+			<enumeration value="AD">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ANDORRA</documentation>
+					<documentation source="Name" xml:lang="DE">Andorra</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">UNITED ARAB EMIRATES</documentation>
+					<documentation source="Name" xml:lang="DE">Vereinigte Arabische Emirate</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AF">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">AFGHANISTAN</documentation>
+					<documentation source="Name" xml:lang="DE">Afghanistan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ANTIGUA AND BARBUDA</documentation>
+					<documentation source="Name" xml:lang="DE">Antigua und Barbuda</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ANGUILLA</documentation>
+					<documentation source="Name" xml:lang="DE">Anguilla</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AL">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ALBANIA</documentation>
+					<documentation source="Name" xml:lang="DE">Albanien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ARMENIA</documentation>
+					<documentation source="Name" xml:lang="DE">Armenien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ANGOLA</documentation>
+					<documentation source="Name" xml:lang="DE">Angola</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AQ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ANTARCTICA</documentation>
+					<documentation source="Name" xml:lang="DE">Antarktis</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ARGENTINA</documentation>
+					<documentation source="Name" xml:lang="DE">Argentinien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">AMERICAN SAMOA</documentation>
+					<documentation source="Name" xml:lang="DE">Amerikanisch-Samoa</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">AUSTRIA</documentation>
+					<documentation source="Name" xml:lang="DE">Österreich</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AU">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">AUSTRALIA</documentation>
+					<documentation source="Name" xml:lang="DE">Australien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ARUBA</documentation>
+					<documentation source="Name" xml:lang="DE">Aruba</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AX">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">OLAND ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Olandinseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="AZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">AZERBAIJAN</documentation>
+					<documentation source="Name" xml:lang="DE">Aserbaidschan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BOSNIA AND HERZEGOVINA</documentation>
+					<documentation source="Name" xml:lang="DE">Bosnien und Herzegowina</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BB">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BARBADOS</documentation>
+					<documentation source="Name" xml:lang="DE">Barbados</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BD">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BANGLADESH</documentation>
+					<documentation source="Name" xml:lang="DE">Bangladesch</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BELGIUM</documentation>
+					<documentation source="Name" xml:lang="DE">Belgien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BF">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BURKINA FASO</documentation>
+					<documentation source="Name" xml:lang="DE">Burkina Faso</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BULGARIA</documentation>
+					<documentation source="Name" xml:lang="DE">Bulgarien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BH">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BAHRAIN</documentation>
+					<documentation source="Name" xml:lang="DE">Bahrain</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BURUNDI</documentation>
+					<documentation source="Name" xml:lang="DE">Burundi</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BJ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BENIN</documentation>
+					<documentation source="Name" xml:lang="DE">Benin</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BL">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAINT BARTOHLEMY</documentation>
+					<documentation source="Name" xml:lang="DE">St. Bartholemy</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BERMUDA</documentation>
+					<documentation source="Name" xml:lang="DE">Bermuda</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BRUNEI DARUSSALAM</documentation>
+					<documentation source="Name" xml:lang="DE">Brunei Darussalam</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BOLIVIA, PLURINATIONAL STATE OF</documentation>
+					<documentation source="Name" xml:lang="DE">Bolivien, Plurinationaler Staat</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BQ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BONAIRE, SINT EUSTATIUS AND SABA</documentation>
+					<documentation source="Name" xml:lang="DE">Bonaire, St. Eustatius und Saba</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BRAZIL</documentation>
+					<documentation source="Name" xml:lang="DE">Brasilien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BAHAMAS</documentation>
+					<documentation source="Name" xml:lang="DE">Bahamas</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BHUTAN</documentation>
+					<documentation source="Name" xml:lang="DE">Bhutan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BV">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BOUVET ISLAND</documentation>
+					<documentation source="Name" xml:lang="DE">Bouvetinsel</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BOTSWANA</documentation>
+					<documentation source="Name" xml:lang="DE">Botsuana</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BY">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BELARUS</documentation>
+					<documentation source="Name" xml:lang="DE">Belarus</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="BZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BELIZE</documentation>
+					<documentation source="Name" xml:lang="DE">Belize</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CANADA</documentation>
+					<documentation source="Name" xml:lang="DE">Kanada</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CC">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">COCOS (KEELING) ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Kokosinseln (Keeling)</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CD">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CONGO, THE DEMOCRATIC REPUBLIC OF THE</documentation>
+					<documentation source="Name" xml:lang="DE">Kongo, Demokratische Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CF">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CENTRAL AFRICAN REPUBLIC</documentation>
+					<documentation source="Name" xml:lang="DE">Zentralafrikanische Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CONGO</documentation>
+					<documentation source="Name" xml:lang="DE">Kongo</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CH">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SWITZERLAND</documentation>
+					<documentation source="Name" xml:lang="DE">Schweiz</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">COTE D'IVOIRE</documentation>
+					<documentation source="Name" xml:lang="DE">Cote d'Ivoire</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CK">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">COOK ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Cookinseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CL">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CHILE</documentation>
+					<documentation source="Name" xml:lang="DE">Chile</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CAMEROON</documentation>
+					<documentation source="Name" xml:lang="DE">Kamerun</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CHINA</documentation>
+					<documentation source="Name" xml:lang="DE">China</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">COLOMBIA</documentation>
+					<documentation source="Name" xml:lang="DE">Kolumbien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">COSTA RICA</documentation>
+					<documentation source="Name" xml:lang="DE">Costa Rica</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CU">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CUBA</documentation>
+					<documentation source="Name" xml:lang="DE">Kuba</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CV">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CAPE VERDE</documentation>
+					<documentation source="Name" xml:lang="DE">Capo Verde</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CURACAO</documentation>
+					<documentation source="Name" xml:lang="DE">Curacao</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CX">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CHRISTMAS ISLAND</documentation>
+					<documentation source="Name" xml:lang="DE">Weihnachtsinsel</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CY">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CYPRUS</documentation>
+					<documentation source="Name" xml:lang="DE">Zypern</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="CZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CZECH REPUBLIC</documentation>
+					<documentation source="Name" xml:lang="DE">Tschechische Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="DE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GERMANY</documentation>
+					<documentation source="Name" xml:lang="DE">Deutschland</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="DJ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">DJIBOUTI</documentation>
+					<documentation source="Name" xml:lang="DE">Dschibuti</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="DK">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">DENMARK</documentation>
+					<documentation source="Name" xml:lang="DE">Dänemark</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="DM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">DOMINICA</documentation>
+					<documentation source="Name" xml:lang="DE">Dominica</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="DO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">DOMINICAN REPUBLIC</documentation>
+					<documentation source="Name" xml:lang="DE">Dominikanische Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="DZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ALGERIA</documentation>
+					<documentation source="Name" xml:lang="DE">Algerien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="EC">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ECUADOR</documentation>
+					<documentation source="Name" xml:lang="DE">Ecuador</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="EE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ESTONIA</documentation>
+					<documentation source="Name" xml:lang="DE">Estland</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="EG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">EGYPT</documentation>
+					<documentation source="Name" xml:lang="DE">Ägypten</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="EH">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">WESTERN SAHARA</documentation>
+					<documentation source="Name" xml:lang="DE">Westsahara</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ER">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ERITREA</documentation>
+					<documentation source="Name" xml:lang="DE">Eritrea</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ES">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SPAIN</documentation>
+					<documentation source="Name" xml:lang="DE">Spanien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ET">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ETHIOPIA</documentation>
+					<documentation source="Name" xml:lang="DE">Äthiopien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="FI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">FINLAND</documentation>
+					<documentation source="Name" xml:lang="DE">Finnland</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="FJ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">FIJI</documentation>
+					<documentation source="Name" xml:lang="DE">Fidschi</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="FK">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">FALKLAND ISLANDS (MALVINAS)</documentation>
+					<documentation source="Name" xml:lang="DE">Falklandinseln (Malwinen)</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="FM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MICRONESIA, FEDERATED STATES OF</documentation>
+					<documentation source="Name" xml:lang="DE">Mikronesien, Föderierte Staaten von</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="FO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">FAROE ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Faroer</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="FR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">FRANCE</documentation>
+					<documentation source="Name" xml:lang="DE">Frankreich</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GABON</documentation>
+					<documentation source="Name" xml:lang="DE">Gabun</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GB">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">UNITED KINGDOM</documentation>
+					<documentation source="Name" xml:lang="DE">Vereinigtes Königreich</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GD">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GRENADA</documentation>
+					<documentation source="Name" xml:lang="DE">Grenada</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GEORGIA</documentation>
+					<documentation source="Name" xml:lang="DE">Georgien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GF">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">FRENCH GUIANA</documentation>
+					<documentation source="Name" xml:lang="DE">Französisch-Guayana</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GUERNSEY</documentation>
+					<documentation source="Name" xml:lang="DE">Guernsey</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GH">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GHANA</documentation>
+					<documentation source="Name" xml:lang="DE">Ghana</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GIBRALTAR</documentation>
+					<documentation source="Name" xml:lang="DE">Gibraltar</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GL">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GREENLAND</documentation>
+					<documentation source="Name" xml:lang="DE">Grönland</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GAMBIA</documentation>
+					<documentation source="Name" xml:lang="DE">Gambia</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GUINEA</documentation>
+					<documentation source="Name" xml:lang="DE">Guinea</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GP">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GUADELOUPE</documentation>
+					<documentation source="Name" xml:lang="DE">Guadeloupe</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GQ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">EQUATORIAL GUINEA</documentation>
+					<documentation source="Name" xml:lang="DE">Äquatorialguinea</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GREECE</documentation>
+					<documentation source="Name" xml:lang="DE">Griechenland</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SOUTH GEORGIA AND THE SOUTH SANDWICH ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Südgeorgien und die Südlichen Sandwichinseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GUATEMALA</documentation>
+					<documentation source="Name" xml:lang="DE">Guatemala</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GU">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GUAM</documentation>
+					<documentation source="Name" xml:lang="DE">Guam</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GUINEA-BISSAU</documentation>
+					<documentation source="Name" xml:lang="DE">Guinea-Bissau</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="GY">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">GUYANA</documentation>
+					<documentation source="Name" xml:lang="DE">Guyana</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="HK">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">HONG KONG</documentation>
+					<documentation source="Name" xml:lang="DE">Hongkong</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="HM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">HEARD ISLAND AND MCDONALD ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Heard und die McDonaldinseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="HN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">HONDURAS</documentation>
+					<documentation source="Name" xml:lang="DE">Honduras</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="HR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CROATIA</documentation>
+					<documentation source="Name" xml:lang="DE">Kroatien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="HT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">HAITI</documentation>
+					<documentation source="Name" xml:lang="DE">Haiti</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="HU">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">HUNGARY</documentation>
+					<documentation source="Name" xml:lang="DE">Ungarn</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ID">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">INDONESIA</documentation>
+					<documentation source="Name" xml:lang="DE">Indonesien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="IE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">IRELAND</documentation>
+					<documentation source="Name" xml:lang="DE">Irland</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="IL">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ISRAEL</documentation>
+					<documentation source="Name" xml:lang="DE">Israel</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="IM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ISLE OF MAN</documentation>
+					<documentation source="Name" xml:lang="DE">Insel Man</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="IN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">INDIA</documentation>
+					<documentation source="Name" xml:lang="DE">Indien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="IO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">BRITISH INDIAN OCEAN TERRITORY</documentation>
+					<documentation source="Name" xml:lang="DE">Britisches Territorium im Indischen Ozean</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="IQ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">IRAQ</documentation>
+					<documentation source="Name" xml:lang="DE">Irak</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="IR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">IRAN, ISLAMIC REPUBLIC OF</documentation>
+					<documentation source="Name" xml:lang="DE">Iran, Islamische Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="IS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ICELAND</documentation>
+					<documentation source="Name" xml:lang="DE">Island</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="IT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ITALY</documentation>
+					<documentation source="Name" xml:lang="DE">Italien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="JE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">JERSEY</documentation>
+					<documentation source="Name" xml:lang="DE">Jersey</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="JM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">JAMAICA</documentation>
+					<documentation source="Name" xml:lang="DE">Jamaika</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="JO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">JORDAN</documentation>
+					<documentation source="Name" xml:lang="DE">Jordanien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="JP">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">JAPAN</documentation>
+					<documentation source="Name" xml:lang="DE">Japan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">KENYA</documentation>
+					<documentation source="Name" xml:lang="DE">Kenia</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">KYRGYZSTAN</documentation>
+					<documentation source="Name" xml:lang="DE">Kirgisistan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KH">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CAMBODIA</documentation>
+					<documentation source="Name" xml:lang="DE">Kambodscha</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">KIRIBATI</documentation>
+					<documentation source="Name" xml:lang="DE">Kiribati</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">COMOROS</documentation>
+					<documentation source="Name" xml:lang="DE">Komoren</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAINT KITTS AND NEVIS</documentation>
+					<documentation source="Name" xml:lang="DE">St. Kitts und Nevis</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KP">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">KOREA, DEMOCRATIC PEOPLE'S REPUBLIC OF</documentation>
+					<documentation source="Name" xml:lang="DE">Korea, Demokratische Volksrepublik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">KOREA, REPUBLIC OF</documentation>
+					<documentation source="Name" xml:lang="DE">Korea, Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">KUWAIT</documentation>
+					<documentation source="Name" xml:lang="DE">Kuwait</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KY">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CAYMAN ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Kaymaninseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="KZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">KAZAKHSTAN</documentation>
+					<documentation source="Name" xml:lang="DE">Kasachstan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">LAO PEOPLE'S DEMOCRATIC REPUBLIC</documentation>
+					<documentation source="Name" xml:lang="DE">Laos, Demokratische Volksrepublik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LB">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">LEBANON</documentation>
+					<documentation source="Name" xml:lang="DE">Libanon</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LC">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAINT LUCIA</documentation>
+					<documentation source="Name" xml:lang="DE">St. Lucia</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">LIECHTENSTEIN</documentation>
+					<documentation source="Name" xml:lang="DE">Liechtenstein</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LK">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SRI LANKA</documentation>
+					<documentation source="Name" xml:lang="DE">Sri Lanka</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">LIBERIA</documentation>
+					<documentation source="Name" xml:lang="DE">Liberia</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">LESOTHO</documentation>
+					<documentation source="Name" xml:lang="DE">Lesotho</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">LITHUANIA</documentation>
+					<documentation source="Name" xml:lang="DE">Litauen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LU">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">LUXEMBOURG</documentation>
+					<documentation source="Name" xml:lang="DE">Luxemburg</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LV">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">LATVIA</documentation>
+					<documentation source="Name" xml:lang="DE">Lettland</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="LY">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">LIBYA</documentation>
+					<documentation source="Name" xml:lang="DE">Libyen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MOROCCO</documentation>
+					<documentation source="Name" xml:lang="DE">Marokko</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MC">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MONACO</documentation>
+					<documentation source="Name" xml:lang="DE">Monaco</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MD">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MOLDOVA</documentation>
+					<documentation source="Name" xml:lang="DE">Moldau</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ME">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MONTENEGRO</documentation>
+					<documentation source="Name" xml:lang="DE">Montenegro</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MF">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAINT MARTIN (FRENCH PART)</documentation>
+					<documentation source="Name" xml:lang="DE">St. Martin (französischer Teil)</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MADAGASCAR</documentation>
+					<documentation source="Name" xml:lang="DE">Madagaskar</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MH">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MARSHALL ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Marshallinseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MK">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MACEDONIA, THE FORMER YUGOSLAV REPUBLIC OF</documentation>
+					<documentation source="Name" xml:lang="DE">Mazedonien, die ehemalige jugoslawische Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ML">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MALI</documentation>
+					<documentation source="Name" xml:lang="DE">Mali</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MYANMAR</documentation>
+					<documentation source="Name" xml:lang="DE">Myanmar</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MONGOLIA</documentation>
+					<documentation source="Name" xml:lang="DE">Mongolei</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MACAO</documentation>
+					<documentation source="Name" xml:lang="DE">Macau</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MP">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NORTHERN MARIANA ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Marianen, Nördliche</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MQ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MARTINIQUE</documentation>
+					<documentation source="Name" xml:lang="DE">Martinique</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MAURITANIA</documentation>
+					<documentation source="Name" xml:lang="DE">Mauretanien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MONTSERRAT</documentation>
+					<documentation source="Name" xml:lang="DE">Montserrat</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MALTA</documentation>
+					<documentation source="Name" xml:lang="DE">Malta</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MU">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MAURITIUS</documentation>
+					<documentation source="Name" xml:lang="DE">Mauritius</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MV">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MALDIVES</documentation>
+					<documentation source="Name" xml:lang="DE">Malediven</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MALAWI</documentation>
+					<documentation source="Name" xml:lang="DE">Malawi</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MX">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MEXICO</documentation>
+					<documentation source="Name" xml:lang="DE">Mexiko</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MY">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MALAYSIA</documentation>
+					<documentation source="Name" xml:lang="DE">Malaysia</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="MZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MOZAMBIQUE</documentation>
+					<documentation source="Name" xml:lang="DE">Mosambik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NAMIBIA</documentation>
+					<documentation source="Name" xml:lang="DE">Namibia</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NC">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NEW CALEDONIA</documentation>
+					<documentation source="Name" xml:lang="DE">Neukaledonien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NIGER</documentation>
+					<documentation source="Name" xml:lang="DE">Niger</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NF">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NORFOLK ISLAND</documentation>
+					<documentation source="Name" xml:lang="DE">Norfolkinsel</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NIGERIA</documentation>
+					<documentation source="Name" xml:lang="DE">Nigeria</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NICARAGUA</documentation>
+					<documentation source="Name" xml:lang="DE">Nicaragua</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NL">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NETHERLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Niederlande</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NORWAY</documentation>
+					<documentation source="Name" xml:lang="DE">Norwegen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NP">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NEPAL</documentation>
+					<documentation source="Name" xml:lang="DE">Nepal</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NAURU</documentation>
+					<documentation source="Name" xml:lang="DE">Nauru</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NU">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NIUE</documentation>
+					<documentation source="Name" xml:lang="DE">Niue</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="NZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">NEW ZEALAND</documentation>
+					<documentation source="Name" xml:lang="DE">Neuseeland</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="OM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">OMAN</documentation>
+					<documentation source="Name" xml:lang="DE">Oman</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PANAMA</documentation>
+					<documentation source="Name" xml:lang="DE">Panama</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PERU</documentation>
+					<documentation source="Name" xml:lang="DE">Peru</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PF">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">FRENCH POLYNESIA</documentation>
+					<documentation source="Name" xml:lang="DE">Französisch-Polynesien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PAPUA NEW GUINEA</documentation>
+					<documentation source="Name" xml:lang="DE">Papua-Neuguinea</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PH">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PHILIPPINES</documentation>
+					<documentation source="Name" xml:lang="DE">Philippinen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PK">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PAKISTAN</documentation>
+					<documentation source="Name" xml:lang="DE">Pakistan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PL">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">POLAND</documentation>
+					<documentation source="Name" xml:lang="DE">Polen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAINT PIERRE AND MIQUELON</documentation>
+					<documentation source="Name" xml:lang="DE">St. Pierre und Miquelon</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PITCAIRN</documentation>
+					<documentation source="Name" xml:lang="DE">Pitcairninseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PUERTO RICO</documentation>
+					<documentation source="Name" xml:lang="DE">Puerto Rico</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PALESTINE, STATE OF</documentation>
+					<documentation source="Name" xml:lang="DE">Palestine, State of</documentation>
+					<documentation source="Desc" xml:lang="DE">
+AT, CH, DE: Es gibt keinen deutschen Ländernamen (weder Kurzbezeichnung noch amtliche Vollform) für diesen Eintrag.
+DE: Die Bundesrepublik Deutschland erkennt einen palästinensischen Staat nicht an.
+          </documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PORTUGAL</documentation>
+					<documentation source="Name" xml:lang="DE">Portugal</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PALAU</documentation>
+					<documentation source="Name" xml:lang="DE">Palau</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="PY">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">PARAGUAY</documentation>
+					<documentation source="Name" xml:lang="DE">Paraguay</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="QA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">QATAR</documentation>
+					<documentation source="Name" xml:lang="DE">Katar</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="RE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">REUNION</documentation>
+					<documentation source="Name" xml:lang="DE">Reunion</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="RO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ROMANIA</documentation>
+					<documentation source="Name" xml:lang="DE">Rumänien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="RS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SERBIA</documentation>
+					<documentation source="Name" xml:lang="DE">Serbien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="RU">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">RUSSIAN FEDERATION</documentation>
+					<documentation source="Name" xml:lang="DE">Russische Föderation</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="RW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">RWANDA</documentation>
+					<documentation source="Name" xml:lang="DE">Ruanda</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAUDI ARABIA</documentation>
+					<documentation source="Name" xml:lang="DE">Saudi-Arabien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SB">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SOLOMON ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Salomonen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SC">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SEYCHELLES</documentation>
+					<documentation source="Name" xml:lang="DE">Seychellen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SD">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SUDAN</documentation>
+					<documentation source="Name" xml:lang="DE">Sudan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SWEDEN</documentation>
+					<documentation source="Name" xml:lang="DE">Schweden</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SINGAPORE</documentation>
+					<documentation source="Name" xml:lang="DE">Singapur</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SH">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAINT HELENA, ASCENSION AND TRISTAN DA CUNHA</documentation>
+					<documentation source="Name" xml:lang="DE">St. Helena, Ascension und Tristan da Cunha</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SLOVENIA</documentation>
+					<documentation source="Name" xml:lang="DE">Slowenien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SJ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SVALBARD AND JAN MAYEN</documentation>
+					<documentation source="Name" xml:lang="DE">Svalbard und Jan Mayen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SK">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SLOVAKIA</documentation>
+					<documentation source="Name" xml:lang="DE">Slowakei</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SL">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SIERRA LEONE</documentation>
+					<documentation source="Name" xml:lang="DE">Sierra Leone</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAN MARINO</documentation>
+					<documentation source="Name" xml:lang="DE">San Marino</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SENEGAL</documentation>
+					<documentation source="Name" xml:lang="DE">Senegal</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SOMALIA</documentation>
+					<documentation source="Name" xml:lang="DE">Somalia</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SURINAME</documentation>
+					<documentation source="Name" xml:lang="DE">Suriname</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SOUTH SUDAN</documentation>
+					<documentation source="Name" xml:lang="DE">Südsudan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ST">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAO TOME AND PRINCIPE</documentation>
+					<documentation source="Name" xml:lang="DE">Sao Tome und Principe</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SV">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">EL SALVADOR</documentation>
+					<documentation source="Name" xml:lang="DE">El Salvador</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SX">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SINT MAARTEN (DUTCH PART)</documentation>
+					<documentation source="Name" xml:lang="DE">St. Martin (niederländischer Teil)</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SY">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SYRIAN ARAB REPUBLIC</documentation>
+					<documentation source="Name" xml:lang="DE">Syrien, Arabische Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="SZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SWAZILAND</documentation>
+					<documentation source="Name" xml:lang="DE">Swasiland</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TC">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TURKS AND CAICOS ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Turks- und Caicosinseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TD">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">CHAD</documentation>
+					<documentation source="Name" xml:lang="DE">Tschad</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TF">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">FRENCH SOUTHERN TERRITORIES</documentation>
+					<documentation source="Name" xml:lang="DE">Französische Süd- und Antarktisgebiete</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TOGO</documentation>
+					<documentation source="Name" xml:lang="DE">Togo</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TH">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">THAILAND</documentation>
+					<documentation source="Name" xml:lang="DE">Thailand</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TJ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TAJIKISTAN</documentation>
+					<documentation source="Name" xml:lang="DE">Tadschikistan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TK">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TOKELAU</documentation>
+					<documentation source="Name" xml:lang="DE">Tokelau</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TL">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TIMOR-LESTE</documentation>
+					<documentation source="Name" xml:lang="DE">Timor-Leste</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TURKMENISTAN</documentation>
+					<documentation source="Name" xml:lang="DE">Turkmenistan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TUNISIA</documentation>
+					<documentation source="Name" xml:lang="DE">Tunesien</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TO">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TONGA</documentation>
+					<documentation source="Name" xml:lang="DE">Tonga</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TR">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TURKEY</documentation>
+					<documentation source="Name" xml:lang="DE">Türkei</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TRINIDAD AND TOBAGO</documentation>
+					<documentation source="Name" xml:lang="DE">Trinidad und Tobago</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TV">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TUVALU</documentation>
+					<documentation source="Name" xml:lang="DE">Tuvalu</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TAIWAN, PROVINCE OF CHINA</documentation>
+					<documentation source="Name" xml:lang="DE">Taiwan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="TZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">TANZANIA, UNITED REPUBLIC OF</documentation>
+					<documentation source="Name" xml:lang="DE">Tansania, Vereinigte Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="UA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">UKRAINE</documentation>
+					<documentation source="Name" xml:lang="DE">Ukraine</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="UG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">UGANDA</documentation>
+					<documentation source="Name" xml:lang="DE">Uganda</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="UM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">UNITED STATES MINOR OUTLYING ISLANDS</documentation>
+					<documentation source="Name" xml:lang="DE">Amerikanische Überseeinseln, Kleinere</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="US">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">UNITED STATES</documentation>
+					<documentation source="Name" xml:lang="DE">Vereinigte Staaten</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="UY">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">URUGUAY</documentation>
+					<documentation source="Name" xml:lang="DE">Uruguay</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="UZ">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">UZBEKISTAN</documentation>
+					<documentation source="Name" xml:lang="DE">Usbekistan</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="VA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">HOLY SEE (VATICAN CITY STATE)</documentation>
+					<documentation source="Name" xml:lang="DE">Heiliger Stuhl (Vatikanstadt)</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="VC">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAINT VINCENT AND THE GRENADINES</documentation>
+					<documentation source="Name" xml:lang="DE">St. Vincent und die Grenadinen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="VE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">VENEZUELA, BOLIVARIAN REPUBLIC OF</documentation>
+					<documentation source="Name" xml:lang="DE">Venezuela, Bolivarische Republik</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="VG">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">VIRGIN ISLANDS, BRITISH</documentation>
+					<documentation source="Name" xml:lang="DE">Britische Jungferninseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="VI">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">VIRGIN ISLANDS, U.S.</documentation>
+					<documentation source="Name" xml:lang="DE">Amerikanische Jungferninseln</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="VN">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">VIET NAM</documentation>
+					<documentation source="Name" xml:lang="DE">Vietnam</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="VU">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">VANUATU</documentation>
+					<documentation source="Name" xml:lang="DE">Vanuatu</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="WF">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">WALLIS AND FUTUNA</documentation>
+					<documentation source="Name" xml:lang="DE">Wallis und Futuna</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="WS">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SAMOA</documentation>
+					<documentation source="Name" xml:lang="DE">Samoa</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="YE">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">YEMEN</documentation>
+					<documentation source="Name" xml:lang="DE">Jemen</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="YT">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">MAYOTTE</documentation>
+					<documentation source="Name" xml:lang="DE">Mayotte</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ZA">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">SOUTH AFRICA</documentation>
+					<documentation source="Name" xml:lang="DE">Südafrika</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ZM">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ZAMBIA</documentation>
+					<documentation source="Name" xml:lang="DE">Sambia</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="ZW">
+				<annotation>
+					<documentation source="Name" xml:lang="EN">ZIMBABWE</documentation>
+					<documentation source="Name" xml:lang="DE">Simbabwe</documentation>
+				</annotation>
+			</enumeration>
+		</restriction>
+	</simpleType>
+	<complexType name="InboundFileSettingsType">
+		<annotation>
+			<documentation>Settings for file transfers</documentation>
+		</annotation>
+		<sequence>
+			<element name="FileSignature" type="ocs:SupportInfoTypeNoCertificate" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Information if file signatures are supported and/or required</documentation>
+				</annotation>
+			</element>
+			<element name="FileEncryption" type="ocs:SupportInfoType" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Information if file encryption is supported and/or required</documentation>
+				</annotation>
+			</element>
+			<element name="FileCompression" type="ocs:SupportInfoTypeNoCertificate" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Information if file compression is supported and/or required</documentation>
+				</annotation>
+			</element>
+			<element name="EERPSignature" type="ocs:SupportInfoType" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Information if a signed EERP is supported and/or required</documentation>
+				</annotation>
+			</element>
+		</sequence>
+	</complexType>
+	<complexType name="OutboundFileSettingsType">
+		<annotation>
+			<documentation>Settings for file transfers</documentation>
+		</annotation>
+		<sequence>
+			<element name="FileSignature" type="ocs:SupportInfoType" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Information if file signatures are supported and/or required</documentation>
+				</annotation>
+			</element>
+			<element name="FileEncryption" type="ocs:SupportInfoTypeNoCertificate" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Information if file encryption is supported and/or required</documentation>
+				</annotation>
+			</element>
+			<element name="FileCompression" type="ocs:SupportInfoTypeNoCertificate" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Information if file compression is supported and/or required</documentation>
+				</annotation>
+			</element>
+			<element name="EERPSignature" type="ocs:SupportInfoTypeNoCertificate" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Information if a signed EERP is supported and/or required</documentation>
+				</annotation>
+			</element>
+		</sequence>
+	</complexType>
+	<complexType name="InboundCommunicationSettingsType">
+		<annotation>
+			<documentation>Network settings for inbound communication (connections to the station described in this document)</documentation>
+		</annotation>
+		<sequence>
+			<element name="InboundConnectionSettings" type="ocs:InboundConnectionSettingType" minOccurs="1" maxOccurs="unbounded"/>
+		</sequence>
+	</complexType>
+	<complexType name="InboundConnectionSettingType">
+		<annotation>
+			<documentation>Network connection settings for a particular connection-type</documentation>
+		</annotation>
+		<complexContent>
+			<extension base="ocs:ConnectionSettingType">
+				<sequence>
+					<element name="ServerHost" type="string" minOccurs="1" maxOccurs="1">
+						<annotation>
+							<documentation>The server hostname or IP-address to connect to</documentation>
+						</annotation>
+					</element>
+					<element name="ServerPort" minOccurs="1" maxOccurs="1">
+						<annotation>
+							<documentation>The port to connect to</documentation>
+						</annotation>
+						<simpleType>
+							<restriction base="int">
+								<maxInclusive value="65535"/>
+								<minInclusive value="1"/>
+							</restriction>
+						</simpleType>
+					</element>
+					<element name="CertificateRef" type="ocs:CertificateRefType" minOccurs="0" maxOccurs="1">
+						<annotation>
+							<documentation>(where applicable) The certificate being used as server certificate when being connected using TLS</documentation>
+						</annotation>
+					</element>
+					<element name="TLSClientAuth" type="ocs:SupportInfoTypeNoCertificate" minOccurs="0" maxOccurs="1">
+						<annotation>
+							<documentation>(where applicable) The information if the server supports and/or requires TLS client authentication</documentation>
+						</annotation>
+					</element>
+				</sequence>
+			</extension>
+		</complexContent>
+	</complexType>
+	<simpleType name="OdetteIDType">
+		<restriction base="string">
+			<minLength value="1"/>
+			<maxLength value="25"/>
+		</restriction>
+	</simpleType>
+	<complexType name="OftpCommunicationSetupType">
+		<annotation>
+			<documentation>Each setup file shall contain the complete information of the station(s). A new file replaces the previous settings completely. </documentation>
+		</annotation>
+		<sequence>
+			<element name="StationInformation" type="ocs:StationInfoType" minOccurs="1" maxOccurs="1"/>
+			<element name="InboundCommunicationSettings" type="ocs:InboundCommunicationSettingsType" minOccurs="0" maxOccurs="1"/>
+			<element name="OutboundCommunicationSettings" type="ocs:OutboundCommunicationSettingsType" minOccurs="0" maxOccurs="1"/>
+			<element name="CipherSetting" type="ocs:CipherSettingType" minOccurs="0" maxOccurs="1"/>
+			<element name="SessionSettings" type="ocs:SessionSettingsType" maxOccurs="1"/>
+			<element name="OutboundFileSettings" type="ocs:OutboundFileSettingsType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>
+  				Information about security settings on file level for
+  				outgoing files (i.e. files being sent by the station
+  				described in this document).
+
+  				If file signature is set to be supported and/or
+  				required, the corresponding certificate being used
+  				must be provided.
+  			</documentation>
+				</annotation>
+			</element>
+			<element name="InboundFileSettings" type="ocs:InboundFileSettingsType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>
+  				Information about security settings on file level for
+  				incoming files (i.e. files being received by the
+  				station described in this document).
+
+  				If file encryption is set to be supported and/or
+  				required, the corresponding certificate being used
+  				must be provided. If EERP signature is set to be
+  				supported and/or required, the corresponding
+  				certificate being used must be provided.
+  			</documentation>
+				</annotation>
+			</element>
+			<element name="OutboundDsnList" type="ocs:DsnPatternListType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>List of SFIDDSN pattern that are send out from this SubStation.
+It is not needed to list the build in DSNs for OFTP2 certificate exchange (ODETTE_CERTIFICATE_REQUEST, ODETTE_CERTIFICATE_DELIVER, ODETTE_CERTIFICATE_REPLACE) and for setup exchange (OFTPCOMMUNICATIONSETUP), because they should generally be present in every OFTP2 system.</documentation>
+				</annotation>
+			</element>
+			<element name="InboundDsnList" type="ocs:DsnPatternListType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>List of SFIDDSN pattern that will be accepted from this SubStation.
+It is not needed to list the build in DSNs for OFTP2 certificate exchange (ODETTE_CERTIFICATE_REQUEST, ODETTE_CERTIFICATE_DELIVER, ODETTE_CERTIFICATE_REPLACE) and for setup exchange (OFTPCOMMUNICATIONSETUP), because they should generally be present in every OFTP2 system.</documentation>
+				</annotation>
+			</element>
+			<element name="SubStations" type="ocs:SubStationsType" minOccurs="0" maxOccurs="1"/>
+			<element name="Certificates" type="ocs:CertificatesType" minOccurs="0" maxOccurs="1"/>
+		</sequence>
+		<attribute name="version" use="required">
+			<annotation>
+				<documentation>Version of the schema specification</documentation>
+			</annotation>
+			<simpleType>
+				<restriction base="string">
+					<enumeration value="1.2"/>
+				</restriction>
+			</simpleType>
+		</attribute>
+		<attribute name="docid" use="required">
+			<annotation>
+				<documentation>Unique ID of the document</documentation>
+			</annotation>
+			<simpleType>
+				<restriction base="ocs:UUID"/>
+			</simpleType>
+		</attribute>
+		<attribute name="docdate" type="ocs:dateTimeTZ" use="required">
+			<annotation>
+				<documentation>Creation date and time of this particular document</documentation>
+				<documentation source="Remark">It is recommended to check that the date/time of a setup file intended to be imported into a system is more recent as the previously imported information.</documentation>
+			</annotation>
+		</attribute>
+		<attribute name="validfrom" use="required">
+			<annotation>
+				<documentation>The date and time these settings should take effect.</documentation>
+			</annotation>
+			<simpleType>
+				<restriction base="ocs:dateTimeTZ"/>
+			</simpleType>
+		</attribute>
+	</complexType>
+	<complexType name="OutboundCommunicationSettingsType">
+		<annotation>
+			<documentation>Network settings for outbound communication (connections from the station described in this document)</documentation>
+		</annotation>
+		<sequence>
+			<element name="OutboundConnectionSettings" type="ocs:OutboundConnectionSettingType" minOccurs="1" maxOccurs="unbounded"/>
+		</sequence>
+	</complexType>
+	<complexType name="OutboundConnectionSettingType">
+		<annotation>
+			<documentation>Network connection settings for a particular connection-type</documentation>
+		</annotation>
+		<complexContent>
+			<extension base="ocs:ConnectionSettingType">
+				<sequence>
+					<element name="OutboundIP" type="string" minOccurs="0" maxOccurs="unbounded">
+						<annotation>
+							<documentation>An IP-address to be expected when this server is performing outbound network connections</documentation>
+						</annotation>
+					</element>
+					<element name="TLSClientAuth" type="ocs:SupportInfoType" minOccurs="0" maxOccurs="1">
+						<annotation>
+							<documentation>
+Information if TLS client authentication is supported and/or required when setting up TLS connections.
+
+If TLS client authentication is set to be supported and/or required, the used certificate must be provided.
+              </documentation>
+						</annotation>
+					</element>
+				</sequence>
+			</extension>
+		</complexContent>
+	</complexType>
+	<simpleType name="ProtocolReleaseLevelType">
+		<annotation>
+			<documentation>Release version of the OFTP protocol</documentation>
+		</annotation>
+		<restriction base="string">
+			<minLength value="1"/>
+			<enumeration value="1">
+				<annotation>
+					<documentation source="Name">OFTP V1.2</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="2">
+				<annotation>
+					<documentation source="Name">OFTP V1.3</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="4">
+				<annotation>
+					<documentation source="Name">OFTP V1.4</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="5">
+				<annotation>
+					<documentation source="Name">OFTP V2.0</documentation>
+				</annotation>
+			</enumeration>
+		</restriction>
+	</simpleType>
+	<complexType name="SessionSettingsType">
+		<annotation>
+			<documentation>Settings for session setup</documentation>
+		</annotation>
+		<sequence>
+			<element name="OdetteIDCodeSSID" type="ocs:OdetteIDType" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>The Odette ID of this station being used during session setup (SSID). This can be a gateway as well.</documentation>
+				</annotation>
+			</element>
+			<element name="MinimumProtocolReleaseLevel" type="ocs:ProtocolReleaseLevelType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>
+The minimum protocol release level this station
+                        expects
+          </documentation>
+				</annotation>
+			</element>
+			<element name="MaximumProtocolReleaseLevel" type="ocs:ProtocolReleaseLevelType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>
+The maximum protocol release level this station
+                        supports
+          </documentation>
+				</annotation>
+			</element>
+			<element name="Password" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>
+This element is not part of the base information
+                        document, provided by a repository system but
+                        only intended for direct exchange between peers.
+          </documentation>
+				</annotation>
+				<simpleType>
+					<restriction base="string">
+						<minLength value="0"/>
+						<maxLength value="8"/>
+					</restriction>
+				</simpleType>
+			</element>
+			<element name="SecureAuthentication" type="ocs:SupportInfoType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>
+Information if this station supports and/or
+                        requires Secure Authentication.
+          </documentation>
+				</annotation>
+			</element>
+		</sequence>
+	</complexType>
+	<complexType name="StationInfoType">
+		<annotation>
+			<documentation>Main information about the station this document describes</documentation>
+		</annotation>
+		<sequence>
+			<element name="DUNS" type="string" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>The DUNS identifier if available</documentation>
+				</annotation>
+			</element>
+			<element name="Name" type="string" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>The name of the station</documentation>
+					<documentation source="Example">ACME Inc. -EDI</documentation>
+				</annotation>
+			</element>
+			<element name="CompanyInfo" type="ocs:CompanyInfoType" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation/>
+				</annotation>
+			</element>
+			<element name="IssuerIDCode" type="ocs:OdetteIDType" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>The Odette ID of the issuer of this file. </documentation>
+				</annotation>
+			</element>
+			<element name="InfoDocumentURL" type="anyURI" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>Additional information about this station, e.g. naming schemes for virtual filenames, etc.</documentation>
+				</annotation>
+			</element>
+			<element name="Contacts" type="ocs:ContactsType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation/>
+				</annotation>
+			</element>
+		</sequence>
+	</complexType>
+	<complexType name="SubStationInfoType">
+		<annotation>
+			<documentation>Information about a particular sub station</documentation>
+		</annotation>
+		<sequence>
+			<element name="Name" type="string" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>
+  				A describing name of the sub station
+  			</documentation>
+				</annotation>
+			</element>
+			<element name="OdetteIDCodeSFID" type="ocs:OdetteIDType" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>
+  				The Odette ID of this sub station being used during
+  				file exchange (SFID)
+  			</documentation>
+				</annotation>
+			</element>
+			<element name="OutboundFileSettings" type="ocs:OutboundFileSettingsType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>
+  				File security settings for outbound files if they
+  				differ from the main settings
+  			</documentation>
+				</annotation>
+			</element>
+			<element name="InboundFileSettings" type="ocs:InboundFileSettingsType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>
+  				File security settings for inbound files if they
+  				differ from the main settings
+  			</documentation>
+				</annotation>
+			</element>
+			<element name="OutboundDsnList" type="ocs:DsnPatternListType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>List of SFIDDSN pattern that are send out from the system.
+It is not needed to list the build in DSNs for OFTP2 certificate exchange (ODETTE_CERTIFICATE_REQUEST, ODETTE_CERTIFICATE_DELIVER, ODETTE_CERTIFICATE_REPLACE) and for setup exchange (OFTPCOMMUNICATIONSETUP), because they should generally be present in every OFTP2 system.</documentation>
+				</annotation>
+			</element>
+			<element name="InboundDsnList" type="ocs:DsnPatternListType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>List of SFIDDSN pattern that will be accepted from the system.
+It is not needed to list the build in DSNs for OFTP2 certificate exchange (ODETTE_CERTIFICATE_REQUEST, ODETTE_CERTIFICATE_DELIVER, ODETTE_CERTIFICATE_REPLACE) and for setup exchange (OFTPCOMMUNICATIONSETUP), because they should generally be present in every OFTP2 system.</documentation>
+				</annotation>
+			</element>
+			<element name="CipherSetting" type="ocs:CipherSettingType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>
+  				Cipher suite settings if they differ from the main
+  				settings
+  			</documentation>
+				</annotation>
+			</element>
+			<element name="Contacts" type="ocs:ContactsType" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation/>
+				</annotation>
+			</element>
+		</sequence>
+	</complexType>
+	<complexType name="SubStationsType">
+		<annotation>
+			<documentation>Informations about sub stations (if any) and different file-security-settings</documentation>
+		</annotation>
+		<sequence>
+			<element name="SubStationInformation" type="ocs:SubStationInfoType" minOccurs="1" maxOccurs="unbounded"/>
+		</sequence>
+	</complexType>
+	<complexType name="SupportInfoType">
+		<annotation>
+			<documentation>
+supported = true, required = true =&gt; mandatory
+supported = true, required = false =&gt; optional 
+supported = false, required = false  =&gt; not used
+supported = false, required = true =&gt;</documentation>
+		</annotation>
+		<sequence>
+			<element name="CertificateRef" type="ocs:CertificateRefType" minOccurs="0" maxOccurs="unbounded">
+				<annotation>
+					<documentation>Reference name of the certificate to be used for this function </documentation>
+				</annotation>
+			</element>
+		</sequence>
+		<attribute name="usage" type="ocs:UsageCodeType" use="required">
+			<annotation>
+				<documentation>Indicates, whether a function is supported, mandatory to be used or forbidden, and defines the certificates to be used.</documentation>
+			</annotation>
+		</attribute>
+	</complexType>
+	<complexType name="SupportInfoTypeNoCertificate">
+		<annotation>
+			<documentation>
+        supported = true, required = true =&gt; mandatory
+        supported = true, required = false =&gt; optional
+        supported = false, required = false  =&gt; not used
+        supported = false, required = true =&gt;</documentation>
+		</annotation>
+		<attribute name="usage" type="ocs:UsageCodeType" use="required">
+			<annotation>
+				<documentation>Indicates, whether a function is supported, mandatory to be used or forbidden.</documentation>
+			</annotation>
+		</attribute>
+	</complexType>
+	<simpleType name="TLSVersionType">
+		<restriction base="string">
+			<enumeration value="TLSv1.0"/>
+			<enumeration value="TLSv1.1"/>
+			<enumeration value="TLSv1.2"/>
+			<enumeration value="TLSv1.3"/>
+		</restriction>
+	</simpleType>
+	<simpleType name="UsageCodeType">
+		<restriction base="string">
+			<enumeration value="forbidden">
+				<annotation>
+					<documentation source="Name">Must not be used</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="optional">
+				<annotation>
+					<documentation source="Name">Optional, default off</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="preferred">
+				<annotation>
+					<documentation source="Name">Optional, but should be used, if possible</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="required">
+				<annotation>
+					<documentation source="Name">Always mandatory</documentation>
+				</annotation>
+			</enumeration>
+		</restriction>
+	</simpleType>
+	<complexType name="DsnPatternListType">
+		<sequence>
+			<element name="dsn" type="ocs:DsnPatternType" minOccurs="1" maxOccurs="unbounded"/>
+		</sequence>
+	</complexType>
+	<complexType name="DsnPatternType">
+		<sequence>
+			<element name="pattern" type="string" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Regular expression pattern for field SFIDDSN
+(see RFC 5024 section 5.3.3.  SFID - Start File field SFIDDSN)
+
+Regular expression syntax is PCRE (Perl Compatible Regular Expressions)
+with character classes Perl/TCL and ASICII (e.g. see: https://en.wikipedia.org/wiki/Regular_expression#Character_classes )
+If you use named groups: Use only simple group names without - _  (Syntax for group name: /w+)  
+     </documentation>
+				</annotation>
+			</element>
+			<element name="fileFormat" type="ocs:FileFormatType" minOccurs="1" maxOccurs="1"/>
+			<element name="maximumRecordSize" type="int" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>See RFC 5024 section 5.3.3. SFID - Start File field SFIDLRECL
+for record based formats.
+      </documentation>
+				</annotation>
+			</element>
+			<element name="descriptionShort" minOccurs="1" maxOccurs="1">
+				<annotation>
+					<documentation>Short description of the DSN pattern and business process.
+Can be used optionally for displaying DSN information in OFTP software during the import/export process.
+   		</documentation>
+				</annotation>
+				<simpleType>
+					<restriction base="string">
+						<maxLength value="120"/>
+					</restriction>
+				</simpleType>
+			</element>
+			<element name="descriptionLong" type="string" minOccurs="0" maxOccurs="1">
+				<annotation>
+					<documentation>Long description of the DSN pattern and business process,
+e.g. for EDI with information about the EDI messages and formats, 
+what format or message syntax will be used when sending, or what is expected on receiving.
+Can also being used for information about the structure of the pattern and how to build the SFIDDSN, or  links to additional external documentation (e.g. links to OEMs supplier portals).
+All the content can be used optionally for displaying additional DSN information in OFTP software during the import/export process.
+This way, the user can be supported during setup a connection.
+
+Additonal notes/recommendations:
+If regular expression groups are used to define variables, which has to be set during the onboarding process, it is recommended to use named regular expressions groups.
+With these named regular expressions groups, OFTP software vendors can implement features to generate computer dialogs that query these values during setup.
+Hint: Use group names without spaces, hyphen and underscores, just \w+. (see example I-CommunicationSetup.xml)
+     </documentation>
+				</annotation>
+			</element>
+		</sequence>
+	</complexType>
+	<simpleType name="FileFormatType">
+		<annotation>
+			<documentation>see RFC 5024 section 5.3.3. SFID - Start File field SFIDFMT
+   </documentation>
+		</annotation>
+		<restriction base="string">
+			<enumeration value="F">
+				<annotation>
+					<documentation>Fixed format binary file</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="V">
+				<annotation>
+					<documentation>Variable format binary file</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="U">
+				<annotation>
+					<documentation>Unstructured binary file</documentation>
+				</annotation>
+			</enumeration>
+			<enumeration value="T">
+				<annotation>
+					<documentation>Text</documentation>
+				</annotation>
+			</enumeration>
+		</restriction>
+	</simpleType>
+	<simpleType name="UUID">
+		<restriction base="normalizedString">
+			<pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+		</restriction>
+	</simpleType>
+</schema>

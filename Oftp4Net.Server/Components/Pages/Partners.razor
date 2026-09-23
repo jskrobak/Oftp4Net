@@ -8,6 +8,7 @@
 @using Oftp4Net.Services.Security
 @using Oftp4Net.Services.Import
 @using Oftp4Net.Core.Protocol
+@using Oftp4Net.Services.Pdx
 <style>
     .scrollable-table-container {
         overflow: auto;
@@ -136,13 +137,25 @@
                                 Hint="The partner is asked to sign the End to End Response of our files."
                                 @bind-Value="@currentPartner.RequestSignedEndResponse" />
 
+                    <HxCheckbox Label="Require signed files from the partner"
+                                Hint="Files received from the partner have to be signed."
+                                @bind-Value="@currentPartner.RequireSignedFiles" />
+
+                    <HxCheckbox Label="Require encrypted files from the partner"
+                                Hint="Files received from the partner have to be encrypted for our file security certificate."
+                                @bind-Value="@currentPartner.RequireEncryptedFiles" />
+
+                    <HxCheckbox Label="Require compressed files from the partner"
+                                Hint="Files received from the partner have to be compressed."
+                                @bind-Value="@currentPartner.RequireCompressedFiles" />
+
                     @if (FileSecurityConfigured)
                     {
                         <HxSelect TItem="CipherSuite"
                                   TValue="string"
                                   Label="Cipher suite"
                                   Hint="Used for signatures, encryption and hashes. Suites 01 and 02 are supported by every OFTP2 node."
-                                  Data="CipherSuite.All"
+                                  Data="CipherSuite.Supported"
                                   @bind-Value="@currentPartner.FileCipherSuite"
                                   TextSelector="@(s => $"{s.Code} - {s.Name}")"
                                   ValueSelector="@(s => s.Code)"
@@ -158,6 +171,76 @@
                                   ValueSelector="@(c => c.Id)"
                                   Nullable="true"
                                   NullText="-none-" />
+                    }
+
+                    @if (openSetups.Where(d => d.PartnerId == currentPartner.Id && currentPartner.Id != 0).ToList() is { Count: > 0 } partnerSetups)
+                    {
+                        <HxAlert Color="ThemeColor.Info" CssClass="py-2 small">
+                            @foreach (var setup in partnerSetups)
+                            {
+                                <div>
+                                    Datasheet of @setup.Created.ToString("g"):
+                                    @(setup.Status switch
+                                    {
+                                        PartnerSetupStatus.PendingApproval => "waits for approval",
+                                        PartnerSetupStatus.Scheduled => $"is applied at {setup.ValidFrom:g}",
+                                        _ => "is applied after its EERP",
+                                    })
+                                    – <a href="PartnerSetups">Partner setups</a>
+                                </div>
+                            }
+                        </HxAlert>
+                    }
+
+                    @if (HasSetupDetails(currentPartner))
+                    {
+                        <hr />
+                        <h6>From the OFTP2 Communication Setup</h6>
+                        <dl class="row small mb-2 text-break">
+                            @if (currentPartner.SetupAppliedDate is { } applied)
+                            {
+                                <dt class="col-sm-4">Datasheet</dt>
+                                <dd class="col-sm-8">@currentPartner.SetupDocumentId, created @currentPartner.SetupDocumentDate?.ToString("g"), applied @applied.ToString("g")</dd>
+                            }
+                            @if (!string.IsNullOrEmpty(currentPartner.CompanyName))
+                            {
+                                <dt class="col-sm-4">Company</dt>
+                                <dd class="col-sm-8" style="white-space: pre-line;">@CompanyText(currentPartner)</dd>
+                            }
+                            @if (!string.IsNullOrEmpty(currentPartner.InfoDocumentUrl))
+                            {
+                                <dt class="col-sm-4">Info document</dt>
+                                <dd class="col-sm-8"><a href="@currentPartner.InfoDocumentUrl" target="_blank" rel="noopener">@currentPartner.InfoDocumentUrl</a></dd>
+                            }
+                            @if (availableCertificates.FirstOrDefault(c => c.Id == currentPartner.PreviousSecurityCertificateId) is { } previous)
+                            {
+                                <dt class="col-sm-4">Previous certificate</dt>
+                                <dd class="col-sm-8">@previous.Name (valid to @previous.ValidTo.ToString("d"))</dd>
+                            }
+                            @foreach (var contact in currentPartner.Contacts ?? [])
+                            {
+                                <dt class="col-sm-4">Contact</dt>
+                                <dd class="col-sm-8"><PartnerContactView Contact="contact" /></dd>
+                            }
+                            @foreach (var sub in currentPartner.SubStations ?? [])
+                            {
+                                <dt class="col-sm-4">Sub-station</dt>
+                                <dd class="col-sm-8">
+                                    @sub.Name (@sub.SFID)
+                                    <div class="text-body-secondary">@SubStationText(sub)</div>
+                                    @foreach (var contact in sub.Contacts)
+                                    {
+                                        <PartnerContactView Contact="contact" />
+                                    }
+                                </dd>
+                            }
+                            @foreach (var dsn in (currentPartner.InboundDsnPatterns ?? []).Select(d => ("receives", d))
+                                          .Concat((currentPartner.OutboundDsnPatterns ?? []).Select(d => ("sends", d))))
+                            {
+                                <dt class="col-sm-4">Partner @dsn.Item1</dt>
+                                <dd class="col-sm-8"><code>@dsn.Item2.Pattern</code> (@dsn.Item2.FileFormat) @dsn.Item2.Description</dd>
+                            }
+                        </dl>
                     }
 
                     <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
@@ -245,6 +328,109 @@
     </BodyTemplate>
 </HxModal>
 
+<HxModal @ref="datasheetModal" ShowCloseButton="true" Size="ModalSize.Large">
+    <HeaderTemplate>
+        Send our OFTP2 Communication Setup (PDX)
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (datasheetPartner is not null && datasheetIdentities is not null)
+        {
+            <OwnDatasheet Identities="datasheetIdentities" Partner="datasheetPartner" OnSent="() => datasheetModal.HideAsync()" />
+        }
+    </BodyTemplate>
+</HxModal>
+
+<HxModal @ref="pdxModal" ShowCloseButton="true" Size="ModalSize.Large">
+    <HeaderTemplate>
+        Import OFTP2 Communication Setup (PDX)
+    </HeaderTemplate>
+    <BodyTemplate>
+        <p class="small text-body-secondary">
+            The datasheet of a partner (XML, Odette OFTP2 Communication Setup). A partner with the same SSID is updated,
+            otherwise a new partner is created. The settings are compared with the station profile in the settings.
+        </p>
+        <InputFile class="form-control" accept=".xml,text/xml,application/xml" OnChange="HandlePdxFileSelected" />
+
+        @if (pdxLoading)
+        {
+            <div class="mt-3"><HxSpinner Size="SpinnerSize.Small" /> Reading the datasheet…</div>
+        }
+        else if (pdxPlan is not null)
+        {
+            <hr />
+            @if (pdxPlan.Document is { } document)
+            {
+                <p class="mb-2">
+                    <strong>@pdxPlan.PartnerName</strong> (@document.Session.Ssid):
+                    @(pdxPlan.IsNew ? "a new partner is created" : "the existing partner is updated").
+                    <span class="small text-body-secondary">Datasheet @document.DocId, created @document.DocDate.LocalDateTime.ToString("g"), valid from @document.ValidFrom.LocalDateTime.ToString("g").</span>
+                </p>
+            }
+
+            @foreach (var error in pdxPlan.Errors)
+            {
+                <HxAlert Color="ThemeColor.Danger" CssClass="py-2 mb-2">@error</HxAlert>
+            }
+            @foreach (var warning in pdxPlan.Warnings)
+            {
+                <HxAlert Color="ThemeColor.Warning" CssClass="py-2 mb-2">@warning</HxAlert>
+            }
+
+            @if (pdxPlan.Changes.Count > 0)
+            {
+                <table class="table table-sm align-middle small">
+                    <thead>
+                    <tr>
+                        <th>Setting</th>
+                        @if (!pdxPlan.IsNew)
+                        {
+                            <th>Current</th>
+                        }
+                        <th>@(pdxPlan.IsNew ? "Value" : "New")</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var change in pdxPlan.Changes)
+                    {
+                        <tr>
+                            <td>@change.Field</td>
+                            @if (!pdxPlan.IsNew)
+                            {
+                                <td class="text-body-secondary">@(change.OldValue ?? "-")</td>
+                            }
+                            <td>@(change.NewValue ?? "-")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+            else if (pdxPlan.CanApply)
+            {
+                <p>The datasheet changes nothing.</p>
+            }
+
+            @if (pdxPlan.CanApply && pdxPlan.Changes.Count > 0)
+            {
+                @if (PdxCanBeScheduled)
+                {
+                    <HxCheckbox Text="@($"Apply at its valid from time ({pdxPlan.Document!.ValidFrom.LocalDateTime:g}), not now")"
+                                @bind-Value="pdxSchedule" CssClass="mb-2" />
+                }
+                <HxButton Color="ThemeColor.Primary" Icon="BootstrapIcon.Check2" Spinner="pdxApplying" OnClick="ApplyPdx">
+                    @(pdxPlan.IsNew ? "Create partner" : pdxSchedule && PdxCanBeScheduled ? "Schedule update" : "Update partner")
+                </HxButton>
+            }
+        }
+    </BodyTemplate>
+</HxModal>
+
+@if (openSetups.Count(d => d.Status == PartnerSetupStatus.PendingApproval) is > 0 and var pending)
+{
+    <HxAlert Color="ThemeColor.Warning" CssClass="py-2">
+        @pending datasheet(s) of partners wait for approval: <a href="PartnerSetups">Partner setups</a>.
+    </HxAlert>
+}
+
 <HxListLayout Title="Partners" TFilterModel="PartnerFilter"
               @bind-FilterModel="filterModel"
               @bind-FilterModel:after="gridComponent.RefreshDataAsync">
@@ -252,6 +438,9 @@
         <HxButton Text="New partner"
                   Color="ThemeColor.Primary"
                   Icon="BootstrapIcon.PlusLg" OnClick="HandleNewItemClicked" />
+        <HxButton Text="Import PDX"
+                  Color="ThemeColor.Secondary"
+                  Icon="BootstrapIcon.FiletypeXml" OnClick="HandlePdxImportClicked" />
         <HxButton Text="Import from OS4X"
                   Color="ThemeColor.Secondary"
                   Icon="BootstrapIcon.BoxArrowInDown" OnClick="HandleImportClicked" />
@@ -313,6 +502,10 @@
                         <HxContextMenuItem Text="Edit"
                                            Icon="BootstrapIcon.Pen"
                                            OnClick="async () => await HandleEditClick(currentPartner)" />
+
+                        <HxContextMenuItem Text="Send our datasheet"
+                                           Icon="BootstrapIcon.FiletypeXml"
+                                           OnClick="async () => await HandleSendDatasheetClick(currentPartner)" />
 
                         <HxContextMenuItem Text="Delete"
                                            Icon="BootstrapIcon.Trash"

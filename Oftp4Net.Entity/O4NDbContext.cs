@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.DataProtection;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Oftp4Net.Domain;
 
@@ -20,6 +23,7 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
     public DbSet<User> Users { get; init; }
     public DbSet<TransferEvent> TransferEvents { get; init; }
     public DbSet<ApiToken> ApiTokens { get; init; }
+    public DbSet<PartnerSetupDocument> PartnerSetupDocuments { get; init; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -67,6 +71,13 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
         {
             entity.HasOne(e => e.TrustedCertificate).WithMany().OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(e => e.SecurityCertificate).WithMany().OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.PreviousSecurityCertificate).WithMany().OnDelete(DeleteBehavior.SetNull);
+            // Details from the OFTP2 Communication Setup are only read and written together with the partner.
+            // Plain JSON values, not owned entities: the Havit unit of work does not support owned types.
+            JsonColumn(entity.Property(e => e.Contacts));
+            JsonColumn(entity.Property(e => e.InboundDsnPatterns));
+            JsonColumn(entity.Property(e => e.OutboundDsnPatterns));
+            JsonColumn(entity.Property(e => e.SubStations));
             // Stored as text so the table stays readable without the application.
             entity.Property(e => e.OutgoingEncoding).HasConversion<string>().HasMaxLength(10);
         });
@@ -99,12 +110,47 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
             entity.HasIndex(e => e.TokenHash).IsUnique();
         });
 
+        modelBuilder.Entity<PartnerSetupDocument>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Partner).WithMany().OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ReceivedFile).WithMany().OnDelete(DeleteBehavior.SetNull);
+            // Stored as text so the table stays readable without the application.
+            entity.Property(e => e.Source).HasConversion<string>().HasMaxLength(20);
+            entity.Property(e => e.Signature).HasConversion<string>().HasMaxLength(20);
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(30);
+            entity.HasIndex(e => new { e.Status, e.ValidFrom });
+            entity.HasIndex(e => e.ReceivedFileId);
+        });
+
         ConfigureSecrets(modelBuilder);
 
         modelBuilder.Entity<SettingsItem>(entity =>
         {
             entity.HasKey(e => e.Name);
         });
+    }
+
+    /// <summary>A list stored as a JSON document; lists are compared by their content.</summary>
+    private static void JsonColumn<T>(PropertyBuilder<List<T>> property)
+    {
+        property
+            .HasColumnType("jsonb")
+            .HasConversion(
+                value => JsonList.Serialize(value),
+                json => JsonList.Deserialize<T>(json),
+                new ValueComparer<List<T>>(
+                    (a, b) => JsonList.Serialize(a) == JsonList.Serialize(b),
+                    value => JsonList.Serialize(value).GetHashCode(),
+                    value => JsonList.Deserialize<T>(JsonList.Serialize(value))));
+    }
+
+    private static class JsonList
+    {
+        public static string Serialize<T>(List<T>? value) => JsonSerializer.Serialize(value ?? []);
+
+        public static List<T> Deserialize<T>(string? json) =>
+            string.IsNullOrEmpty(json) ? [] : JsonSerializer.Deserialize<List<T>>(json) ?? [];
     }
 
     /// <summary>Password columns hold the encrypted value, which is much longer than the password itself.</summary>

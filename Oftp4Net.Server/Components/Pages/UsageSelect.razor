@@ -1,0 +1,20 @@
+@using Oftp4Net.Domain
+
+@* Usage of a security feature in the station profile (OFTP2 Communication Setup). *@
+<select class="form-select form-select-sm" value="@Value" @onchange="OnChangedAsync">
+    @foreach (var usage in Enum.GetValues<SecurityUsage>())
+    {
+        <option value="@usage">@usage.ToString().ToLowerInvariant()</option>
+    }
+</select>
+
+@code {
+    [Parameter] public SecurityUsage Value { get; set; }
+    [Parameter] public EventCallback<SecurityUsage> ValueChanged { get; set; }
+
+    private async Task OnChangedAsync(ChangeEventArgs args)
+    {
+        if (Enum.TryParse<SecurityUsage>(args.Value?.ToString(), out var usage))
+            await ValueChanged.InvokeAsync(usage);
+    }
+}

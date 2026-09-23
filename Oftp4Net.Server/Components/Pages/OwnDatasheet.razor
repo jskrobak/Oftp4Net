@@ -1,0 +1,157 @@
+@using Oftp4Net.Domain
+@using Oftp4Net.Services.Pdx
+
+@* Our OFTP2 Communication Setup: downloaded for an identity, or sent to Partner over OFTP. *@
+<div class="row g-2">
+    <div class="col-md-6">
+        <label class="form-label">Identity</label>
+        <select class="form-select" value="@identityId" @onchange="IdentityChangedAsync">
+            @foreach (var identity in Identities)
+            {
+                <option value="@identity.Id">@identity.Name (@identity.SSID)</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Valid from</label>
+        <input type="datetime-local" class="form-control" value="@(validFrom?.ToString("yyyy-MM-ddTHH:mm"))" @onchange="ValidFromChangedAsync" />
+        <div class="form-text">Empty: valid right away. A later time lets partners switch at the same moment.</div>
+    </div>
+</div>
+
+@if (error is not null)
+{
+    <HxAlert Color="ThemeColor.Danger" CssClass="py-2 mt-3">@error</HxAlert>
+}
+else if (export is not null)
+{
+    <div class="small mt-3">
+        Datasheet of <strong>@export.Document.Station.Name</strong> (@export.Document.Session.Ssid)
+        @if (export.Document.SubStations.Count > 0)
+        {
+            <span>with sub-stations @string.Join(", ", export.Document.SubStations.Select(s => s.Sfid))</span>
+        }
+        @if (export.Document.InboundConnections.FirstOrDefault() is { } inbound)
+        {
+            <div>Partners call @inbound.ServerHost:@inbound.ServerPort (@(inbound.Type == PdxConnectionType.Tls ? "TLS" : "TCP")).</div>
+        }
+        <div>Certificates: @(export.Document.Certificates.Count == 0 ? "none" : string.Join(", ", export.Document.Certificates.Select(c => $"{c.Name} ({c.SubjectName})")))</div>
+    </div>
+    @foreach (var warning in export.Warnings)
+    {
+        <HxAlert Color="ThemeColor.Warning" CssClass="py-2 mt-2 mb-0 small">@warning</HxAlert>
+    }
+    <div class="small text-body-secondary mt-2">The station details and our security policy come from the station profile in the settings.</div>
+
+    <div class="mt-3">
+        @if (Partner is null)
+        {
+            <a class="btn btn-primary" href="@DownloadUrl" target="_blank" download>Download</a>
+        }
+        else
+        {
+            <HxButton Color="ThemeColor.Primary" Icon="BootstrapIcon.Send" Spinner="sending" OnClick="SendAsync">Send to @Partner.Name</HxButton>
+            <div class="form-text">Sent as virtual file OFTP_COMMUNICATION_SETUP: unencrypted, signed when a file security certificate is configured, without a signed EERP.</div>
+        }
+    </div>
+}
+
+@code {
+    // Its own scope (database context): the page around it works with the context of the circuit at the same time.
+    [Inject] protected IServiceScopeFactory ScopeFactory { get; set; } = null!;
+    [Inject] protected Oftp4Net.Services.SendService SendService { get; set; } = null!;
+    [Inject] protected IHxMessengerService Messenger { get; set; } = null!;
+
+    [Parameter, EditorRequired] public IReadOnlyList<Identity> Identities { get; set; } = [];
+
+    /// <summary>The identity preselected.</summary>
+    [Parameter] public int? IdentityId { get; set; }
+
+    /// <summary>When set, the datasheet is sent to this partner instead of being downloaded.</summary>
+    [Parameter] public Partner? Partner { get; set; }
+
+    [Parameter] public EventCallback OnSent { get; set; }
+
+    private int identityId;
+    private DateTime? validFrom;
+    private PdxExport? export;
+    private string? error;
+    private bool sending;
+
+    private string DownloadUrl => $"pdx/export/{identityId}" +
+                                  (validFrom is { } from ? $"?validFrom={Uri.EscapeDataString(new DateTimeOffset(from).ToString("O"))}" : "");
+
+    private (int? Identity, int? Partner)? shownFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Re-rendering the page passes the same values again; only another identity or partner starts anew.
+        if (shownFor == (IdentityId, Partner?.Id))
+            return;
+        shownFor = (IdentityId, Partner?.Id);
+
+        identityId = IdentityId ?? Identities.FirstOrDefault()?.Id ?? 0;
+        validFrom = null;
+        await RefreshAsync();
+    }
+
+    private async Task IdentityChangedAsync(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var id))
+            identityId = id;
+        await RefreshAsync();
+    }
+
+    private async Task ValidFromChangedAsync(ChangeEventArgs args)
+    {
+        validFrom = DateTime.TryParse(args.Value?.ToString(), out var value) ? value : null;
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        export = null;
+        error = null;
+        if (identityId == 0)
+        {
+            error = "There is no identity to describe.";
+            return;
+        }
+
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            export = await scope.ServiceProvider.GetRequiredService<PdxExporter>().ExportAsync(identityId, ValidFromOffset);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private DateTimeOffset? ValidFromOffset => validFrom is { } from ? new DateTimeOffset(from) : null;
+
+    private async Task SendAsync()
+    {
+        if (Partner is null)
+            return;
+
+        sending = true;
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<PdxExporter>().QueueAsync(Partner, identityId, ValidFromOffset);
+            SendService.Trigger();
+            Messenger.AddInformation($"The datasheet is queued for {Partner.Name}.");
+            await OnSent.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Messenger.AddError($"Sending the datasheet failed: {ex.Message}");
+        }
+        finally
+        {
+            sending = false;
+        }
+    }
+}

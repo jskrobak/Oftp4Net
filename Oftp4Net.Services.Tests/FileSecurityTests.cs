@@ -67,8 +67,16 @@ public class FileSecurityTests
     [InlineData(CipherSuites.Aes256Sha256)]
     [InlineData(CipherSuites.TripleDesSha512)]
     [InlineData(CipherSuites.Aes256Sha512)]
+    [InlineData(CipherSuites.Aes256Sha3512)]
     public void EveryCipherSuiteSignsAndEncrypts(string code)
     {
+        // SHA3 is provided by the platform only on some systems (not on macOS).
+        if (CipherSuite.Get(code) is null)
+        {
+            Assert.False(CipherSuite.All.Single(s => s.Code == code).IsSupported);
+            return;
+        }
+
         var settings = new FileSecuritySettings
         {
             Sign = true,
@@ -93,6 +101,22 @@ public class FileSecurityTests
 
         Assert.True(compressed.Length < 1000, $"Compressed to {compressed.Length} bytes.");
         Assert.Equal(content, CmsCompression.Decompress(compressed));
+    }
+
+    [Fact]
+    public void UnverifiedSignatureCanBeAccepted()
+    {
+        var settings = new FileSecuritySettings { Sign = true, Suite = CipherSuite.Default, SigningCertificate = Ours };
+        var signed = FileSecurity.Protect(Content, settings);
+        var stranger = CreateCertificate("CN=Stranger");
+
+        var content = FileSecurity.Unprotect(signed, Descriptor(settings), null, stranger, out var problem);
+
+        Assert.Equal(Content, content);
+        Assert.NotNull(problem);
+
+        Assert.Equal(Content, FileSecurity.Unprotect(signed, Descriptor(settings), null, Ours, out problem));
+        Assert.Null(problem);
     }
 
     [Fact]

@@ -2,10 +2,14 @@ using System.Security.Authentication;
 using Havit.Blazor.Components.Web;
 using Havit.Blazor.Components.Web.Bootstrap;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Components.Forms;
+using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.DataLayer.Filters;
 using Oftp4Net.Domain;
 using Oftp4Net.Services;
 using Oftp4Net.Services.Import;
+using Oftp4Net.Services.Pdx;
 
 namespace Oftp4Net.Server.Components.Pages;
 
@@ -32,10 +36,33 @@ public partial class Partners : ComponentBase
     private bool importLoading;
     private bool importRunning;
 
+    [Inject] protected PdxImporter PdxImporter { get; set; } = null!;
+    [Inject] protected PartnerSetupService SetupService { get; set; } = null!;
+    [Inject] protected IPartnerSetupDocumentRepository SetupDocuments { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    /// <summary>Datasheets waiting for approval or for their time.</summary>
+    private List<PartnerSetupDocument> openSetups = [];
+
+    /// <summary>Apply an uploaded datasheet at its valid from time instead of now.</summary>
+    private bool pdxSchedule;
+
+    private HxModal pdxModal = null!;
+    private PdxImportPlan? pdxPlan;
+    private bool pdxLoading;
+    private bool pdxApplying;
+
     protected override async Task OnInitializedAsync()
     {
         availableCertificates = await DataService.GetAllCertificatesAsync();
+        openSetups = await SetupDocuments.GetOpenAsync();
     }
+
+    private bool PdxCanBeScheduled => pdxPlan is { CanApply: true, IsNew: false, Document: { } document } &&
+                                      document.ValidFrom > DateTimeOffset.Now;
+
+    private async Task<string?> GetUserAsync() =>
+        AuthenticationState is null ? null : (await AuthenticationState).User.Identity?.Name;
     
     /// <summary>Code pages are only relevant when the content is converted in at least one direction.</summary>
     private bool ConversionConfigured =>
@@ -55,9 +82,55 @@ public partial class Partners : ComponentBase
             partner.EncryptFiles ? "encrypted" : null,
             partner.RequestSignedEndResponse ? "signed EERP" : null,
             partner.SecureAuthentication ? "authenticated" : null,
+            partner.RequireSignedFiles || partner.RequireEncryptedFiles || partner.RequireCompressedFiles
+                ? "requires " + string.Join("/", new[]
+                {
+                    partner.RequireSignedFiles ? "signed" : null,
+                    partner.RequireEncryptedFiles ? "encrypted" : null,
+                    partner.RequireCompressedFiles ? "compressed" : null,
+                }.Where(r => r is not null))
+                : null,
         }.Where(a => a is not null).ToList();
 
         return applied.Count == 0 ? "-" : string.Join(", ", applied);
+    }
+
+    private static bool HasSetupDetails(Partner partner) =>
+        partner.SetupAppliedDate is not null || !string.IsNullOrEmpty(partner.CompanyName) ||
+        partner.Contacts is { Count: > 0 } || partner.SubStations is { Count: > 0 } ||
+        partner.InboundDsnPatterns is { Count: > 0 } || partner.OutboundDsnPatterns is { Count: > 0 };
+
+    private static string CompanyText(Partner partner) => string.Join(Environment.NewLine, new[]
+    {
+        partner.CompanyName,
+        partner.Address,
+        string.Join(" ", new[] { partner.ZipCode, partner.City }.Where(s => !string.IsNullOrEmpty(s))),
+        partner.Country,
+        string.IsNullOrEmpty(partner.Duns) ? null : $"DUNS {partner.Duns}",
+    }.Where(s => !string.IsNullOrEmpty(s)));
+
+    private static string SubStationText(PartnerSubStation sub)
+    {
+        var settings = new[]
+        {
+            Override("signed", sub.SignFiles),
+            Override("encrypted", sub.EncryptFiles),
+            Override("compressed", sub.CompressFiles),
+            Override("signed EERP", sub.RequestSignedEndResponse),
+            Override("requires signed", sub.RequireSignedFiles),
+            Override("requires encrypted", sub.RequireEncryptedFiles),
+            Override("requires compressed", sub.RequireCompressedFiles),
+            sub.FileCipherSuite is null ? null : $"cipher suite {sub.FileCipherSuite}",
+        }.Where(s => s is not null).ToList();
+
+        return settings.Count == 0 ? "settings as the partner" : string.Join(", ", settings);
+
+        static string? Override(string name, bool? value) => value switch
+        {
+            true => name,
+            false => "not " + name,
+            null => null,
+        };
     }
 
     private static string EncodingDescription(Partner partner) =>
@@ -134,6 +207,98 @@ public partial class Partners : ComponentBase
         selectedItems.Clear();
         await gridComponent.RefreshDataAsync();
     }
+
+    #region Sending our OFTP2 Communication Setup (PDX)
+
+    private HxModal datasheetModal = null!;
+    private Partner? datasheetPartner;
+    private List<Identity>? datasheetIdentities;
+
+    private async Task HandleSendDatasheetClick(Partner partner)
+    {
+        datasheetIdentities = await DataService.GetAllIdentitiesAsync();
+        datasheetPartner = partner;
+        await datasheetModal.ShowAsync();
+    }
+
+    #endregion
+
+    #region Import of an OFTP2 Communication Setup (PDX)
+
+    private async Task HandlePdxImportClicked()
+    {
+        pdxPlan = null;
+        await pdxModal.ShowAsync();
+    }
+
+    /// <summary>Reads the datasheet and shows what importing it would change.</summary>
+    private async Task HandlePdxFileSelected(InputFileChangeEventArgs args)
+    {
+        pdxPlan = null;
+        if (args.File.Size > PdxImporter.MaxSize)
+        {
+            Messenger.AddError($"The file is too large for a datasheet ({args.File.Size / 1024} kB).");
+            return;
+        }
+
+        pdxLoading = true;
+        try
+        {
+            using var content = new MemoryStream();
+            await args.File.OpenReadStream(PdxImporter.MaxSize).CopyToAsync(content);
+            pdxPlan = await PdxImporter.PlanAsync(content.ToArray());
+            pdxSchedule = PdxCanBeScheduled;
+        }
+        catch (Exception ex)
+        {
+            Messenger.AddError($"Reading the datasheet failed: {ex.Message}");
+        }
+        finally
+        {
+            pdxLoading = false;
+        }
+    }
+
+    private async Task ApplyPdx()
+    {
+        if (pdxPlan is not { CanApply: true })
+            return;
+
+        pdxApplying = true;
+        try
+        {
+            if (pdxSchedule && PdxCanBeScheduled)
+            {
+                await SetupService.ScheduleUploadAsync(pdxPlan, await GetUserAsync());
+                Messenger.AddInformation($"The datasheet of {pdxPlan.PartnerName} is applied at {pdxPlan.Document!.ValidFrom.LocalDateTime:g}.");
+            }
+            else
+            {
+                var partner = await PdxImporter.ApplyAsync(pdxPlan, await GetUserAsync());
+                Messenger.AddInformation(pdxPlan.IsNew
+                    ? $"Partner {partner.Name} created from the datasheet."
+                    : $"Partner {partner.Name} updated from the datasheet.");
+            }
+
+            openSetups = await SetupDocuments.GetOpenAsync();
+
+            await ListenerService.RefreshTrustedCertificatesAsync();
+            availableCertificates = await DataService.GetAllCertificatesAsync();
+            await pdxModal.HideAsync();
+            pdxPlan = null;
+            await gridComponent.RefreshDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Messenger.AddError($"Import failed: {ex.Message}");
+        }
+        finally
+        {
+            pdxApplying = false;
+        }
+    }
+
+    #endregion
 
     #region Import from OS4X
 

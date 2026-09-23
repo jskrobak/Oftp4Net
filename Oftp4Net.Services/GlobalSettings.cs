@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using Oftp4Net.Services.Pdx;
+using Oftp4Net.Services.Tsl;
 
 namespace Oftp4Net.Services;
 
@@ -62,5 +64,41 @@ public class GlobalSettings
     [SettingsItem]
     [Range(10, 3600)]
     public int ResponseTimeoutSeconds { get; set; } = 180;
+
+    /// <summary>
+    /// Our security policy, compared with the OFTP2 Communication Setup (PDX) of a partner when it is imported.
+    /// </summary>
+    [SettingsItem]
+    public StationProfile StationProfile { get; set; } = new();
+
+    /// <summary>Which OFTP2 Communication Setups received from partners over OFTP are applied without approval.</summary>
+    [SettingsItem]
+    public PdxAutoApply PdxAutoApply { get; set; } = PdxAutoApply.SignedOnly;
+
+    /// <summary>
+    /// Downloads the Odette Trust Service Status List (TSL): certificates issued by the certification authorities
+    /// listed there are trusted for TLS and in partner datasheets.
+    /// </summary>
+    [SettingsItem]
+    public bool TslEnabled { get; set; } = true;
+
+    /// <summary>Address of the TSL; Odette publishes a production and a test list.</summary>
+    [SettingsItem]
+    [Required]
+    [Url]
+    public string TslUrl { get; set; } = TslService.ProductionUrl;
+
+    /// <summary>How often the TSL is downloaded again.</summary>
+    [SettingsItem]
+    [Range(1, 168)]
+    public int TslRefreshHours { get; set; } = 24;
+
+    /// <summary>
+    /// SHA-256 thumbprint of the certificate the TSL has to be signed with. Taken over from the first list that is
+    /// downloaded; a list signed with another certificate is refused until this value is cleared.
+    /// </summary>
+    [SettingsItem]
+    [StringLength(64)]
+    public string? TslSignerThumbprint { get; set; }
 
 }

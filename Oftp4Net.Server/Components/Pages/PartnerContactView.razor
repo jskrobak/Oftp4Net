@@ -1,0 +1,22 @@
+@using Oftp4Net.Domain
+
+@* A contact of a partner with clickable e-mail addresses and phone numbers. *@
+<div>
+    @Contact.Name@(string.IsNullOrEmpty(Contact.Description) ? "" : $" – {Contact.Description}")
+    @foreach (var email in Contact.Emails)
+    {
+        <span class="ms-2"><a href="mailto:@email">@email</a></span>
+    }
+    @foreach (var phone in Contact.Phones)
+    {
+        <span class="ms-2"><a href="tel:@phone">@phone</a></span>
+    }
+    @if (!string.IsNullOrEmpty(Contact.Url))
+    {
+        <span class="ms-2"><a href="@Contact.Url" target="_blank" rel="noopener">@Contact.Url</a></span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PartnerContact Contact { get; set; } = null!;
+}

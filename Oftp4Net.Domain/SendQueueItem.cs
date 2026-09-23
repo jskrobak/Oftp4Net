@@ -8,6 +8,12 @@ public class SendQueueItem: BaseQueueItem
     public Partner Partner { get; set; } = null!;
     public int IdentityId { get; set; }
     public Identity Identity { get; set; } = null!;
+
+    /// <summary>
+    /// SFID of a sub-station of the partner the file is addressed to (SFIDDEST); empty for the partner itself.
+    /// </summary>
+    [StringLength(25)]
+    public string? DestinationSfid { get; set; }
     
     [Required]
     [StringLength(26)]

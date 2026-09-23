@@ -7,6 +7,11 @@
     </ItemGroup>
 
     <ItemGroup>
+      <!-- XML schema of the OFTP2 Communication Setup (PDX), Odette OP08 part 3. -->
+      <EmbeddedResource Include="Pdx\OftpCommunicationSetup-1p2.xsd" LogicalName="OftpCommunicationSetup-1p2.xsd" />
+    </ItemGroup>
+
+    <ItemGroup>
       <FrameworkReference Include="Microsoft.AspNetCore.App" />
     </ItemGroup>
 

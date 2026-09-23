@@ -45,6 +45,9 @@ public enum TransferEventType
     WebhookDelivered,
     WebhookFailed,
     EndResponseSignatureInvalid,
+    SetupReceived,
+    SetupApplied,
+    SetupRejected,
 }
 
 /// <summary>

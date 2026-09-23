@@ -21,6 +21,17 @@ public class OutboxStorage(GlobalSettingsService settingsService)
         return path;
     }
 
+    /// <summary>Saves generated content (e.g. a datasheet) and returns its full path.</summary>
+    public async Task<string> SaveAsync(byte[] content, string fileName, CancellationToken cancellationToken = default)
+    {
+        var directory = await GetDirectoryAsync();
+        Directory.CreateDirectory(directory);
+
+        var path = Path.Combine(directory, $"{DateTime.Now:yyyyMMddHHmmss}_{Guid.NewGuid():N}_{SafeFileName(fileName)}");
+        await File.WriteAllBytesAsync(path, content, cancellationToken);
+        return path;
+    }
+
     /// <summary>Deletes the file if it was stored in the outbox (files elsewhere on the server are left alone).</summary>
     public async Task DeleteIfInOutboxAsync(string? filePath)
     {

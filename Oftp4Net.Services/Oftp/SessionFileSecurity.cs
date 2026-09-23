@@ -26,20 +26,24 @@ public sealed class SessionFileSecurity(ICertificateRepository certificates, Glo
     public Task<X509Certificate2?> GetPartnerCertificateAsync(Partner partner, CancellationToken cancellationToken) =>
         GetAsync(partner.SecurityCertificateId, cancellationToken);
 
-    /// <summary>What is applied to files sent to <paramref name="partner"/>.</summary>
-    public async Task<FileSecuritySettings> ForSendingAsync(Partner partner, CancellationToken cancellationToken)
+    /// <summary>The partner's certificate before it was replaced, still accepted for signatures made before.</summary>
+    public Task<X509Certificate2?> GetPreviousPartnerCertificateAsync(Partner partner, CancellationToken cancellationToken) =>
+        GetAsync(partner.PreviousSecurityCertificateId, cancellationToken);
+
+    /// <summary>What is applied to files sent to <paramref name="partner"/> (or one of its sub-stations).</summary>
+    public async Task<FileSecuritySettings> ForSendingAsync(Partner partner, StationSettings station, CancellationToken cancellationToken)
     {
-        var suite = CipherSuite.Get(partner.FileCipherSuite)
-            ?? throw new FileSecurityException($"Cipher suite '{partner.FileCipherSuite}' of partner {partner.Name} is not supported.");
+        var suite = CipherSuite.Get(station.FileCipherSuite)
+            ?? throw new FileSecurityException($"Cipher suite '{station.FileCipherSuite}' of partner {partner.Name} is not supported.");
 
         return new FileSecuritySettings
         {
-            Sign = partner.SignFiles,
-            Compress = partner.CompressFiles,
-            Encrypt = partner.EncryptFiles,
+            Sign = station.SignFiles,
+            Compress = station.CompressFiles,
+            Encrypt = station.EncryptFiles,
             Suite = suite,
-            SigningCertificate = partner.SignFiles ? await GetOwnCertificateAsync(cancellationToken) : null,
-            EncryptionCertificate = partner.EncryptFiles ? await GetPartnerCertificateAsync(partner, cancellationToken) : null,
+            SigningCertificate = station.SignFiles ? await GetOwnCertificateAsync(cancellationToken) : null,
+            EncryptionCertificate = station.EncryptFiles ? await GetPartnerCertificateAsync(partner, cancellationToken) : null,
         };
     }
 

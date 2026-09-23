@@ -85,6 +85,17 @@ public partial class Identities : ComponentBase
         await identityEditModal.HideAsync();
     }   
 
+    private HxModal exportModal = null!;
+    private List<Identity>? exportIdentities;
+    private int? exportIdentityId;
+
+    private async Task HandleExportClick(Identity identity)
+    {
+        exportIdentities = await DataService.GetAllIdentitiesAsync();
+        exportIdentityId = identity.Id;
+        await exportModal.ShowAsync();
+    }
+
     private async Task HandleEditClick(Identity identity)
     {
         currentIdentity = identity;

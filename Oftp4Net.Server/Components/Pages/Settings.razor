@@ -2,6 +2,9 @@
 @rendermode InteractiveServer
 @using Oftp4Net.Domain
 @using Oftp4Net.Services.Hooks
+@using Oftp4Net.Services.Security
+@using Oftp4Net.Services.Pdx
+@using Oftp4Net.Services.Tsl
 @inject HookRunner HookRunner
 
 <HxCard>
@@ -79,10 +82,259 @@
                     </div>
 
                     <div class="col-12">
+                        <hr />
+                        <h6 class="mb-1">Station profile (PDX)</h6>
+                        <p class="small text-body-secondary mb-2">
+                            Our security policy. When the OFTP2 Communication Setup (PDX) of a partner is imported, it is
+                            compared with this profile: <em>forbidden</em> turns a feature off, <em>required</em> turns it on
+                            (a conflict when the other side forbids it), <em>optional</em> on both sides stays off, everything
+                            else is on.
+                        </p>
+                        <table class="table table-sm align-middle mb-0" style="max-width: 40rem;">
+                            <thead>
+                            <tr>
+                                <th></th>
+                                <th>Files we receive</th>
+                                <th>Files we send</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var row in ProfileRows)
+                            {
+                                <tr>
+                                    <td>@row.Name</td>
+                                    <td><UsageSelect Value="row.Inbound()" ValueChanged="row.SetInbound" /></td>
+                                    <td><UsageSelect Value="row.Outbound()" ValueChanged="row.SetOutbound" /></td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Secure authentication</label>
+                        <UsageSelect @bind-Value="settings.StationProfile.SecureAuthentication" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">TLS client authentication</label>
+                        <UsageSelect @bind-Value="settings.StationProfile.TlsClientAuthentication" />
+                    </div>
+
+                    <div class="col-12">
+                        <h6 class="mb-1 mt-2">Our datasheet</h6>
+                        <p class="small text-body-secondary mb-0">
+                            What our own OFTP2 Communication Setup tells partners about us (Identities → Export PDX,
+                            Partners → Send our datasheet), together with the security policy above and our certificates.
+                        </p>
+                    </div>
+                    <div class="col-md-8">
+                        <HxInputText Label="Company" Hint="The name of the identity when empty." @bind-Value="@settings.StationProfile.CompanyName" />
+                    </div>
+                    <div class="col-md-4">
+                        <HxInputText Label="DUNS" @bind-Value="@settings.StationProfile.Duns" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxInputTextArea Label="Address" Hint="One line per line." Rows="2" @bind-Value="AddressText" />
+                    </div>
+                    <div class="col-md-3">
+                        <HxInputText Label="ZIP code" @bind-Value="@settings.StationProfile.ZipCode" />
+                    </div>
+                    <div class="col-md-3">
+                        <HxInputText Label="City" @bind-Value="@settings.StationProfile.City" />
+                    </div>
+                    <div class="col-md-3">
+                        <HxInputText Label="Country" Hint="ISO code, e.g. CZ" MaxLength="2" @bind-Value="@settings.StationProfile.Country" />
+                    </div>
+                    <div class="col-md-9">
+                        <HxInputText Label="Info document" Hint="Address of a document describing our OFTP setup." @bind-Value="@settings.StationProfile.InfoDocumentUrl" />
+                    </div>
+                    <div class="col-md-5">
+                        <HxSelect TItem="Listener"
+                                  TValue="int?"
+                                  Label="Listener partners call"
+                                  Data="availableListeners"
+                                  @bind-Value="@settings.StationProfile.ListenerId"
+                                  TextSelector="@(l => $"{l.Name} ({l.ListenIPAddress}:{l.Port}{(l.UseTls ? ", TLS" : "")})")"
+                                  ValueSelector="@(l => l.Id)"
+                                  Nullable="true"
+                                  NullText="-none-" />
+                    </div>
+                    <div class="col-md-5">
+                        <HxInputText Label="Public host" Hint="Name or address partners call." @bind-Value="@settings.StationProfile.PublicHost" />
+                    </div>
+                    <div class="col-md-2">
+                        <HxInputNumber TValue="int?" Label="Public port" Hint="When it differs." Decimals="0" @bind-Value="@settings.StationProfile.PublicPort" />
+                    </div>
+                    <div class="col-12">
+                        <HxInputText Label="Outbound IP addresses" Hint="Addresses we call partners from, for their firewalls; separated by commas." @bind-Value="OutboundIpsText" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Contacts</label>
+                        @foreach (var contact in settings.StationProfile.Contacts)
+                        {
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-3"><input class="form-control form-control-sm" placeholder="Name" @bind="contact.Name" /></div>
+                                <div class="col-md-3"><input class="form-control form-control-sm" placeholder="Responsible for" @bind="contact.Description" /></div>
+                                <div class="col-md-3"><input class="form-control form-control-sm" placeholder="E-mail" value="@string.Join(", ", contact.Emails)" @onchange="e => contact.Emails = Split(e.Value)" /></div>
+                                <div class="col-md-2"><input class="form-control form-control-sm" placeholder="Phone" value="@string.Join(", ", contact.Phones)" @onchange="e => contact.Phones = Split(e.Value)" /></div>
+                                <div class="col-md-1">
+                                    <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Trash" OnClick="() => settings.StationProfile.Contacts.Remove(contact)" />
+                                </div>
+                            </div>
+                        }
+                        <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.PlusLg"
+                                  OnClick="() => settings.StationProfile.Contacts.Add(new PartnerContact())">Add contact</HxButton>
+                    </div>
+
+                    <div class="col-12">
+                        <HxSelect TItem="PdxAutoApply"
+                                  TValue="PdxAutoApply"
+                                  Label="Apply datasheets received over OFTP"
+                                  Hint="Datasheets that are not applied automatically wait for approval in Partner setups; the partner gets the EERP (or NERP) after the decision."
+                                  Data="Enum.GetValues<PdxAutoApply>()"
+                                  @bind-Value="@settings.PdxAutoApply"
+                                  TextSelector="@(a => a switch { PdxAutoApply.Always => "always (e.g. for interoperability tests)", PdxAutoApply.SignedOnly => "when signed with the partner's certificate", _ => "never, always ask" })"
+                                  ValueSelector="@(a => a)"
+                                  Nullable="false" />
+                    </div>
+
+                    <div class="col-md-6">
+                        <HxSelect TItem="CipherSuite"
+                                  TValue="string"
+                                  Label="Preferred cipher suite"
+                                  Data="CipherSuite.Supported"
+                                  @bind-Value="@settings.StationProfile.PrimaryCipherSuite"
+                                  TextSelector="@(c => $"{c.Code} - {c.Name}")"
+                                  ValueSelector="@(c => c.Code)"
+                                  Nullable="false" />
+                    </div>
+                    <div class="col-md-6">
+                        <HxMultiSelect TItem="CipherSuite"
+                                       TValue="string"
+                                       Label="Other accepted cipher suites"
+                                       Hint="When none is selected, every supported suite is accepted."
+                                       Data="CipherSuite.Supported"
+                                       @bind-Value="@settings.StationProfile.AlternateCipherSuites"
+                                       TextSelector="@(c => $"{c.Code} - {c.Name}")"
+                                       ValueSelector="@(c => c.Code)"
+                                       EmptyText="-all supported-" />
+                    </div>
+
+                    <div class="col-12">
                         <HxSubmit Color="ThemeColor.Primary" Icon="BootstrapIcon.Save">Save</HxSubmit>
                     </div>
                 </div>
             </EditForm>
+        }
+    </BodyTemplate>
+</HxCard>
+
+<HxCard CssClass="mt-3">
+    <HeaderTemplate>
+        <h5 class="card-title">Odette trust list (TSL)</h5>
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (settings is not null)
+        {
+            <p class="small text-body-secondary" style="max-width: 60rem;">
+                The certification authorities accepted for OFTP2, published and signed by Odette. Certificates issued by
+                them are trusted for TLS and in partner datasheets without being added one by one. The list is signed; the
+                certificate it is signed with is trusted from the first download on, a list with another signer is refused.
+            </p>
+            <EditForm Model="@settings" OnValidSubmit="SaveAsync">
+                <DataAnnotationsValidator />
+                <div class="row g-3" style="max-width: 60rem;">
+                    <div class="col-12">
+                        <HxCheckbox Label="Download and use the trust list" @bind-Value="@settings.TslEnabled" />
+                    </div>
+                    <div class="col-md-8">
+                        <HxInputText Label="Address" @bind-Value="@settings.TslUrl" />
+                        <div class="small mt-1">
+                            <a href="" @onclick="() => settings.TslUrl = TslService.ProductionUrl" @onclick:preventDefault>production list</a>
+                            ·
+                            <a href="" @onclick="() => settings.TslUrl = TslService.TestUrl" @onclick:preventDefault>test list (interoperability tests)</a>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <HxInputNumber Label="Download every (hours)" Decimals="0" @bind-Value="@settings.TslRefreshHours" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Trusted signer (SHA-256)</label>
+                        <div class="d-flex gap-2 align-items-center">
+                            <code class="text-break">@(settings.TslSignerThumbprint ?? "taken over from the next download")</code>
+                            @if (settings.TslSignerThumbprint is not null)
+                            {
+                                <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" OnClick="ClearTslSigner"
+                                          Tooltip="Accept the signer of the next downloaded list (after Save)">Clear</HxButton>
+                            }
+                        </div>
+                    </div>
+                    <div class="col-12 d-flex gap-2">
+                        <HxSubmit Color="ThemeColor.Primary" Icon="BootstrapIcon.Save">Save</HxSubmit>
+                        <HxButton Color="ThemeColor.Secondary" Icon="BootstrapIcon.ArrowClockwise" Spinner="tslRefreshing" OnClick="RefreshTslAsync">Download now</HxButton>
+                    </div>
+                </div>
+            </EditForm>
+
+            <hr />
+            @if (Tsl.Status is { } status)
+            {
+                @if (status.Error is not null)
+                {
+                    <HxAlert Color="ThemeColor.Warning" CssClass="py-2">@status.Error</HxAlert>
+                }
+                @if (status.List is { } list)
+                {
+                    <dl class="row small mb-2" style="max-width: 60rem;">
+                        <dt class="col-sm-3">List</dt>
+                        <dd class="col-sm-9">@list.SchemeName, sequence @list.SequenceNumber, issued @list.IssueDate.LocalDateTime.ToString("g")</dd>
+                        <dt class="col-sm-3">Next update</dt>
+                        <dd class="col-sm-9">
+                            @(list.NextUpdate?.LocalDateTime.ToString("g") ?? "-")
+                            @if (status.Outdated)
+                            {
+                                <HxBadge Color="ThemeColor.Warning" CssClass="ms-1">outdated</HxBadge>
+                            }
+                        </dd>
+                        <dt class="col-sm-3">Loaded</dt>
+                        <dd class="col-sm-9">@status.LoadedDate?.ToString("g") from @status.SourceUrl</dd>
+                        <dt class="col-sm-3">Signed by</dt>
+                        <dd class="col-sm-9 text-break">@list.Signer.Subject (valid to @list.Signer.NotAfter.ToString("d"))</dd>
+                        <dt class="col-sm-3">Authorities</dt>
+                        <dd class="col-sm-9">@list.Providers.Count(p => p.Trusted) trusted of @list.Providers.Count</dd>
+                    </dl>
+                    <details>
+                        <summary class="small">Certification authorities</summary>
+                        <div class="table-responsive">
+                            <table class="table table-sm small mb-0">
+                                <thead>
+                                <tr><th>Provider</th><th>Service</th><th>Status</th><th>Certificates</th></tr>
+                                </thead>
+                                <tbody>
+                                @foreach (var provider in list.Providers)
+                                {
+                                    <tr class="@(provider.Trusted ? "" : "text-body-secondary")">
+                                        <td>@provider.Provider</td>
+                                        <td>@provider.Service</td>
+                                        <td>@provider.Status.Split('/').Last()</td>
+                                        <td>
+                                            @foreach (var certificate in provider.Certificates)
+                                            {
+                                                <div class="text-break">@certificate.Subject (to @certificate.NotAfter.ToString("d"))</div>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                }
+                else if (status.Error is null)
+                {
+                    <p class="small mb-0">@(settings.TslEnabled ? "No trust list has been loaded yet." : "The trust list is not used.")</p>
+                }
+            }
         }
     </BodyTemplate>
 </HxCard>

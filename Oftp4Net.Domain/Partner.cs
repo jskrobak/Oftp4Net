@@ -96,4 +96,63 @@ public class Partner: BaseParty
     /// </summary>
     public int? SecurityCertificateId { get; set; }
     public Certificate? SecurityCertificate { get; set; }
+
+    /// <summary>
+    /// The partner's certificate before the last replacement. Files and responses that were already on their way
+    /// when the certificate was replaced may still be signed with it.
+    /// </summary>
+    public int? PreviousSecurityCertificateId { get; set; }
+    public Certificate? PreviousSecurityCertificate { get; set; }
+
+    /// <summary>Files received from the partner must be signed (SFIDSEC).</summary>
+    public bool RequireSignedFiles { get; set; }
+
+    /// <summary>Files received from the partner must be encrypted (SFIDSEC).</summary>
+    public bool RequireEncryptedFiles { get; set; }
+
+    /// <summary>Files received from the partner must be compressed (SFIDCOMP).</summary>
+    public bool RequireCompressedFiles { get; set; }
+
+    [StringLength(20)]
+    public string? Duns { get; set; }
+
+    [StringLength(200)]
+    public string? CompanyName { get; set; }
+
+    /// <summary>Street address, one line per line of the address.</summary>
+    [StringLength(500)]
+    public string? Address { get; set; }
+
+    [StringLength(100)]
+    public string? City { get; set; }
+
+    [StringLength(20)]
+    public string? ZipCode { get; set; }
+
+    /// <summary>ISO 3166 two letter country code.</summary>
+    [StringLength(2)]
+    public string? Country { get; set; }
+
+    /// <summary>Document of the partner describing its OFTP setup.</summary>
+    [StringLength(500)]
+    public string? InfoDocumentUrl { get; set; }
+
+    public List<PartnerContact> Contacts { get; set; } = [];
+
+    public List<PartnerSubStation> SubStations { get; set; } = [];
+
+    /// <summary>Virtual file names the partner receives (files we send to it).</summary>
+    public List<PartnerDsnPattern> InboundDsnPatterns { get; set; } = [];
+
+    /// <summary>Virtual file names the partner sends to us.</summary>
+    public List<PartnerDsnPattern> OutboundDsnPatterns { get; set; } = [];
+
+    /// <summary>Identification (docid) of the last OFTP2 Communication Setup of the partner that was applied.</summary>
+    public Guid? SetupDocumentId { get; set; }
+
+    /// <summary>Creation date (docdate) of the last applied OFTP2 Communication Setup, older ones are refused.</summary>
+    public DateTime? SetupDocumentDate { get; set; }
+
+    /// <summary>When the last OFTP2 Communication Setup of the partner was applied.</summary>
+    public DateTime? SetupAppliedDate { get; set; }
 }

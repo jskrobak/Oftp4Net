@@ -96,7 +96,8 @@
                 </HxGridColumn>
                 <HxGridColumn HeaderText="">
                     <ItemTemplate Context="file">
-                        @if (file.Status is ReceiveStatus.RECEIVED or ReceiveStatus.CONFIRMED or ReceiveStatus.NOT_DELIVERED)
+                        @if (file.Status is ReceiveStatus.RECEIVED or ReceiveStatus.CONFIRMED or ReceiveStatus.NOT_DELIVERED
+                                 or ReceiveStatus.HELD)
                         {
                             <a href="@($"received/{file.Id}/download")" target="_blank" title="Download">
                                 <HxIcon Icon="BootstrapIcon.Download"/>

@@ -78,6 +78,7 @@ public partial class ReceivedFiles : ComponentBase
         ReceiveStatus.FAILED => ThemeColor.Danger,
         ReceiveStatus.NOT_DELIVERED => ThemeColor.Warning,
         ReceiveStatus.INTERRUPTED => ThemeColor.Warning,
+        ReceiveStatus.HELD => ThemeColor.Warning,
         _ => ThemeColor.Secondary
     };
 }

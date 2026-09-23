@@ -142,6 +142,8 @@ public partial class SendQueue : ComponentBase, IDisposable
         await ShowEditModalAsync();
     }
 
+    private Partner? SelectedPartner => availablePartners.FirstOrDefault(p => p.Id == currentSendQueueItem.PartnerId);
+
     private async Task SaveSendQueueItem()
     {
         if (!FileService.FileExists(currentSendQueueItem.FilePath))

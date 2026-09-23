@@ -10,7 +10,7 @@ public interface IReceivedFileRepository: IRepository<ReceivedFile, int>
     Task<DataFragment<ReceivedFile>> GetFragmentAsync(ReceivedFileFilter filter, GridDataProviderRequest<ReceivedFile> request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Received files of the partner whose End to End Response has not been delivered yet.</summary>
+    /// <summary>Received files of the partner whose End to End Response (EERP, or NERP when rejected) has not been delivered yet.</summary>
     Task<List<ReceivedFile>> GetUnconfirmedAsync(int partnerId, CancellationToken cancellationToken = default);
 
     /// <summary>Filtered page of received files, newest first (REST API).</summary>

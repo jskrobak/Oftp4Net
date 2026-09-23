@@ -12,6 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="Pdx\Samples\*.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Tsl\Samples\*.xml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

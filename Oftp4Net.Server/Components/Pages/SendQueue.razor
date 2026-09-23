@@ -60,7 +60,20 @@
                               ValueSelector="@(p => p.Id)"
                               Nullable="false"/>
 
-                
+                    @if (SelectedPartner is { SubStations.Count: > 0 } partner)
+                    {
+                        <HxSelect TItem="PartnerSubStation"
+                                  TValue="string"
+                                  Label="Destination"
+                                  Hint="A sub-station of the partner (SFIDDEST); its own file settings are used."
+                                  Data="partner.SubStations"
+                                  @bind-Value="@currentSendQueueItem.DestinationSfid"
+                                  TextSelector="@(sub => $"{sub.Name} ({sub.SFID})")"
+                                  ValueSelector="@(sub => sub.SFID)"
+                                  Nullable="true"
+                                  NullText="@($"{partner.Name} ({partner.SFID})")" />
+                    }
+
                     <HxSubmit Color="ThemeColor.Primary" Enabled="@(uploadProgress is null)">Save</HxSubmit>
 
                 </EditForm>
@@ -122,7 +135,7 @@
                               ItemTextSelector="@(d => d.Identity.Name)"
                               SortKeySelector="d => d.Identity.Name"/>
                 <HxGridColumn HeaderText="Partner"
-                              ItemTextSelector="@(d => d.Partner.Name)"
+                              ItemTextSelector="@(d => string.IsNullOrEmpty(d.DestinationSfid) ? d.Partner.Name : $"{d.Partner.Name} → {d.DestinationSfid}")"
                               SortKeySelector="d => d.Partner.Name"/>
                 <HxGridColumn HeaderText="File Path"
                               ItemTextSelector="@(d => d.FilePath)"

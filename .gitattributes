@@ -1,0 +1,2 @@
+# A signed document: any change of line endings breaks its XML signature.
+Oftp4Net.Services.Tests/Tsl/Samples/*.xml -text

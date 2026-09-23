@@ -31,6 +31,18 @@
     </BodyTemplate>
 </HxModal>
 
+<HxModal @ref="exportModal" ShowCloseButton="true" Size="ModalSize.Large">
+    <HeaderTemplate>
+        Our OFTP2 Communication Setup (PDX)
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (exportIdentities is not null)
+        {
+            <OwnDatasheet Identities="exportIdentities" IdentityId="exportIdentityId" />
+        }
+    </BodyTemplate>
+</HxModal>
+
 <HxListLayout Title="Identities" TFilterModel="IdentityFilter"
               @bind-FilterModel="filterModel"
               @bind-FilterModel:after="gridComponent.RefreshDataAsync">
@@ -85,6 +97,10 @@
                         <HxContextMenuItem Text="Edit"
                                            Icon="BootstrapIcon.Pen"
                                            OnClick="async () => await HandleEditClick(currentIdentity)" />
+
+                        <HxContextMenuItem Text="Export PDX"
+                                           Icon="BootstrapIcon.FiletypeXml"
+                                           OnClick="async () => await HandleExportClick(currentIdentity)" />
 
                         <HxContextMenuItem Text="Delete"
                                            Icon="BootstrapIcon.Trash"

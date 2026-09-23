@@ -73,6 +73,7 @@ public static class CipherSuites
     public const string Aes256Sha256 = "04";
     public const string TripleDesSha512 = "05";
     public const string Aes256Sha512 = "06";
+    public const string Aes256Sha3512 = "07";
 }
 
 /// <summary>File compression algorithm (SFIDCOMP).</summary>

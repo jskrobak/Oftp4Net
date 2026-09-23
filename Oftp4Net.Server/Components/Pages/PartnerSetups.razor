@@ -1,0 +1,144 @@
+@page "/PartnerSetups"
+@rendermode InteractiveServer
+@using Oftp4Net.Domain
+
+<HxCard>
+    <HeaderTemplate>
+        <div class="d-flex align-items-center">
+            <h5 class="card-title mb-0 me-auto">Partner setups (PDX)</h5>
+            <HxButton Color="ThemeColor.Secondary" Icon="BootstrapIcon.ArrowClockwise" Size="ButtonSize.Small" OnClick="LoadAsync">Refresh</HxButton>
+        </div>
+    </HeaderTemplate>
+    <BodyTemplate>
+        <p class="small text-body-secondary">
+            OFTP2 Communication Setups (datasheets) of partners: imported ones and the ones partners sent over OFTP
+            (virtual file <code>OFTP_COMMUNICATION_SETUP</code>). A datasheet received over OFTP is answered with a NERP
+            when it cannot be used; otherwise it is applied after its EERP, at its <em>valid from</em> time at the earliest.
+            Datasheets without a valid signature wait for approval unless the settings say otherwise.
+        </p>
+
+        @if (documents is null)
+        {
+            <HxSpinner Size="SpinnerSize.Small" />
+        }
+        else if (documents.Count == 0)
+        {
+            <p class="mb-0">No datasheet has been imported or received yet.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                <tr>
+                    <th>Received</th>
+                    <th>Partner</th>
+                    <th>Datasheet</th>
+                    <th>State</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var document in documents)
+                {
+                    <tr>
+                        <td>@document.Created.ToString("g")</td>
+                        <td>@(document.Partner?.Name ?? document.StationName)<div class="small text-body-secondary">@document.Ssid</div></td>
+                        <td class="small">
+                            @(document.Source == PartnerSetupSource.Oftp ? $"OFTP, {SignatureText(document.Signature)}" : "Upload")
+                            <div class="text-body-secondary">
+                                <span title="@document.DocId">@document.DocId.ToString()[..8]…</span> of @document.DocDate.ToString("g"),
+                                valid from @document.ValidFrom.ToString("g")
+                            </div>
+                        </td>
+                        <td>
+                            <HxBadge Color="@StatusColor(document.Status)">@StatusText(document.Status)</HxBadge>
+                            @if (document.Status == PartnerSetupStatus.Scheduled)
+                            {
+                                <span class="small text-body-secondary"> at @document.ValidFrom.ToString("g")</span>
+                            }
+                            @if (document.DecidedBy is not null)
+                            {
+                                <div class="small text-body-secondary">by @document.DecidedBy</div>
+                            }
+                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                <HxButton Size="ButtonSize.Small" Color="ThemeColor.Link" CssClass="p-0 me-2" OnClick="() => Toggle(document.Id)">
+                                    @(expanded.Contains(document.Id) ? "Hide" : "Details")
+                                </HxButton>
+                                @if (document.Status == PartnerSetupStatus.Scheduled)
+                                {
+                                    <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Lightning" OnClick="() => ApplyNowAsync(document)">Apply now</HxButton>
+                                }
+                                @if (document.Status == PartnerSetupStatus.PendingApproval)
+                                {
+                                    <HxButton Size="ButtonSize.Small" Color="ThemeColor.Success" Icon="BootstrapIcon.Check2" OnClick="() => ApproveAsync(document)">Approve</HxButton>
+                                    <HxButton Size="ButtonSize.Small" Color="ThemeColor.Danger" Icon="BootstrapIcon.XLg" OnClick="() => StartReject(document)">Reject</HxButton>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                    @if (rejecting?.Id == document.Id)
+                    {
+                        <tr>
+                            <td colspan="4">
+                                <div class="d-flex gap-2 align-items-end">
+                                    <div class="flex-grow-1">
+                                        <HxInputText Label="Reason sent to the partner in the NERP" @bind-Value="rejectReason" MaxLength="999" />
+                                    </div>
+                                    <HxButton Color="ThemeColor.Danger" OnClick="RejectAsync">Send NERP</HxButton>
+                                    <HxButton Color="ThemeColor.Secondary" OnClick="() => rejecting = null">Cancel</HxButton>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (expanded.Contains(document.Id))
+                    {
+                        <tr>
+                            <td colspan="4" class="small">
+                                @if (!string.IsNullOrEmpty(document.Messages))
+                                {
+                                    <div class="mb-2" style="white-space: pre-line;">@document.Messages</div>
+                                }
+                                @if (!string.IsNullOrEmpty(document.Changes))
+                                {
+                                    <div class="fw-semibold">@(document.Status == PartnerSetupStatus.Applied ? $"Changes applied {document.AppliedDate:g}" : "Changes")</div>
+                                    <table class="table table-sm table-borderless mb-2">
+                                        <tbody>
+                                        @foreach (var change in ParseChanges(document.Changes))
+                                        {
+                                            <tr>
+                                                <td class="text-nowrap pe-3">@change.Field</td>
+                                                <td class="text-body-secondary text-break">@change.Old</td>
+                                                <td class="text-break">@change.New</td>
+                                            </tr>
+                                        }
+                                        </tbody>
+                                    </table>
+                                }
+                                else
+                                {
+                                    <div class="mb-2 text-body-secondary">No changes of the partner.</div>
+                                }
+                                @if (document.ReceivedFile is { } file)
+                                {
+                                    <div class="text-body-secondary">
+                                        Virtual file @file.VirtualFileName @file.FileDate @file.FileTime (@file.Status)
+                                        @if (file.Status == ReceiveStatus.NOT_DELIVERED && !string.IsNullOrEmpty(file.LastError))
+                                        {
+                                            <span>, NERP: @file.LastError</span>
+                                        }
+                                    </div>
+                                }
+                                <details>
+                                    <summary>XML</summary>
+                                    <pre class="small mb-0" style="max-height: 20rem; overflow: auto; white-space: pre-wrap;">@document.Content</pre>
+                                </details>
+                            </td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+            </div>
+        }
+    </BodyTemplate>
+</HxCard>

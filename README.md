@@ -10,14 +10,18 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Sending files from a send queue to partners (initiator role), with retries and exponential back-off
 - Receiving files on configurable TCP / TLS listeners (responder role)
 - Both directions within one session (speaker / listener with change direction)
-- End to End Responses: EERP for delivered files, NERP for those that did not reach their destination, both directions
-- TLS with the system trust store, a custom CA or a pinned partner certificate; optional client certificates
+- End to End Responses: EERP for delivered files, NERP for those that did not reach their destination or were not
+  accepted (e.g. an unusable OFTP2 Communication Setup), both directions
+- TLS with the system trust store, the Odette trust list (TSL), a custom CA or a pinned partner certificate; optional
+  client certificates
 - Character set conversion per partner: files are sent in ANSI or EBCDIC and received EBCDIC content is converted to ANSI
 - File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses
 - Secure authentication (SSIDAUTH with SECD/AUCH/AURP): both sides prove they hold the private key of their certificate
 - Restart of interrupted transfers and ODETTE-FTP buffer compression, both negotiated per partner
 - Partners on the older ODETTE-FTP 1.2 - 1.4 (RFC 2204) with their own command layout
 - REST API with bearer tokens and webhooks, scripts run on transfer events, persistent transfer log
+- Partner Details Exchange (PDX, Odette OFTP2 Communication Setup): partners set up and updated from their datasheets,
+  received by e-mail or over OFTP, our own datasheet exported and sent
 - Import of partners from an existing OS4X installation
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
 
@@ -33,7 +37,7 @@ What of RFC 5024 the implementation covers:
 | Buffer compression (SSIDCMPR) | Sent compressed when agreed, always accepted from a partner |
 | Restart (SSIDREST, SFIDREST) | Interrupted transfers continue at the last complete 1K block |
 | Secure authentication (SSIDAUTH, SECD, AUCH, AURP) | Both directions, challenge in a CMS envelope |
-| File level security (SFIDSEC, SFIDCIPH, SFIDCOMP, SFIDENV) | Signing, zlib compression and encryption, cipher suites 01 – 06 |
+| File level security (SFIDSEC, SFIDCIPH, SFIDCOMP, SFIDENV) | Signing, zlib compression and encryption, cipher suites 01 – 07 |
 | Signed end responses (SFIDSIGN, EERPSIG, NERPSIG) | Requested, produced and verified, with the hash of the content |
 | Transport | TCP/IP, with TLS 1.2 / 1.3 and optional client certificates |
 
@@ -41,6 +45,8 @@ Not implemented, because the deployments this server is built for do not use it:
 
 - Record structured virtual files: files are transferred as unstructured (SFIDFMT `U`), the record format of a
   partner is accepted but records are not interpreted and no record count is reported in EFID
+- Automatic exchange of certificates (ODETTE_CERTIFICATE_REQUEST, _DELIVER, _REPLACE); certificates are exchanged
+  with the OFTP2 Communication Setup instead
 - Broadcast and distribution to several destinations through an intermediate location
 - Special logic (SSIDSPEC)
 - Transports other than TCP/IP (X.25, ISDN) and the mailbox operation of older OFTP versions
@@ -198,7 +204,12 @@ Each partner has (on the *Partners* page):
 | *Cipher suite* | algorithms used for signatures, encryption and hashes (SFIDCIPH) |
 
 The cipher suites are those of RFC 5024 and its common extensions; `01` (3DES, SHA-1) and `02` (AES-256, SHA-1) are
-supported by every OFTP2 node, `03`–`06` use SHA-256 or SHA-512.
+supported by every OFTP2 node, `03`–`06` use SHA-256 or SHA-512 and `07` (AES-256, SHA3-512) is offered only where the
+platform provides SHA3 (Linux with OpenSSL 1.1.1+, recent Windows; not macOS).
+
+A partner can require files to be signed, encrypted or compressed (*Require … files from the partner*); a file
+without it is refused before it is transferred. Sub-stations of a partner (other SFIDs reached through its connection,
+see below) may override the settings of the partner.
 
 A signed end response carries the hash of the transferred content (EERPHSH) and a CMS signature (EERPSIG). A response
 we asked to be signed is only accepted when the signature is valid, made by the partner's certificate and covers the
@@ -388,13 +399,48 @@ Certificates are not part of the OS4X partner table, so the trusted certificate 
 partner's certificate for file security are assigned after the import. Buffer size and credit are per partner in
 OS4X but global here, so they are not taken over.
 
+## Partner Details Exchange (PDX)
+
+The Odette OFTP2 Communication Setup (Odette OP08 part 3, schema version 1.2) is a datasheet with everything needed
+to set up a connection to a station: address, TLS, codes, password, security settings, sub-stations, contacts and
+certificates.
+
+**Importing a partner's datasheet.** *Partners* → *Import PDX* shows what would change before anything is written: a
+partner with the same SSID is updated, otherwise a new one is created. The security settings of the datasheet are
+compared with our *station profile* (*Settings*): *forbidden* turns a feature off, *required* turns it on (a
+conflict when the other side forbids it), *optional* on both sides stays off, everything else is on. A datasheet
+valid from a later time can be scheduled instead of being applied now.
+
+**Datasheets received over OFTP** (virtual file `OFTP_COMMUNICATION_SETUP`) are checked before the end response: a
+datasheet that cannot be used is answered with a NERP that says why; an accepted one is applied after its EERP has
+been sent (the EERP still goes with the old settings), or at its *valid from* time. *Settings* → *Apply datasheets
+received over OFTP* decides which ones are applied without the administrator: never, only signed with the partner's
+certificate (default), or always. The others wait on the *Partner setups* page, where they are approved (EERP) or
+rejected (NERP with a text). The page also keeps the history of all datasheets with the changes they made. When a
+partner's certificate is replaced, the previous one is still accepted for signatures of files that were on their way.
+
+**Our own datasheet.** *Identities* → *Export PDX* downloads it (e.g. for e-mail), *Partners* → *Send our datasheet*
+sends it over OFTP: unencrypted, signed with our file security certificate when there is one, without a signed EERP.
+It is built from the identity (other identities with the same SSID and their own SFID become sub-stations), the
+station profile (company, contacts, the listener partners call and its public host) and our certificates. The REST
+API returns it at `GET /api/v1/pdx/{identity}`.
+
+## Odette trust list (TSL)
+
+Certificates issued by the certification authorities of the Odette Trust Service Status List are trusted for TLS and
+in partner datasheets without being added one by one. *Settings* → *Odette trust list* sets the address (production
+`TSL_OFTP2.XML` or the test list for the interoperability tests) and how often it is downloaded. The list is signed:
+its signature is verified and the certificate it is signed with is pinned at the first download, a list signed by
+another certificate is refused until the pinned signer is cleared. A local copy is used when the download fails. On a
+server without access to the internet, switch the trust list off.
+
 ## Setting up a partner
 
 1. *Identities*: create your own identity (SSID code, SFID code, password you send to partners).
 2. *Certificates*: import the TLS server certificate with its private key (PFX) and, if needed, the partner's certificate or CA.
 3. *Listeners*: create a listener (port 6619 for TLS), assign the identity and the server certificate.
 4. *Partners*: add the partner with its SSID/SFID codes, the password it sends to you, host and port, and, for a
-   mainframe partner, the character set conversion.
+   mainframe partner, the character set conversion — or import its datasheet (*Import PDX*) and send it ours.
 5. *Partners*: if the partner requires file level security, assign its certificate and switch on signing,
    compression or encryption; *Settings* holds our own certificate used for it.
 6. *Send queue*: add a file (path on the server) addressed to the partner.

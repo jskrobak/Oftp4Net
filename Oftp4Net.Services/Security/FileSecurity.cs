@@ -43,8 +43,24 @@ public static class FileSecurity
     /// <paramref name="partnerCertificate"/> the partner's certificate the signature is verified against.
     /// </summary>
     public static byte[] Unprotect(byte[] content, FileSecurityDescriptor descriptor,
-        X509Certificate2? decryptionCertificate, X509Certificate2? partnerCertificate)
+        X509Certificate2? decryptionCertificate, X509Certificate2? partnerCertificate) =>
+        Unprotect(content, descriptor, decryptionCertificate, partnerCertificate, strictSignature: true, out _);
+
+    /// <summary>
+    /// Like <see cref="Unprotect(byte[], FileSecurityDescriptor, X509Certificate2?, X509Certificate2?)"/>, but a
+    /// signature that cannot be verified does not fail: the signed content is returned and
+    /// <paramref name="signatureProblem"/> says what is wrong with the signature. Used where the content decides
+    /// itself how much it trusts an unverified sender, e.g. a datasheet signed with a new certificate.
+    /// </summary>
+    public static byte[] Unprotect(byte[] content, FileSecurityDescriptor descriptor,
+        X509Certificate2? decryptionCertificate, X509Certificate2? partnerCertificate, out string? signatureProblem) =>
+        Unprotect(content, descriptor, decryptionCertificate, partnerCertificate, strictSignature: false, out signatureProblem);
+
+    private static byte[] Unprotect(byte[] content, FileSecurityDescriptor descriptor,
+        X509Certificate2? decryptionCertificate, X509Certificate2? partnerCertificate, bool strictSignature,
+        out string? signatureProblem)
     {
+        signatureProblem = null;
         var suite = CipherSuite.Get(descriptor.CipherSuiteCode);
         if ((descriptor.Encrypted || descriptor.Signed) && suite is null)
             throw new FileSecurityException(AnswerReasonCodes.CipherSuiteNotSupported,
@@ -74,10 +90,18 @@ public static class FileSecurity
 
         if (descriptor.Signed)
         {
-            if (partnerCertificate is null)
-                throw new FileSecurityException(AnswerReasonCodes.InvalidFileSignature,
-                    "The partner has no certificate configured to verify the file signature with.");
-            result = VerifySignature(result, partnerCertificate);
+            try
+            {
+                if (partnerCertificate is null)
+                    throw new FileSecurityException(AnswerReasonCodes.InvalidFileSignature,
+                        "The partner has no certificate configured to verify the file signature with.");
+                result = VerifySignature(result, partnerCertificate);
+            }
+            catch (FileSecurityException ex) when (!strictSignature)
+            {
+                signatureProblem = ex.Message;
+                result = GetSignedContent(result);
+            }
         }
 
         return result;
@@ -121,7 +145,7 @@ public static class FileSecurity
         var cms = new SignedCms(new ContentInfo(content), detached: false);
         var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, certificate)
         {
-            DigestAlgorithm = new Oid(suite.HashAlgorithm.Name!),
+            DigestAlgorithm = suite.DigestAlgorithm,
             IncludeOption = X509IncludeOption.EndCertOnly,
         };
 
@@ -166,6 +190,23 @@ public static class FileSecurity
         if (!cms.SignerInfos.Cast<SignerInfo>().Any(s => partnerCertificate.Equals(s.Certificate)))
             throw new FileSecurityException(AnswerReasonCodes.InvalidFileSignature,
                 $"The content is not signed by the certificate configured for the partner ('{partnerCertificate.Subject}').");
+
+        return cms.ContentInfo.Content;
+    }
+
+    /// <summary>The content of an attached CMS SignedData, without verifying the signature.</summary>
+    private static byte[] GetSignedContent(byte[] content)
+    {
+        var cms = new SignedCms();
+        try
+        {
+            cms.Decode(content);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new FileSecurityException(AnswerReasonCodes.InvalidFileSignature,
+                "The signed content is not a valid CMS package: " + ex.Message, ex);
+        }
 
         return cms.ContentInfo.Content;
     }

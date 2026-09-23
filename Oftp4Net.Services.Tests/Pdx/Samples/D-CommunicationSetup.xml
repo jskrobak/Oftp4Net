@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ocs:OftpCommunicationSetup version="1.2" docid="f8e3cd0d-e4e3-46a8-881f-d4373424b926" docdate="2023-08-03T11:16:00Z" validfrom="2023-08-03T11:16:00Z" xmlns:ocs="http://www.odette.org/OFTPCommunicationSetup/1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.odette.org/OFTPCommunicationSetup/1.2 OftpCommunicationSetup-1p2_2023-08.xsd">
+	<ocs:StationInformation>
+		<ocs:Name>Wiley E. Coyote Corporation</ocs:Name>
+		<ocs:CompanyInfo>
+			<ocs:Name>Wiley E. Coyote Corporation</ocs:Name>
+			<ocs:AddressLine>3400 W. Riverside Dr.</ocs:AddressLine>
+			<ocs:City>Burbank</ocs:City>
+			<ocs:ZIPCode>CA 91505</ocs:ZIPCode>
+			<ocs:Country>US</ocs:Country>
+		</ocs:CompanyInfo>
+		<ocs:IssuerIDCode>O017700000000COYOTE000001</ocs:IssuerIDCode>
+		<ocs:Contacts>
+			<ocs:Contact>
+				<ocs:Name>Helpdesk</ocs:Name>
+				<ocs:Description>General Helpdesk</ocs:Description>
+				<ocs:Phone>+1-555-492-8687</ocs:Phone>
+				<ocs:Email>support@wileyecoyote.example</ocs:Email>
+			</ocs:Contact>
+		</ocs:Contacts>
+	</ocs:StationInformation>
+	<ocs:InboundCommunicationSettings>
+		<ocs:InboundConnectionSettings type="TCP">
+			<ocs:ServerHost>oftp.wileyecoyote.example</ocs:ServerHost>
+			<ocs:ServerPort>3305</ocs:ServerPort>
+		</ocs:InboundConnectionSettings>
+	</ocs:InboundCommunicationSettings>
+	<ocs:OutboundCommunicationSettings>
+		<ocs:OutboundConnectionSettings type="TCP">
+			<ocs:OutboundIP>198.51.100.42</ocs:OutboundIP>
+		</ocs:OutboundConnectionSettings>
+	</ocs:OutboundCommunicationSettings>
+	<ocs:SessionSettings>
+		<ocs:OdetteIDCodeSSID>O017700000000COYOTE000001</ocs:OdetteIDCodeSSID>
+		<ocs:MinimumProtocolReleaseLevel>1</ocs:MinimumProtocolReleaseLevel>
+		<ocs:MaximumProtocolReleaseLevel>4</ocs:MaximumProtocolReleaseLevel>
+		<ocs:Password>MEEPMEEP</ocs:Password>
+		<ocs:SecureAuthentication usage="forbidden"/>
+	</ocs:SessionSettings>
+	<ocs:OutboundFileSettings>
+		<ocs:FileSignature usage="forbidden"/>
+		<ocs:FileEncryption usage="forbidden"/>
+		<ocs:FileCompression usage="optional"/>
+		<ocs:EERPSignature usage="forbidden"/>
+	</ocs:OutboundFileSettings>
+	<ocs:InboundFileSettings>
+		<ocs:FileSignature usage="optional"/>
+		<ocs:FileEncryption usage="forbidden"/>
+		<ocs:FileCompression usage="optional"/>
+		<ocs:EERPSignature usage="forbidden"/>
+	</ocs:InboundFileSettings>
+	<ocs:SubStations>
+		<ocs:SubStationInformation>
+			<ocs:Name>CAD</ocs:Name>
+			<ocs:OdetteIDCodeSFID>O017700000000COYOTE000CAD</ocs:OdetteIDCodeSFID>
+		</ocs:SubStationInformation>
+	</ocs:SubStations>
+</ocs:OftpCommunicationSetup>

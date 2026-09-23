@@ -24,6 +24,8 @@ using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.Api;
 using Oftp4Net.Services.Hooks;
 using Oftp4Net.Services.Import;
+using Oftp4Net.Services.Pdx;
+using Oftp4Net.Services.Tsl;
 using Oftp4Net.Services.TransferEvents;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
@@ -128,7 +130,15 @@ builder.AddBlazorCookies();
 builder.Services.AddSingleton<TransferClaims>();
 builder.Services.AddScoped<ApiTokenService>();
 builder.Services.AddScoped<Os4xPartnerImporter>();
+builder.Services.AddScoped<PdxImporter>();
+builder.Services.AddScoped<PartnerSetupService>();
+builder.Services.AddScoped<PdxExporter>();
+builder.Services.AddSingleton<PartnerSetupScheduler>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PartnerSetupScheduler>());
 builder.Services.AddHttpClient(WebhookDispatcher.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient(TslService.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddSingleton<TslService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TslService>());
 builder.Services.AddSingleton<WebhookDispatcher>();
 builder.Services.AddSingleton<IWebhookDispatcher>(sp => sp.GetRequiredService<WebhookDispatcher>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookDispatcher>());
@@ -284,6 +294,13 @@ app.MapGet("/certificates/{id:int}/download", async (int id, ICertificateReposit
     using var x509 = CertificateLoader.Load(certificate);
     var fileName = (x509.GetNameInfo(X509NameType.SimpleName, false) is { Length: > 0 } cn ? cn : $"certificate-{id}") + ".crt";
     return Results.File(Encoding.ASCII.GetBytes(x509.ExportCertificatePem() + "\n"), "application/x-pem-file", fileName);
+}).ExcludeFromDescription();
+
+// Our OFTP2 Communication Setup of an identity, e.g. to send it to a new partner by e-mail.
+app.MapGet("/pdx/export/{identityId:int}", async (int identityId, DateTimeOffset? validFrom, PdxExporter exporter) =>
+{
+    var export = await exporter.ExportAsync(identityId, validFrom);
+    return Results.File(export.Content, "application/xml", export.FileName);
 }).ExcludeFromDescription();
 
 app.MapGet("/received/{id:int}/download", async (int id, IDataService dataService) =>

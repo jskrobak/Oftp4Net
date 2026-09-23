@@ -5,6 +5,8 @@ using Oftp4Net.DataLayer.Filters;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using Oftp4Net.Services;
+using Oftp4Net.Services.Oftp;
+using Oftp4Net.Services.Pdx;
 using Oftp4Net.Services.Api;
 
 namespace Oftp4Net.Server.Api;
@@ -36,6 +38,7 @@ public static class ApiEndpoints
                 IFormFile file,
                 [FromForm] string partner,
                 [FromForm] string identity,
+                [FromForm] string? destination,
                 [FromForm] string? virtualFileName,
                 [FromForm] string? description,
                 [FromForm] string? reference,
@@ -62,6 +65,16 @@ public static class ApiEndpoints
                 if (identityEntity is null)
                     return Results.BadRequest(new ApiError($"Unknown identity '{identity}'."));
 
+                // A sub-station of the partner (e.g. a plant) with its own SFID; empty for the partner itself.
+                string? destinationSfid = null;
+                if (!string.IsNullOrWhiteSpace(destination) && !Matches(partnerEntity.SFID, destination))
+                {
+                    var subStation = StationSettings.FindSubStation(partnerEntity, destination);
+                    if (subStation is null)
+                        return Results.BadRequest(new ApiError($"'{destination}' is neither the SFID of partner {partnerEntity.Name} nor of one of its sub-stations."));
+                    destinationSfid = subStation.SFID;
+                }
+
                 if (!string.IsNullOrEmpty(webhookUrl) && !webhooks.IsAllowed(webhookUrl, out var webhookError))
                     return Results.BadRequest(new ApiError(webhookError));
 
@@ -73,6 +86,7 @@ public static class ApiEndpoints
                 {
                     PartnerId = partnerEntity.Id,
                     IdentityId = identityEntity.Id,
+                    DestinationSfid = destinationSfid,
                     VirtualFileName = name,
                     FilePath = await outbox.SaveAsync(file, cancellationToken),
                     Description = description,
@@ -246,6 +260,19 @@ public static class ApiEndpoints
             })
             .WithSummary("Reads the transfer log.");
 
+        api.MapGet("/pdx/{identity}", async (string identity, DateTimeOffset? validFrom,
+                IIdentityRepository identities, PdxExporter exporter, CancellationToken cancellationToken) =>
+            {
+                var identityEntity = (await identities.GetAllAsync(cancellationToken))
+                    .FirstOrDefault(i => Matches(i.SSID, identity) || Matches(i.Name, identity));
+                if (identityEntity is null)
+                    return Results.NotFound(new ApiError($"Unknown identity '{identity}'."));
+
+                var export = await exporter.ExportAsync(identityEntity.Id, validFrom, cancellationToken);
+                return Results.File(export.Content, "application/xml", export.FileName);
+            })
+            .WithSummary("Our OFTP2 Communication Setup (PDX datasheet) of an identity, e.g. for a new partner.");
+
         api.MapGet("/status", async (
                 SendService sendService, ListenerService listenerService,
                 ISendQueueItemRepository queue, IReceivedFileRepository received, CancellationToken cancellationToken) =>
@@ -279,11 +306,13 @@ public record PartyDto(int Id, string Name, string Ssid, string Sfid);
 
 public record QueueItemDto(int Id, string Status, string VirtualFileName, string? Reference, string? Description,
     string? PartnerName, string? PartnerSsid, string? IdentityName, DateTime Created, string? FileDate, string? FileTime,
-    DateTime? SentDate, DateTime? DeliveredDate, int RetryCount, DateTime? NextRetry, string? LastError, string? WebhookUrl)
+    DateTime? SentDate, DateTime? DeliveredDate, int RetryCount, DateTime? NextRetry, string? LastError, string? WebhookUrl,
+    string? DestinationSfid)
 {
     public static QueueItemDto From(SendQueueItem i) => new(i.Id, i.Status.ToString(), i.VirtualFileName, i.Reference,
         i.Description, i.Partner?.Name, i.Partner?.SSID, i.Identity?.Name, i.Created, i.FileDate, i.FileTime,
-        i.SentDate, i.DeliveredDate, i.RetryCount, i.Status == SendStatus.ERROR ? i.NextRetry : null, i.LastError, i.WebhookUrl);
+        i.SentDate, i.DeliveredDate, i.RetryCount, i.Status == SendStatus.ERROR ? i.NextRetry : null, i.LastError, i.WebhookUrl,
+        string.IsNullOrEmpty(i.DestinationSfid) ? i.Partner?.SFID : i.DestinationSfid);
 }
 
 public record ReceivedFileDto(int Id, string Status, string VirtualFileName, string? PartnerName, string? PartnerSsid,

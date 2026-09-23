@@ -25,4 +25,7 @@ public enum ReceiveStatus
     /// is sent to the partner instead of the EERP.
     /// </summary>
     NOT_DELIVERED = 5,
+
+    /// <summary>Stored, the End to End Response waits for a decision of the administrator (e.g. a datasheet).</summary>
+    HELD = 6,
 }

@@ -9,6 +9,8 @@ using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using Oftp4Net.Services.Oftp;
 
+using Oftp4Net.Services.Tsl;
+
 namespace Oftp4Net.Services;
 
 /// <summary>
@@ -18,6 +20,7 @@ namespace Oftp4Net.Services;
 public class SendService(ILogger<SendService> logger,
     IServiceScopeFactory serviceScopeFactory,
     GlobalSettingsService globalSettingsService,
+    TslService tsl,
     ITimeService timeService) : BackgroundService
 {
     /// <summary>Received files are confirmed in the partner's own session; connect only when that did not happen.</summary>
@@ -142,7 +145,7 @@ public class SendService(ILogger<SendService> logger,
 
         try
         {
-            var tls = partner.UseTls ? await CreateTlsOptionsAsync(scope.ServiceProvider, partner, settings, stoppingToken) : null;
+            var tls = partner.UseTls ? await CreateTlsOptionsAsync(scope.ServiceProvider, partner, settings, tsl.TrustAnchors, stoppingToken) : null;
 
             logger.LogInformation("Connecting to {Partner} at {Host}:{Port} ({Security})",
                 partner.Name, partner.Host, partner.Port, tls is null ? "plain TCP" : "TLS");
@@ -185,12 +188,14 @@ public class SendService(ILogger<SendService> logger,
         }
     }
 
+    /// <param name="tslAnchors">Certification authorities of the Odette TSL, trusted for every partner.</param>
     private static async Task<OftpTlsOptions> CreateTlsOptionsAsync(IServiceProvider services, Partner partner,
-        GlobalSettings settings, CancellationToken cancellationToken)
+        GlobalSettings settings, System.Security.Cryptography.X509Certificates.X509Certificate2Collection tslAnchors,
+        CancellationToken cancellationToken)
     {
         var certificates = services.GetRequiredService<ICertificateRepository>();
 
-        var trusted = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection();
+        var trusted = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection(tslAnchors);
         if (partner.TrustedCertificateId is { } trustedId)
             trusted.Add(CertificateLoader.Load(await certificates.GetObjectAsync(trustedId, cancellationToken)));
 

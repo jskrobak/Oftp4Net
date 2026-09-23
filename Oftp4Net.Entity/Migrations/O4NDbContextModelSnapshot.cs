@@ -214,21 +214,45 @@ namespace Oftp4Net.Entity.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<int>("AnsiCodePage")
                         .HasColumnType("integer");
 
                     b.Property<bool>("BufferCompression")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CompanyName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<bool>("CompressFiles")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("Contacts")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
 
                     b.Property<bool>("ConvertIncomingEbcdicToAnsi")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Country")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
+
                     b.Property<string>("Description")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Duns")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<int>("EbcdicCodePage")
                         .HasColumnType("integer");
@@ -246,10 +270,22 @@ namespace Oftp4Net.Entity.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("InboundDsnPatterns")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("InfoDocumentUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<string>("OutboundDsnPatterns")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
 
                     b.Property<string>("OutgoingEncoding")
                         .IsRequired()
@@ -263,10 +299,22 @@ namespace Oftp4Net.Entity.Migrations
                     b.Property<int>("Port")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("PreviousSecurityCertificateId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("ProtocolLevel")
                         .HasColumnType("integer");
 
                     b.Property<bool>("RequestSignedEndResponse")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequireCompressedFiles")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequireEncryptedFiles")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequireSignedFiles")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("Restart")
@@ -288,8 +336,21 @@ namespace Oftp4Net.Entity.Migrations
                     b.Property<int?>("SecurityCertificateId")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("SetupAppliedDate")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<DateTime?>("SetupDocumentDate")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<Guid?>("SetupDocumentId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("SignFiles")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("SubStations")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
 
                     b.Property<int>("Tls")
                         .HasColumnType("integer");
@@ -300,13 +361,103 @@ namespace Oftp4Net.Entity.Migrations
                     b.Property<bool>("UseTls")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("ZipCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("PreviousSecurityCertificateId");
 
                     b.HasIndex("SecurityCertificateId");
 
                     b.HasIndex("TrustedCertificateId");
 
                     b.ToTable("Partners");
+                });
+
+            modelBuilder.Entity("Oftp4Net.Domain.PartnerSetupDocument", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AppliedDate")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("Changes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("Created")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("DecidedDate")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<DateTime>("DocDate")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<Guid>("DocId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Messages")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int?>("PartnerId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ReceivedFileId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Signature")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Ssid")
+                        .IsRequired()
+                        .HasMaxLength(25)
+                        .HasColumnType("character varying(25)");
+
+                    b.Property<string>("StationName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("ValidFrom")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartnerId");
+
+                    b.HasIndex("ReceivedFileId");
+
+                    b.HasIndex("Status", "ValidFrom");
+
+                    b.ToTable("PartnerSetupDocuments");
                 });
 
             modelBuilder.Entity("Oftp4Net.Domain.ReceivedFile", b =>
@@ -331,6 +482,9 @@ namespace Oftp4Net.Entity.Migrations
                         .HasColumnType("bytea");
 
                     b.Property<DateTime>("Created")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<DateTime?>("DecidedDate")
                         .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("Description")
@@ -435,6 +589,10 @@ namespace Oftp4Net.Entity.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(999)
                         .HasColumnType("character varying(999)");
+
+                    b.Property<string>("DestinationSfid")
+                        .HasMaxLength(25)
+                        .HasColumnType("character varying(25)");
 
                     b.Property<string>("FileDate")
                         .HasMaxLength(8)
@@ -656,6 +814,11 @@ namespace Oftp4Net.Entity.Migrations
 
             modelBuilder.Entity("Oftp4Net.Domain.Partner", b =>
                 {
+                    b.HasOne("Oftp4Net.Domain.Certificate", "PreviousSecurityCertificate")
+                        .WithMany()
+                        .HasForeignKey("PreviousSecurityCertificateId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Oftp4Net.Domain.Certificate", "SecurityCertificate")
                         .WithMany()
                         .HasForeignKey("SecurityCertificateId")
@@ -666,9 +829,28 @@ namespace Oftp4Net.Entity.Migrations
                         .HasForeignKey("TrustedCertificateId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.Navigation("PreviousSecurityCertificate");
+
                     b.Navigation("SecurityCertificate");
 
                     b.Navigation("TrustedCertificate");
+                });
+
+            modelBuilder.Entity("Oftp4Net.Domain.PartnerSetupDocument", b =>
+                {
+                    b.HasOne("Oftp4Net.Domain.Partner", "Partner")
+                        .WithMany()
+                        .HasForeignKey("PartnerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Oftp4Net.Domain.ReceivedFile", "ReceivedFile")
+                        .WithMany()
+                        .HasForeignKey("ReceivedFileId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Partner");
+
+                    b.Navigation("ReceivedFile");
                 });
 
             modelBuilder.Entity("Oftp4Net.Domain.ReceivedFile", b =>
