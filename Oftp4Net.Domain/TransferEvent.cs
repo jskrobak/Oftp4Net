@@ -48,6 +48,8 @@ public enum TransferEventType
     SetupReceived,
     SetupApplied,
     SetupRejected,
+    CertificateReceived,
+    CertificateRejected,
 }
 
 /// <summary>

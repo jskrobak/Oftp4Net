@@ -22,6 +22,8 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - REST API with bearer tokens and webhooks, scripts run on transfer events, persistent transfer log
 - Partner Details Exchange (PDX, Odette OFTP2 Communication Setup): partners set up and updated from their datasheets,
   received by e-mail or over OFTP, our own datasheet exported and sent
+- Automatic exchange of certificates over OFTP (ODETTE_CERTIFICATE_DELIVER, _REQUEST and _REPLACE): renewals,
+  roll-overs and replacements taken over without the administrator
 - Import of partners from an existing OS4X installation
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
 
@@ -212,9 +214,12 @@ The cipher suites are those of RFC 5024 and the extensions of the Odette OFTP2 E
 | `07` | AES-256-CBC | the same | SHA3-512 |
 | `08`, `09`, `10` | AES-256-CBC | RSA-PSS and RSA-OAEP | SHA-256, SHA-512, SHA3-512 |
 
-`01` and `02` are supported by every OFTP2 node. Suite `07` needs a platform that provides SHA3 (Linux with
-OpenSSL 1.1.1+, recent Windows; not macOS), and suite `10` is not offered at all for now: .NET knows no signature
-algorithm for RSA-PSS with a SHA3 digest, so such a signature cannot be produced. The datasheet of a partner (PDX) can
+`01` and `02` are supported by every OFTP2 node. The suites with SHA3 (`07` and `10`) need a platform that
+provides it (Linux with OpenSSL 1.1.1+, recent Windows; not macOS, where they are hidden from the list).
+
+The CMS classes of .NET know no signature algorithm for RSA-PSS with a SHA3 digest and no key transport with
+OAEP and SHA3, although RSA itself does both, so the two packages of suite `10` are written and read by
+`Sha3Cms` directly as RFC 5652 and RFC 4055 describe them. The datasheet of a partner (PDX) can
 only announce the suites its schema knows, up to `07`; `08` to `10` are used with partners that agreed on them in
 another way.
 
@@ -475,6 +480,33 @@ Datasheets are written in version 1.2 of the schema, or in 1.1 for software that
 *Version of our datasheet*; taken over from a partner's own datasheet). OS4X (2025), for example, reads only 1.1 and
 accepts a datasheet over OFTP only when it is signed with the certificate it has for the partner. Dates are written in
 UTC as `+00:00`, the form every implementation tested reads correctly.
+
+## Automatic exchange of certificates
+
+Certificates are exchanged over OFTP as the virtual files `ODETTE_CERTIFICATE_DELIVER`, `ODETTE_CERTIFICATE_REQUEST`
+and `ODETTE_CERTIFICATE_REPLACE` (Odette OP08 2.5). They carry one certificate in DER and are always transferred
+unsecured (SFIDFMT `U`, SFIDSEC `00`, SFIDSIGN `N`), because the partner may not have our certificate yet.
+
+The context menu of a partner (*Send our certificate*) puts one of our certificates into the send queue. A delivery
+announces a new certificate while the old one stays valid, a replacement takes the old one out of use at once, and a
+request asks the partner for its own certificate in return. *Replaces* writes the identification data (CLID) of the
+certificate the partner has so far into SFIDDESC, so that the partner can assign the new one even when its subject
+or issuer changed.
+
+A certificate that arrives is checked (validity period, chain of trust, revocation) and assigned to the partner it
+belongs to: to the certificate named in SFIDDESC, or to the one with the same subject, issuer and key usages. A
+delivered certificate takes the place of the one it replaces and the old one stays valid for the roll-over period,
+a replacement ends its use at once, and a request is answered with our certificate — in the same session when we
+still get the turn. The partner gets an EERP for a certificate that was taken over; one that cannot be assigned is
+answered with a NERP carrying the reason, as the specification requires, and has to be sorted out by hand.
+
+*Settings* → *Take over certificates received over OFTP* decides how much is done without the administrator: only
+certificates that replace one the partner already has here (default), those plus a first certificate whose chain
+ends with a trusted certification authority, or nothing at all. A self signed certificate is only accepted as the
+renewal of one that is already configured, as OP08 requires.
+
+Certificates are assigned per partner, not per sub-station or per document type; a setup that needs a different
+certificate for each sub-station or file type has to be maintained by hand.
 
 ## Odette trust list (TSL)
 

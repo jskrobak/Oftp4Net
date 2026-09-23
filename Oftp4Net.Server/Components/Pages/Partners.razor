@@ -348,6 +348,20 @@
     </BodyTemplate>
 </HxModal>
 
+<HxModal @ref="certificateModal" ShowCloseButton="true" Size="ModalSize.Large">
+    <HeaderTemplate>
+        Send one of our certificates
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (certificatePartner is not null && certificateIdentities is not null)
+        {
+            <CertificateExchangeForm Partner="certificatePartner" Identities="certificateIdentities"
+                                     Certificates="ownCertificates" CertificateId="ownCertificateId"
+                                     OnSent="() => certificateModal.HideAsync()" />
+        }
+    </BodyTemplate>
+</HxModal>
+
 <HxModal @ref="pdxModal" ShowCloseButton="true" Size="ModalSize.Large">
     <HeaderTemplate>
         Import OFTP2 Communication Setup (PDX)
@@ -514,6 +528,10 @@
                         <HxContextMenuItem Text="Send our datasheet"
                                            Icon="BootstrapIcon.FiletypeXml"
                                            OnClick="async () => await HandleSendDatasheetClick(currentPartner)" />
+
+                        <HxContextMenuItem Text="Send our certificate"
+                                           Icon="BootstrapIcon.Award"
+                                           OnClick="async () => await HandleSendCertificateClick(currentPartner)" />
 
                         <HxContextMenuItem Text="Delete"
                                            Icon="BootstrapIcon.Trash"

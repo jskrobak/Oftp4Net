@@ -544,14 +544,80 @@ public class SessionTests
             OftpConnector.ConnectAsync("localhost", listener.LocalEndPoint.Port, new OftpTlsOptions(), cts.Token));
     }
 
-    private static X509Certificate2 CreateSelfSignedCertificate()
+    [Fact]
+    public async Task ExpiredServerCertificateIsRejectedAlthoughItIsPinned()
+    {
+        using var certificate = CreateSelfSignedCertificate(expired: true);
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        client.Enqueue("SECURE", "over tls"u8.ToArray(), ServerCode);
+
+        var (clientError, _) = await RunAsync(client, server,
+            serverTls: new OftpTlsOptions { LocalCertificate = certificate },
+            clientTls: new OftpTlsOptions
+            {
+                TrustedCertificates = [X509CertificateLoader.LoadCertificate(certificate.RawData)],
+            });
+
+        Assert.IsType<AuthenticationException>(clientError, exactMatch: false);
+        Assert.Empty(server.ReceivedFiles);
+    }
+
+    [Fact]
+    public async Task ExpiredClientCertificateIsRejectedAlthoughItIsPinned()
+    {
+        using var serverCertificate = CreateSelfSignedCertificate();
+        using var clientCertificate = CreateSelfSignedCertificate(expired: true);
+        using var cts = new CancellationTokenSource(TestTimeout);
+        var accepted = false;
+
+        await using var listener = new OftpListener(new IPEndPoint(IPAddress.Loopback, 0),
+            new OftpTlsOptions
+            {
+                LocalCertificate = serverCertificate,
+                RequireClientCertificate = true,
+                TrustedCertificates = [X509CertificateLoader.LoadCertificate(clientCertificate.RawData)],
+            },
+            (_, _, _) =>
+            {
+                accepted = true;
+                return Task.CompletedTask;
+            }, NullLogger.Instance);
+        listener.Start();
+
+        try
+        {
+            await using var transport = await OftpConnector.ConnectAsync("localhost", listener.LocalEndPoint.Port,
+                new OftpTlsOptions
+                {
+                    LocalCertificate = clientCertificate,
+                    TrustedCertificates = [X509CertificateLoader.LoadCertificate(serverCertificate.RawData)],
+                }, cts.Token);
+
+            // The client may finish its side of the handshake; the server drops the connection right after.
+            await transport.ReadAsync(cts.Token);
+        }
+        catch (Exception)
+        {
+            // Expected: the server refused the expired certificate.
+        }
+
+        Assert.False(accepted, "The session was accepted although the client certificate had expired.");
+    }
+
+    private static X509Certificate2 CreateSelfSignedCertificate(bool expired = false)
     {
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         var san = new SubjectAlternativeNameBuilder();
         san.AddDnsName("localhost");
         request.CertificateExtensions.Add(san.Build());
-        using var ephemeral = request.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddDays(1));
+
+        var (from, to) = expired
+            ? (DateTimeOffset.Now.AddDays(-30), DateTimeOffset.Now.AddDays(-1))
+            : (DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddDays(1));
+
+        using var ephemeral = request.CreateSelfSigned(from, to);
         // Round trip through PKCS#12 so the private key is usable by SslStream on all platforms.
         return X509CertificateLoader.LoadPkcs12(ephemeral.Export(X509ContentType.Pfx), null);
     }

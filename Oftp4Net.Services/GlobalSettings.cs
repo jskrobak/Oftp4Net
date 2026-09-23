@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Oftp4Net.Core.Transport;
 using Oftp4Net.Services.Pdx;
+using Oftp4Net.Services.Security;
 using Oftp4Net.Services.Tsl;
 
 namespace Oftp4Net.Services;
@@ -97,6 +98,13 @@ public class GlobalSettings
     /// <summary>Which OFTP2 Communication Setups received from partners over OFTP are applied without approval.</summary>
     [SettingsItem]
     public PdxAutoApply PdxAutoApply { get; set; } = PdxAutoApply.SignedOnly;
+
+    /// <summary>
+    /// Which certificates received from partners over OFTP (ODETTE_CERTIFICATE_DELIVER and its siblings) are taken
+    /// over without the administrator.
+    /// </summary>
+    [SettingsItem]
+    public CertificateExchangeMode CertificateExchange { get; set; } = CertificateExchangeMode.Known;
 
     /// <summary>
     /// Downloads the Odette Trust Service Status List (TSL): certificates issued by the certification authorities

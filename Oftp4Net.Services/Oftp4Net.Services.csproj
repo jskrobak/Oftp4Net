@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <ItemGroup>
+      <InternalsVisibleTo Include="Oftp4Net.Services.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
       <ProjectReference Include="..\Oftp4Net.Core\Oftp4Net.Core.csproj" />
       <ProjectReference Include="..\Oftp4Net.DataLayer\Oftp4Net.DataLayer.csproj" />
       <ProjectReference Include="..\Oftp4Net.Domain\Oftp4Net.Domain.csproj" />

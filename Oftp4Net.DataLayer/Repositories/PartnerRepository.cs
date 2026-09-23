@@ -38,11 +38,16 @@ public class PartnerRepository(
 
     public async Task<List<Certificate>> GetTrustedCertificatesAsync(CancellationToken cancellationToken = default)
     {
-        return await Data
+        // The certificate a partner used before a roll-over is kept as well: the partner may still present it in
+        // TLS until it starts using the new one (Odette OP08 2.5 F).
+        var trusted = Data
             .Where(p => p.TrustedCertificate != null)
-            .Select(p => p.TrustedCertificate!)
-            .Distinct()
-            .ToListAsync(cancellationToken);
+            .Select(p => p.TrustedCertificate!);
+        var previous = Data
+            .Where(p => p.PreviousSecurityCertificate != null)
+            .Select(p => p.PreviousSecurityCertificate!);
+
+        return await trusted.Union(previous).Distinct().ToListAsync(cancellationToken);
     }
 
     public async Task<Partner?> FindBySsidAsync(string ssid, CancellationToken cancellationToken = default)

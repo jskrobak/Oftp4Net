@@ -198,6 +198,18 @@
                                   Nullable="false" />
                     </div>
 
+                    <div class="col-12">
+                        <HxSelect TItem="CertificateExchangeMode"
+                                  TValue="CertificateExchangeMode"
+                                  Label="Take over certificates received over OFTP"
+                                  Hint="Automatic exchange of certificates (Odette OP08 2.5): ODETTE_CERTIFICATE_DELIVER, _REQUEST and _REPLACE. A certificate that is not taken over is answered with a NERP and has to be assigned by hand."
+                                  Data="Enum.GetValues<CertificateExchangeMode>()"
+                                  @bind-Value="@settings.CertificateExchange"
+                                  TextSelector="@(m => m switch { CertificateExchangeMode.Trusted => "also a first certificate when its chain of trust is trusted", CertificateExchangeMode.Known => "only certificates that replace one of the partner", _ => "never, refuse them" })"
+                                  ValueSelector="@(m => m)"
+                                  Nullable="false" />
+                    </div>
+
                     <div class="col-md-6">
                         <HxSelect TItem="CipherSuite"
                                   TValue="string"

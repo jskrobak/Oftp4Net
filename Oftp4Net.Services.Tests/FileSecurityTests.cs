@@ -208,6 +208,40 @@ public class FileSecurityTests
     }
 
     [Fact]
+    public void Sha3PackagesAreSignedEncryptedAndCheckedByOurOwnCode()
+    {
+        if (CipherSuite.Get(CipherSuites.Aes256PssOaepSha3512) is not { } suite)
+            return;
+
+        Assert.True(Sha3Cms.IsHandled(suite));
+
+        var signed = Sha3Cms.Sign(Content, Ours, suite);
+
+        // The package is a CMS SignedData with an RSASSA-PSS signature over the included content.
+        var cms = new SignedCms();
+        cms.Decode(signed);
+        Assert.Equal("1.2.840.113549.1.1.10", cms.SignerInfos[0].SignatureAlgorithm.Value);
+        Assert.Equal(Content, cms.ContentInfo.Content);
+
+        Assert.Equal(Content, Sha3Cms.Verify(signed, Ours, suite));
+        // Another certificate does not verify it.
+        Assert.Throws<FileSecurityException>(() => Sha3Cms.Verify(signed, Partner, suite));
+
+        // A changed content is caught by the digest in the signed attributes.
+        var tampered = (byte[])signed.Clone();
+        tampered[^1] ^= 0xFF;
+        Assert.Throws<FileSecurityException>(() => Sha3Cms.Verify(tampered, Ours, suite));
+
+        // The envelope is written and read here as well.
+        var envelope = Sha3Cms.Encrypt(Content, Partner, suite);
+        var envelopedCms = new EnvelopedCms();
+        envelopedCms.Decode(envelope);
+        Assert.Equal("1.2.840.113549.1.1.7", envelopedCms.RecipientInfos[0].KeyEncryptionAlgorithm.Oid.Value);
+        Assert.Equal(Content, Sha3Cms.Decrypt(envelope, Partner, suite));
+        Assert.Throws<FileSecurityException>(() => Sha3Cms.Decrypt(envelope, Ours, suite));
+    }
+
+    [Fact]
     public void AuthenticationChallengeIsEncryptedForTheOtherSide()
     {
         var challenge = Oftp4Net.Core.Protocol.SecureAuthentication.CreateChallenge();

@@ -48,14 +48,17 @@ internal static class OftpCertificateValidator
 
         var leaf = certificate as X509Certificate2 ?? X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
 
-        // Pinned end entity certificate: trust it regardless of chain and host name.
+        // Pinned end entity certificate: trust it regardless of chain and host name, but not when it expired.
         foreach (var pinned in trusted)
         {
             if (pinned.RawDataMemory.Span.SequenceEqual(leaf.RawDataMemory.Span))
-                return true;
+                return IsTimeValid(leaf);
         }
 
         if ((errors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0)
+            return false;
+
+        if (!IsTimeValid(leaf))
             return false;
 
         using var chain = new X509Chain();
@@ -63,5 +66,12 @@ internal static class OftpCertificateValidator
         chain.ChainPolicy.CustomTrustStore.AddRange(trusted);
         (revocation ?? new CertificateRevocationPolicy()).ApplyTo(chain.ChainPolicy);
         return chain.Build(leaf);
+    }
+
+    /// <summary>A certificate that is not valid yet or expired is refused whatever else speaks for it.</summary>
+    private static bool IsTimeValid(X509Certificate2 certificate)
+    {
+        var now = DateTime.Now;
+        return now >= certificate.NotBefore && now <= certificate.NotAfter;
     }
 }

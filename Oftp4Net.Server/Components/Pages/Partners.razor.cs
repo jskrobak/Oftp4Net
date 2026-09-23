@@ -19,6 +19,7 @@ public partial class Partners : ComponentBase
     [Inject] protected IHxMessengerService Messenger { get; set; } = null!;
     [Inject] protected IHxMessageBoxService MessageBox { get; set; } = null!;
     [Inject] protected ListenerService ListenerService { get; set; } = null!;
+    [Inject] protected GlobalSettingsService GlobalSettingsService { get; set; } = null!;
     
     private Partner currentPartner = new();
     private HashSet<Partner> selectedItems = [];
@@ -219,6 +220,25 @@ public partial class Partners : ComponentBase
         datasheetIdentities = await DataService.GetAllIdentitiesAsync();
         datasheetPartner = partner;
         await datasheetModal.ShowAsync();
+    }
+
+    #endregion
+
+    #region Sending one of our certificates (Odette OP08 2.5)
+
+    private HxModal certificateModal = null!;
+    private Partner? certificatePartner;
+    private List<Identity>? certificateIdentities;
+    private List<Certificate> ownCertificates = [];
+    private int? ownCertificateId;
+
+    private async Task HandleSendCertificateClick(Partner partner)
+    {
+        certificateIdentities = await DataService.GetAllIdentitiesAsync();
+        ownCertificates = (await DataService.GetAllCertificatesAsync()).Where(c => c.HasPrivateKey).ToList();
+        ownCertificateId = (await GlobalSettingsService.GetGlobalSettingsAsync()).FileSecurityCertificateId;
+        certificatePartner = partner;
+        await certificateModal.ShowAsync();
     }
 
     #endregion

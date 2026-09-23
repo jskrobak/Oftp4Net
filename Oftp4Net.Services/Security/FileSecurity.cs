@@ -73,7 +73,7 @@ public static class FileSecurity
             if (decryptionCertificate is null)
                 throw new FileSecurityException(AnswerReasonCodes.FileDecryptionFailure,
                     "No certificate with a private key is configured to decrypt files with.");
-            result = Decrypt(result, decryptionCertificate);
+            result = Decrypt(result, decryptionCertificate, suite);
         }
 
         if (descriptor.Compressed)
@@ -95,7 +95,7 @@ public static class FileSecurity
                 if (partnerCertificate is null)
                     throw new FileSecurityException(AnswerReasonCodes.InvalidFileSignature,
                         "The partner has no certificate configured to verify the file signature with.");
-                result = VerifySignature(result, partnerCertificate);
+                result = VerifySignature(result, partnerCertificate, suite);
             }
             catch (FileSecurityException ex) when (!strictSignature)
             {
@@ -118,9 +118,10 @@ public static class FileSecurity
     /// Verifies the signature of an End to End Response: the signature must be valid, made by
     /// <paramref name="partnerCertificate"/> and cover exactly <paramref name="expectedContent"/>.
     /// </summary>
-    public static void VerifyEndResponse(byte[] signature, byte[] expectedContent, X509Certificate2 partnerCertificate)
+    public static void VerifyEndResponse(byte[] signature, byte[] expectedContent, X509Certificate2 partnerCertificate,
+        CipherSuite? suite = null)
     {
-        var content = VerifySignature(signature, partnerCertificate);
+        var content = VerifySignature(signature, partnerCertificate, suite);
 
         if (!CryptographicOperations.FixedTimeEquals(content, expectedContent))
             throw new FileSecurityException("The signature of the end response does not match its content.");
@@ -141,6 +142,10 @@ public static class FileSecurity
     {
         if (!certificate.HasPrivateKey)
             throw new FileSecurityException($"Certificate '{certificate.Subject}' has no private key to sign with.");
+
+        // .NET has no signature algorithm for RSA-PSS with a SHA3 digest, so that package is built by hand.
+        if (Sha3Cms.IsHandled(suite))
+            return Sha3Cms.Sign(content, certificate, suite);
 
         var cms = new SignedCms(new ContentInfo(content), detached: false);
         var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, certificate,
@@ -163,8 +168,11 @@ public static class FileSecurity
     }
 
     /// <summary>Verifies an attached CMS SignedData and returns the signed content.</summary>
-    private static byte[] VerifySignature(byte[] content, X509Certificate2 partnerCertificate)
+    private static byte[] VerifySignature(byte[] content, X509Certificate2 partnerCertificate, CipherSuite? suite = null)
     {
+        if (suite is not null && Sha3Cms.IsHandled(suite))
+            return Sha3Cms.Verify(content, partnerCertificate, suite);
+
         var cms = new SignedCms();
         try
         {
@@ -214,6 +222,10 @@ public static class FileSecurity
 
     private static byte[] Encrypt(byte[] content, X509Certificate2 certificate, CipherSuite suite)
     {
+        // .NET has no key transport with OAEP and a SHA3 digest, so that package is built by hand.
+        if (Sha3Cms.IsHandled(suite))
+            return Sha3Cms.Encrypt(content, certificate, suite);
+
         var enveloped = new EnvelopedCms(new ContentInfo(content), new AlgorithmIdentifier(suite.SymmetricAlgorithm));
         try
         {
@@ -228,8 +240,11 @@ public static class FileSecurity
         return enveloped.Encode();
     }
 
-    private static byte[] Decrypt(byte[] content, X509Certificate2 certificate)
+    private static byte[] Decrypt(byte[] content, X509Certificate2 certificate, CipherSuite? suite = null)
     {
+        if (suite is not null && Sha3Cms.IsHandled(suite))
+            return Sha3Cms.Decrypt(content, certificate, suite);
+
         if (!certificate.HasPrivateKey)
             throw new FileSecurityException(AnswerReasonCodes.FileDecryptionFailure,
                 $"Certificate '{certificate.Subject}' has no private key to decrypt with.");

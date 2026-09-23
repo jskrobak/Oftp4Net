@@ -196,8 +196,10 @@ public class SendService(ILogger<SendService> logger,
         var certificates = services.GetRequiredService<ICertificateRepository>();
 
         var trusted = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection(tslAnchors);
-        if (partner.TrustedCertificateId is { } trustedId)
-            trusted.Add(CertificateLoader.Load(await certificates.GetObjectAsync(trustedId, cancellationToken)));
+        // The certificate the partner used before a roll-over is accepted as well: it may still present it in TLS
+        // until it starts using the new one (Odette OP08 2.5 F).
+        foreach (var id in new[] { partner.TrustedCertificateId, partner.PreviousSecurityCertificateId }.OfType<int>().Distinct())
+            trusted.Add(CertificateLoader.Load(await certificates.GetObjectAsync(id, cancellationToken)));
 
         var clientCertificate = settings.OftpClientCertificateId is { } clientId
             ? CertificateLoader.Load(await certificates.GetObjectAsync(clientId, cancellationToken))
