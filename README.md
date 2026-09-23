@@ -92,6 +92,15 @@ Not implemented, because the deployments this server is built for do not use it:
 Runtime settings (receive directory, send interval, retry count, buffer size, credit, timeouts, TLS client certificate)
 are edited on the *Settings → General* page and stored in the database.
 
+`appsettings.json` and `appsettings.{Environment}.json` belong to the repository, so secrets do not go there. They
+belong into one of these, which are read after those files:
+
+| Where | For |
+|---|---|
+| `appsettings.{Environment}.local.json` next to them | a machine that is set up by hand; `.gitignore` knows the name |
+| `dotnet user-secrets set "Entra:ClientSecret" "…" --project Oftp4Net.Server` | development, stored in the profile of the user |
+| environment variables, e.g. `Entra__ClientSecret` | containers and production, and they have the last word |
+
 ## Users
 
 Users of the administration UI are stored in the database (*Settings → Users*), passwords are hashed.
@@ -112,8 +121,9 @@ configure the three values:
 }
 ```
 
-Or as environment variables, e.g. in Docker: `Entra__TenantId`, `Entra__ClientId`, `Entra__ClientSecret`. Without
-the section nothing changes and the sign in page only asks for a password.
+The client secret does not belong into `appsettings.json`, which is in the repository; put it into
+`appsettings.{Environment}.local.json`, the user secrets or an environment variable (`Entra__ClientSecret`), see
+*Configuration* above. Without the section nothing changes and the sign in page only asks for a password.
 
 Entra ID says who somebody is, the user list says who may come in: the address (e-mail or user principal name) is
 assigned to a user on the *Users* page, and an identity without a user is refused with a message that names the

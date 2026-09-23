@@ -2,6 +2,8 @@
 
     <PropertyGroup>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+        <!-- Secrets of the development machine (dotnet user-secrets), stored in the profile of the user. -->
+        <UserSecretsId>41c6d51c-08ff-401b-a7c6-7055144197ec</UserSecretsId>
     </PropertyGroup>
 
     <ItemGroup>

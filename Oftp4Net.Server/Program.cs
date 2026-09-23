@@ -38,6 +38,13 @@ System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Inst
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Values that must not go into the repository, e.g. the client secret of Entra ID: appsettings.{Environment}.local.json
+// is read here (.gitignore knows it) and in development also the user secrets of the .NET tooling, which live in the
+// profile of the user. The environment variables are added again afterwards, so that they keep the last word.
+builder.Configuration
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.local.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables();
+
 // Logging: file (Serilog), console and the in-app Log page.
 Log.Logger = new LoggerConfiguration()
     .WriteTo.File(Path.Combine(builder.Configuration["LogDirectory"] ?? "logs", "app.log"), rollingInterval: RollingInterval.Day)
