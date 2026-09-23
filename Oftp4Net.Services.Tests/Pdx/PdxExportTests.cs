@@ -121,3 +121,67 @@ public class PdxExportTests
         Assert.Contains(warnings, w => w.Contains("public host"));
     }
 }
+
+public class PdxVersionTests
+{
+    [Fact]
+    public void Version11IsWrittenAndValidated()
+    {
+        var original = PdxParser.Parse(PdxParserTests.Sample("C")).Document!;
+        var withCipher07 = original with { CipherSetting = new PdxCipherSetting("07", ["04"]) };
+
+        var content = PdxWriter.Write(withCipher07, "1.1");
+        var xml = System.Text.Encoding.UTF8.GetString(content);
+
+        Assert.Contains(PdxParser.Namespace11, xml);
+        Assert.Contains("version=\"1.1\"", xml);
+        var parsed = PdxParser.Parse(content);
+        Assert.True(parsed.Success, string.Join(Environment.NewLine, parsed.Errors));
+        Assert.Empty(parsed.Warnings);
+        Assert.Equal("1.1", parsed.Document!.Version);
+        // Cipher suite 07 does not exist in 1.1.
+        Assert.Equal("04", parsed.Document.CipherSetting!.PrimaryCipher);
+        Assert.Empty(parsed.Document.CipherSetting.AlternateCiphers);
+    }
+
+    [Fact]
+    public void InvalidVersion11IsRefused()
+    {
+        var xml = System.Text.Encoding.UTF8.GetString(PdxWriter.Write(PdxParser.Parse(PdxParserTests.Sample("B")).Document!, "1.1"))
+            .Replace("usage=\"optional\"", "usage=\"sometimes\"");
+
+        Assert.False(PdxParser.Parse(System.Text.Encoding.UTF8.GetBytes(xml)).Success);
+    }
+
+    [Fact]
+    public void PartnerGetsTheVersionOfItsDatasheet()
+    {
+        var document = PdxParser.Parse(PdxWriter.Write(PdxParser.Parse(PdxParserTests.Sample("B")).Document!, "1.1")).Document!;
+
+        var plan = PdxPartnerPlanner.Plan(document, null, new PdxPlanContext
+        {
+            Profile = new StationProfile(),
+            HasFileSecurityCertificate = true,
+            HasTlsClientCertificate = true,
+        });
+
+        var partner = new Partner();
+        plan.Apply(partner, c => new Certificate { Name = c.Name });
+        Assert.Equal("1.1", partner.PdxVersion);
+    }
+}
+
+public class PdxDateTests
+{
+    [Fact]
+    public void DatesAreWrittenInUtc()
+    {
+        var original = PdxParser.Parse(PdxParserTests.Sample("C")).Document!;
+        var document = original with { ValidFrom = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.FromHours(2)) };
+
+        var xml = System.Text.Encoding.UTF8.GetString(PdxWriter.Write(document));
+
+        Assert.Contains("validfrom=\"2030-01-01T10:00:00+00:00\"", xml);
+        Assert.Equal(document.ValidFrom, PdxParser.Parse(System.Text.Encoding.UTF8.GetBytes(xml)).Document!.ValidFrom);
+    }
+}

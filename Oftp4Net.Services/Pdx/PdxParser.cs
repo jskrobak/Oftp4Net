@@ -19,6 +19,12 @@ public sealed record PdxParseResult(PdxDocument? Document, IReadOnlyList<string>
 public static class PdxParser
 {
     public const string Namespace12 = "http://www.odette.org/OFTPCommunicationSetup/1.2";
+    public const string Namespace11 = "http://www.odette.org/OFTPCommunicationSetup/1.1";
+
+    /// <summary>The versions a datasheet can be written in.</summary>
+    public static readonly IReadOnlyList<string> Versions = ["1.2", "1.1"];
+
+    public static string NamespaceOf(string version) => version == "1.1" ? Namespace11 : Namespace12;
     public const string LegacyNamespace = "http://www.odette.org/OFTPCommunicationSetup";
     private const string RootName = "OftpCommunicationSetup";
 
@@ -56,7 +62,21 @@ public static class PdxParser
             return new PdxParseResult(null, [$"The root element is not {RootName}, the file is not an OFTP2 Communication Setup."], warnings);
 
         var ns = root.Name.Namespace;
-        if (ns == Namespace12)
+        if (ns == Namespace11)
+        {
+            // Version 1.1 has the structure of 1.2 (which only adds cipher suite 07): it is checked against the 1.2
+            // schema with the namespace of 1.2.
+            var copy = new XDocument(xml);
+            foreach (var element in copy.Descendants().Where(e => e.Name.Namespace == Namespace11))
+                element.Name = XName.Get(element.Name.LocalName, Namespace12);
+            copy.Root!.SetAttributeValue("version", "1.2");
+            copy.Validate(Schema.Value, (_, e) =>
+            {
+                if (e.Severity == XmlSeverityType.Error)
+                    errors.Add(e.Message);
+            });
+        }
+        else if (ns == Namespace12)
         {
             xml.Validate(Schema.Value, (_, e) =>
             {

@@ -113,6 +113,10 @@ public static class PdxPartnerPlanner
             PlanCertificates(flags);
             PlanSubStations();
 
+            // The partner gets our datasheet in the version it sends its own in.
+            if (PdxParser.Versions.Contains(document.Version))
+                Set("PDX version", existing?.PdxVersion, document.Version, (p, v) => p.PdxVersion = v!);
+
             var docDate = document.DocDate.LocalDateTime;
             Set("Datasheet", existing?.SetupDocumentId, document.DocId, (p, v) =>
             {

@@ -297,9 +297,9 @@ app.MapGet("/certificates/{id:int}/download", async (int id, ICertificateReposit
 }).ExcludeFromDescription();
 
 // Our OFTP2 Communication Setup of an identity, e.g. to send it to a new partner by e-mail.
-app.MapGet("/pdx/export/{identityId:int}", async (int identityId, DateTimeOffset? validFrom, PdxExporter exporter) =>
+app.MapGet("/pdx/export/{identityId:int}", async (int identityId, DateTimeOffset? validFrom, string? version, PdxExporter exporter) =>
 {
-    var export = await exporter.ExportAsync(identityId, validFrom);
+    var export = await exporter.ExportAsync(identityId, validFrom, version ?? "1.2");
     return Results.File(export.Content, "application/xml", export.FileName);
 }).ExcludeFromDescription();
 

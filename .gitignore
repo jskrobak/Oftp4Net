@@ -13,3 +13,5 @@ appSettings.Entity.*.local.json
 TestResults/
 received/
 outbox/
+# Local copy of the Odette trust list (TSL), downloaded into the data directory.
+tsl/

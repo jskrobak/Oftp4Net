@@ -147,6 +147,13 @@ public class Partner: BaseParty
     /// <summary>Virtual file names the partner sends to us.</summary>
     public List<PartnerDsnPattern> OutboundDsnPatterns { get; set; } = [];
 
+    /// <summary>
+    /// Version of the OFTP2 Communication Setup our datasheet is sent to the partner in: "1.2", or "1.1" for software
+    /// that does not know 1.2 yet (the same structure, without cipher suite 07).
+    /// </summary>
+    [StringLength(3)]
+    public string PdxVersion { get; set; } = "1.2";
+
     /// <summary>Identification (docid) of the last OFTP2 Communication Setup of the partner that was applied.</summary>
     public Guid? SetupDocumentId { get; set; }
 

@@ -67,6 +67,14 @@
                                    EmptyText="-select SSL versions-" />
 
 
+                    <HxSelect TItem="string"
+                              TValue="string"
+                              Label="Version of our datasheet (PDX)"
+                              Hint="1.1 for software that does not know version 1.2 of the OFTP2 Communication Setup yet (e.g. older OS4X). Taken over from the partner's datasheet when it is imported."
+                              Data="PdxParser.Versions"
+                              @bind-Value="@currentPartner.PdxVersion"
+                              Nullable="false" />
+
                     <HxCheckbox Label="Enable buffer compression"
                                 Hint="Runs of equal octets are compressed in the data exchange buffers when the partner offers it too."
                                 @bind-Value="@currentPartner.BufferCompression" />

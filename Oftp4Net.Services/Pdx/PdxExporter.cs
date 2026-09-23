@@ -1,6 +1,7 @@
 using System.Security.Cryptography.X509Certificates;
 using Havit.Data.Patterns.UnitOfWorks;
 using Microsoft.Extensions.Logging;
+using Oftp4Net.Core.Protocol;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using Oftp4Net.Services.Oftp;
@@ -28,7 +29,9 @@ public class PdxExporter(
     TslService tsl,
     ILogger<PdxExporter> logger)
 {
-    public async Task<PdxExport> ExportAsync(int identityId, DateTimeOffset? validFrom = null, CancellationToken cancellationToken = default)
+    /// <param name="version">Version of the datasheet: "1.2", or "1.1" for partners whose software does not know 1.2.</param>
+    public async Task<PdxExport> ExportAsync(int identityId, DateTimeOffset? validFrom = null, string version = "1.2",
+        CancellationToken cancellationToken = default)
     {
         var identity = await identities.GetObjectAsync(identityId, cancellationToken);
         var settings = await settingsService.GetGlobalSettingsAsync();
@@ -58,7 +61,9 @@ public class PdxExporter(
                 ValidFrom = validFrom,
             });
 
-            var content = PdxWriter.Write(document);
+            var content = PdxWriter.Write(document, version);
+            if (version == "1.1" && document.CipherSetting?.All.Contains(CipherSuites.Aes256Sha3512) == true)
+                warnings = [.. warnings, "Cipher suite 07 does not exist in version 1.1 and is left out."];
 
             // What we publish has to be readable by everybody: it is checked like a datasheet of a partner.
             var check = PdxParser.Parse(content);
@@ -81,10 +86,11 @@ public class PdxExporter(
     /// Puts our datasheet into the send queue for <paramref name="partner"/> (virtual file OFTP_COMMUNICATION_SETUP).
     /// It is sent unencrypted, signed when we have a file security certificate, without a signed EERP.
     /// </summary>
+    /// <param name="version">Version of the datasheet; the one configured for the partner when not given.</param>
     public async Task<(SendQueueItem Item, PdxExport Export)> QueueAsync(Partner partner, int identityId, DateTimeOffset? validFrom,
-        CancellationToken cancellationToken = default)
+        string? version = null, CancellationToken cancellationToken = default)
     {
-        var export = await ExportAsync(identityId, validFrom, cancellationToken);
+        var export = await ExportAsync(identityId, validFrom, version ?? partner.PdxVersion, cancellationToken);
         var item = new SendQueueItem
         {
             PartnerId = partner.Id,

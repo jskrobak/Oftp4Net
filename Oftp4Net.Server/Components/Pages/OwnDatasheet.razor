@@ -12,10 +12,22 @@
             }
         </select>
     </div>
-    <div class="col-md-6">
+    <div class="col-md-3">
+        <label class="form-label">Version</label>
+        <select class="form-select" value="@version" @onchange="VersionChangedAsync">
+            @foreach (var v in PdxParser.Versions)
+            {
+                <option value="@v">@v</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
         <label class="form-label">Valid from</label>
         <input type="datetime-local" class="form-control" value="@(validFrom?.ToString("yyyy-MM-ddTHH:mm"))" @onchange="ValidFromChangedAsync" />
-        <div class="form-text">Empty: valid right away. A later time lets partners switch at the same moment.</div>
+    </div>
+    <div class="col-12 form-text mt-0">
+        Valid from empty: valid right away; a later time lets partners switch at the same moment. Version 1.1 is for
+        software that does not know 1.2 yet (e.g. older OS4X).
     </div>
 </div>
 
@@ -74,12 +86,13 @@ else if (export is not null)
 
     private int identityId;
     private DateTime? validFrom;
+    private string version = "1.2";
     private PdxExport? export;
     private string? error;
     private bool sending;
 
-    private string DownloadUrl => $"pdx/export/{identityId}" +
-                                  (validFrom is { } from ? $"?validFrom={Uri.EscapeDataString(new DateTimeOffset(from).ToString("O"))}" : "");
+    private string DownloadUrl => $"pdx/export/{identityId}?version={version}" +
+                                  (validFrom is { } from ? $"&validFrom={Uri.EscapeDataString(new DateTimeOffset(from).ToString("O"))}" : "");
 
     private (int? Identity, int? Partner)? shownFor;
 
@@ -92,6 +105,7 @@ else if (export is not null)
 
         identityId = IdentityId ?? Identities.FirstOrDefault()?.Id ?? 0;
         validFrom = null;
+        version = Partner?.PdxVersion is { Length: > 0 } partnerVersion ? partnerVersion : "1.2";
         await RefreshAsync();
     }
 
@@ -99,6 +113,12 @@ else if (export is not null)
     {
         if (int.TryParse(args.Value?.ToString(), out var id))
             identityId = id;
+        await RefreshAsync();
+    }
+
+    private async Task VersionChangedAsync(ChangeEventArgs args)
+    {
+        version = args.Value?.ToString() ?? "1.2";
         await RefreshAsync();
     }
 
@@ -121,7 +141,7 @@ else if (export is not null)
         try
         {
             using var scope = ScopeFactory.CreateScope();
-            export = await scope.ServiceProvider.GetRequiredService<PdxExporter>().ExportAsync(identityId, ValidFromOffset);
+            export = await scope.ServiceProvider.GetRequiredService<PdxExporter>().ExportAsync(identityId, ValidFromOffset, version);
         }
         catch (Exception ex)
         {
@@ -140,7 +160,7 @@ else if (export is not null)
         try
         {
             using var scope = ScopeFactory.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<PdxExporter>().QueueAsync(Partner, identityId, ValidFromOffset);
+            await scope.ServiceProvider.GetRequiredService<PdxExporter>().QueueAsync(Partner, identityId, ValidFromOffset, version);
             SendService.Trigger();
             Messenger.AddInformation($"The datasheet is queued for {Partner.Name}.");
             await OnSent.InvokeAsync();

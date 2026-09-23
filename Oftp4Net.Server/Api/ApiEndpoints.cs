@@ -276,7 +276,7 @@ public static class ApiEndpoints
             })
             .WithSummary("Reads the transfer log.");
 
-        api.MapGet("/pdx/{identity}", async (string identity, DateTimeOffset? validFrom,
+        api.MapGet("/pdx/{identity}", async (string identity, DateTimeOffset? validFrom, string? version,
                 IIdentityRepository identities, PdxExporter exporter, CancellationToken cancellationToken) =>
             {
                 var identityEntity = (await identities.GetAllAsync(cancellationToken))
@@ -284,10 +284,13 @@ public static class ApiEndpoints
                 if (identityEntity is null)
                     return Results.NotFound(new ApiError($"Unknown identity '{identity}'."));
 
-                var export = await exporter.ExportAsync(identityEntity.Id, validFrom, cancellationToken);
+                if (version is not null && !PdxParser.Versions.Contains(version))
+                    return Results.BadRequest(new ApiError($"Version '{version}' is not supported, use {string.Join(" or ", PdxParser.Versions)}."));
+
+                var export = await exporter.ExportAsync(identityEntity.Id, validFrom, version ?? "1.2", cancellationToken);
                 return Results.File(export.Content, "application/xml", export.FileName);
             })
-            .WithSummary("Our OFTP2 Communication Setup (PDX datasheet) of an identity, e.g. for a new partner.");
+            .WithSummary("Our OFTP2 Communication Setup (PDX datasheet) of an identity, e.g. for a new partner; version 1.2 or 1.1.");
 
         api.MapGet("/status", async (
                 SendService sendService, ListenerService listenerService,

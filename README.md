@@ -447,6 +447,11 @@ It is built from the identity (other identities with the same SSID and their own
 station profile (company, contacts, the listener partners call and its public host) and our certificates. The REST
 API returns it at `GET /api/v1/pdx/{identity}`.
 
+Datasheets are written in version 1.2 of the schema, or in 1.1 for software that does not know 1.2 yet (*Partners* →
+*Version of our datasheet*; taken over from a partner's own datasheet). OS4X (2025), for example, reads only 1.1 and
+accepts a datasheet over OFTP only when it is signed with the certificate it has for the partner. Dates are written in
+UTC as `+00:00`, the form every implementation tested reads correctly.
+
 ## Odette trust list (TSL)
 
 Certificates issued by the certification authorities of the Odette Trust Service Status List are trusted for TLS and
