@@ -98,6 +98,35 @@ Users of the administration UI are stored in the database (*Settings → Users*)
 When the application starts with an empty database it creates the account **`admin` / `admin`**; the password has to be
 changed after the first sign in.
 
+### Signing in with Microsoft Entra ID
+
+Users can sign in with their company account instead of a password. Register an application in Entra ID with the
+redirect URI `https://<the public address of the server>/signin-oidc` (web platform), create a client secret and
+configure the three values:
+
+```json
+"Entra": {
+  "TenantId": "…",
+  "ClientId": "…",
+  "ClientSecret": "…"
+}
+```
+
+Or as environment variables, e.g. in Docker: `Entra__TenantId`, `Entra__ClientId`, `Entra__ClientSecret`. Without
+the section nothing changes and the sign in page only asks for a password.
+
+Entra ID says who somebody is, the user list says who may come in: the address (e-mail or user principal name) is
+assigned to a user on the *Users* page, and an identity without a user is refused with a message that names the
+address. A user who is to sign in this way only is created without a password.
+
+The sign in with a password stays available, so that a wrong tenant or an expired secret cannot lock the
+administrator out. Signing out ends the session of this application; the session at Microsoft stays, as it does
+with every application that uses the company account.
+
+The server needs to reach `login.microsoftonline.com` and the redirect URI has to be the public HTTPS address of
+the application. Behind a reverse proxy set `ReverseProxy:TrustAll` (or the proxy's address), otherwise the
+application builds the redirect from the internal address and Entra ID refuses it.
+
 ## Running locally
 
 ```bash

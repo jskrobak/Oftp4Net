@@ -26,6 +26,14 @@ public class UserRepository(
         return await Data.FirstOrDefaultAsync(u => u.UserName == normalized, cancellationToken);
     }
 
+    public async Task<User?> FindByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var normalized = email.Trim().ToLowerInvariant();
+        return normalized.Length == 0
+            ? null
+            : await Data.FirstOrDefaultAsync(u => u.Email != null && u.Email.ToLower() == normalized, cancellationToken);
+    }
+
     public async Task<bool> AnyAsync(CancellationToken cancellationToken = default)
     {
         return await Data.AnyAsync(cancellationToken);

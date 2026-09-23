@@ -8,6 +8,7 @@ using Havit.Blazor.Components.Web.Bootstrap;
 using Havit.Data.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -79,7 +80,12 @@ builder.Services.AddOpenApi(options =>
     });
 });
 
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+// Signing in with Microsoft Entra ID is optional: without the configuration section the password login is the
+// only way in, and it stays available in any case, so that a wrong tenant cannot lock the administrator out.
+var entra = builder.Configuration.GetSection(EntraOptions.SectionName).Get<EntraOptions>() ?? new EntraOptions();
+builder.Services.AddSingleton(entra);
+
+var authentication = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenAuthenticationHandler.SchemeName, null)
     .AddCookie(options =>
     {
@@ -90,6 +96,30 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
     });
+
+if (entra.IsConfigured)
+{
+    authentication.AddOpenIdConnect(EntraOptions.SchemeName, options =>
+    {
+        options.Authority = entra.AuthorityUrl;
+        options.ClientId = entra.ClientId;
+        options.ClientSecret = entra.ClientSecret;
+        options.CallbackPath = entra.CallbackPath;
+        options.ResponseType = "code";
+        options.UsePkce = true;
+        options.SaveTokens = false;
+        options.Scope.Add("email");
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.Events.OnTokenValidated = OnEntraTokenValidatedAsync;
+        options.Events.OnRemoteFailure = context =>
+        {
+            context.Response.Redirect("/Login?error=entra&message=" +
+                                      Uri.EscapeDataString(context.Failure?.Message ?? "The sign in was not completed."));
+            context.HandleResponse();
+            return Task.CompletedTask;
+        };
+    });
+}
 builder.Services.AddAuthorization(options =>
 {
     // Everything except the login page and static files requires a signed in user.
@@ -233,8 +263,7 @@ app.MapPost("/account/login", async (HttpContext httpContext, UserService userSe
         return Results.Redirect("/ChangePassword");
 
     // Only redirect to local paths to prevent open redirects.
-    var target = "/" + (returnUrl ?? "").TrimStart('/');
-    return Results.LocalRedirect(Uri.IsWellFormedUriString(target, UriKind.Relative) && !target.StartsWith("//") ? target : "/");
+    return Results.LocalRedirect(LocalPath("/" + (returnUrl ?? "").TrimStart('/')));
 }).AllowAnonymous().ExcludeFromDescription();
 
 app.MapPost("/account/change-password", async (HttpContext httpContext, UserService userService,
@@ -257,6 +286,18 @@ app.MapPost("/account/change-password", async (HttpContext httpContext, UserServ
     await SignInAsync(httpContext, userName, mustChangePassword: false);
     return Results.Redirect("/?passwordChanged=1");
 }).ExcludeFromDescription();
+
+// Hands the user over to Entra ID; the answer comes back to the callback path of the scheme.
+app.MapGet("/account/entra-login", (HttpContext httpContext, EntraOptions options, [FromQuery] string? returnUrl) =>
+{
+    if (!options.IsConfigured)
+        return Results.Redirect("/Login");
+
+    var target = "/" + (returnUrl ?? "").TrimStart('/');
+    return Results.Challenge(
+        new AuthenticationProperties { RedirectUri = LocalPath(target) },
+        [EntraOptions.SchemeName]);
+}).AllowAnonymous().ExcludeFromDescription();
 
 app.MapPost("/account/logout", async (HttpContext httpContext) =>
 {
@@ -327,6 +368,47 @@ app.MapGet("/received/{id:int}/download", async (int id, IDataService dataServic
 }).ExcludeFromDescription();
 
 app.Run();
+
+/// <summary>
+/// An identity from Entra ID is let in when a user with that e-mail address or user principal name is configured
+/// here: Entra ID says who somebody is, the user list says who may come in. The session then runs under the local
+/// user name, as it does after a password sign in.
+/// </summary>
+static async Task OnEntraTokenValidatedAsync(TokenValidatedContext context)
+{
+    var principal = context.Principal;
+    var address = principal?.FindFirst("preferred_username")?.Value
+                  ?? principal?.FindFirst(ClaimTypes.Email)?.Value
+                  ?? principal?.FindFirst("upn")?.Value
+                  ?? "";
+
+    var services = context.HttpContext.RequestServices;
+    var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Entra");
+
+    if (address.Length == 0)
+    {
+        logger.LogWarning("Entra ID returned no e-mail address or user principal name");
+        context.Fail("The answer of Entra ID contains no e-mail address.");
+        return;
+    }
+
+    var user = await services.GetRequiredService<UserService>().SignInWithEntraAsync(address);
+    if (user is null)
+    {
+        logger.LogWarning("{Address} signed in with Entra ID, but no user is configured for that address", address);
+        context.Fail($"No user of Oftp4Net is configured for {address}.");
+        return;
+    }
+
+    logger.LogInformation("User {UserName} signed in with Entra ID as {Address}", user.UserName, address);
+    context.Principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [new Claim(ClaimTypes.Name, user.UserName), new Claim(AuthClaims.SignedInWithEntra, "true")],
+        CookieAuthenticationDefaults.AuthenticationScheme));
+}
+
+/// <summary>A relative path of this application, so that no sign in redirects somewhere else.</summary>
+static string LocalPath(string path) =>
+    Uri.IsWellFormedUriString(path, UriKind.Relative) && !path.StartsWith("//") ? path : "/";
 
 static async Task SignInAsync(HttpContext httpContext, string userName, bool mustChangePassword)
 {

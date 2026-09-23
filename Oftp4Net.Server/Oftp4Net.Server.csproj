@@ -13,6 +13,7 @@
     <ItemGroup>
       <PackageReference Include="BitzArt.Blazor.Cookies.Server" />
       <PackageReference Include="Havit.Blazor.Components.Web.Bootstrap" />
+      <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
       <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
       <PackageReference Include="Scalar.AspNetCore" />
       <PackageReference Include="Serilog" />

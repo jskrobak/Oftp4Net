@@ -3,6 +3,7 @@
 @attribute [AllowAnonymous]
 @attribute [ExcludeFromInteractiveRouting]
 @using Microsoft.AspNetCore.Authorization
+@inject EntraOptions Entra
 
 <PageTitle>Oftp4Net | Sign in</PageTitle>
 
@@ -28,6 +29,12 @@
             </div>
             <button type="submit" class="btn btn-primary w-100">Sign in</button>
         </form>
+
+        @if (Entra.IsConfigured)
+        {
+            <div class="text-center text-body-secondary my-3 small">or</div>
+            <a class="btn btn-outline-secondary w-100" href="@EntraUrl">@Entra.ButtonText</a>
+        }
     </div>
 </div>
 
@@ -35,5 +42,11 @@
     [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
     [SupplyParameterFromQuery] private string? Error { get; set; }
 
-    private string ErrorMessage => "Invalid user name or password.";
+    private string ErrorMessage => Error == "entra"
+        ? string.IsNullOrEmpty(Message) ? "Signing in with Microsoft Entra ID failed." : Message
+        : "Invalid user name or password.";
+
+    private string EntraUrl => "account/entra-login?returnUrl=" + Uri.EscapeDataString(ReturnUrl ?? "");
+
+    [SupplyParameterFromQuery] private string? Message { get; set; }
 }

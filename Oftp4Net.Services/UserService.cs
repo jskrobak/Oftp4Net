@@ -56,6 +56,13 @@ public class UserService(
             return null;
         }
 
+        if (string.IsNullOrEmpty(user.PasswordHash))
+        {
+            // The user signs in through Entra ID only.
+            logger.LogWarning("User '{UserName}' has no password and can only sign in with Microsoft Entra ID", user.UserName);
+            return null;
+        }
+
         var result = PasswordHasher.VerifyHashedPassword(user, user.PasswordHash, password);
         if (result == PasswordVerificationResult.Failed)
             return null;
@@ -73,25 +80,75 @@ public class UserService(
 
     public async Task<User?> FindByUserNameAsync(string userName) => await userRepository.FindByUserNameAsync(userName);
 
-    public async Task CreateAsync(string userName, string password, bool mustChangePassword)
+    /// <summary>
+    /// The user an identity from Microsoft Entra ID belongs to, found by the e-mail address or user principal
+    /// name configured for them; <c>null</c> when no user is configured for it, who is then not let in.
+    /// </summary>
+    public async Task<User?> SignInWithEntraAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var user = await userRepository.FindByEmailAsync(email, cancellationToken);
+        if (user is null)
+            return null;
+
+        user.LastLogin = timeService.GetCurrentTime();
+        unitOfWork.AddForUpdate(user);
+        await unitOfWork.CommitAsync(cancellationToken);
+        return user;
+    }
+
+    /// <param name="password">
+    /// Empty for a user who signs in through Microsoft Entra ID only; <paramref name="email"/> is then required.
+    /// </param>
+    public async Task CreateAsync(string userName, string password, bool mustChangePassword, string? email = null)
     {
         var normalized = NormalizeUserName(userName);
         if (normalized.Length == 0)
             throw new InvalidOperationException("User name is required.");
         if (await userRepository.FindByUserNameAsync(normalized) is not null)
             throw new InvalidOperationException($"User '{normalized}' already exists.");
-        ValidateNewPassword(password);
+
+        var address = email?.Trim() ?? "";
+        if (password.Length == 0 && address.Length == 0)
+            throw new InvalidOperationException("A user without a password needs an e-mail address to sign in with Entra ID.");
+        if (password.Length > 0)
+            ValidateNewPassword(password);
+        await CheckEmailAsync(address, userId: null);
 
         var user = new User
         {
             UserName = normalized,
-            MustChangePassword = mustChangePassword,
+            Email = address.Length == 0 ? null : address,
+            MustChangePassword = password.Length > 0 && mustChangePassword,
             Created = timeService.GetCurrentTime(),
         };
-        user.PasswordHash = PasswordHasher.HashPassword(user, password);
+        if (password.Length > 0)
+            user.PasswordHash = PasswordHasher.HashPassword(user, password);
 
         unitOfWork.AddForInsert(user);
         await unitOfWork.CommitAsync();
+    }
+
+    /// <summary>Sets the address the user signs in with through Entra ID; empty removes it.</summary>
+    public async Task SetEmailAsync(int userId, string? email)
+    {
+        var user = await userRepository.GetObjectAsync(userId);
+        var address = email?.Trim() ?? "";
+        if (address.Length == 0 && string.IsNullOrEmpty(user.PasswordHash))
+            throw new InvalidOperationException($"User '{user.UserName}' has no password and could not sign in any more.");
+
+        await CheckEmailAsync(address, user.Id);
+        user.Email = address.Length == 0 ? null : address;
+        unitOfWork.AddForUpdate(user);
+        await unitOfWork.CommitAsync();
+    }
+
+    private async Task CheckEmailAsync(string email, int? userId)
+    {
+        if (email.Length == 0)
+            return;
+
+        if (await userRepository.FindByEmailAsync(email) is { } other && other.Id != userId)
+            throw new InvalidOperationException($"'{email}' is already used by the user '{other.UserName}'.");
     }
 
     /// <summary>Sets a new password of the signed in user after verifying the current one.</summary>
@@ -100,6 +157,8 @@ public class UserService(
         var user = await userRepository.FindByUserNameAsync(userName)
                    ?? throw new InvalidOperationException("User not found.");
 
+        if (string.IsNullOrEmpty(user.PasswordHash))
+            throw new InvalidOperationException("This account signs in with Microsoft Entra ID and has no password.");
         if (PasswordHasher.VerifyHashedPassword(user, user.PasswordHash, currentPassword) == PasswordVerificationResult.Failed)
             throw new InvalidOperationException("The current password is not correct.");
         if (currentPassword == newPassword)

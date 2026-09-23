@@ -1,6 +1,7 @@
 @page "/Users"
 @rendermode InteractiveServer
 @using Oftp4Net.Services
+@inject EntraOptions Entra
 
 <HxCard>
     <HeaderTemplate>
@@ -14,6 +15,7 @@
             <thead>
             <tr>
                 <th>User name</th>
+                <th>Microsoft Entra ID</th>
                 <th>Created</th>
                 <th>Last sign in</th>
                 <th></th>
@@ -25,6 +27,7 @@
             {
                 <tr>
                     <td>@user.UserName</td>
+                    <td class="text-body-secondary">@user.Email</td>
                     <td>@user.Created.ToString("g")</td>
                     <td>@user.LastLogin?.ToString("g")</td>
                     <td>
@@ -34,6 +37,11 @@
                         }
                     </td>
                     <td class="text-end">
+                        @if (Entra.IsConfigured)
+                        {
+                            <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.PersonBadge"
+                                      Tooltip="Address for Microsoft Entra ID" OnClick="() => ShowEmailAsync(user)" />
+                        }
                         <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Key" Tooltip="Reset password"
                                   OnClick="() => ShowResetAsync(user)" />
                         @if (user.UserName != currentUserName)
@@ -49,11 +57,26 @@
     </BodyTemplate>
 </HxCard>
 
+<HxModal @ref="emailModal" Title="@($"Address of {emailUser?.UserName} for Microsoft Entra ID")" ShowCloseButton="true">
+    <BodyTemplate>
+        <HxInputText Label="E-mail address or user principal name" @bind-Value="newEmail" MaxLength="200"
+                     Hint="The user signs in with Microsoft Entra ID under this address. Empty removes it." />
+    </BodyTemplate>
+    <FooterTemplate>
+        <HxButton Text="Save" Color="ThemeColor.Primary" OnClick="SaveEmailAsync" />
+    </FooterTemplate>
+</HxModal>
+
 <HxModal @ref="editModal" Title="@(resetUser is null ? "New user" : $"Reset password of {resetUser.UserName}")" ShowCloseButton="true" OnClosed="() => resetUser = null">
     <BodyTemplate>
         @if (resetUser is null)
         {
             <HxInputText Label="User name" @bind-Value="newUserName" MaxLength="50" />
+        }
+        @if (Entra.IsConfigured)
+        {
+            <HxInputText Label="Address for Microsoft Entra ID" @bind-Value="newEmail" MaxLength="200"
+                         Hint="E-mail address or user principal name the user signs in with. Leave the password empty for a user who signs in that way only." />
         }
         <HxInputText Label="Password" Type="InputType.Password" @bind-Value="newPassword" Hint="@($"At least {UserService.MinPasswordLength} characters.")" />
         <HxCheckbox Label="Must change the password at next sign in" @bind-Value="mustChangePassword" />

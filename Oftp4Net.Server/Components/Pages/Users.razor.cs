@@ -20,7 +20,10 @@ public partial class Users : ComponentBase
     private User? resetUser;
     private string newUserName = "";
     private string newPassword = "";
+    private string newEmail = "";
     private bool mustChangePassword = true;
+    private HxModal emailModal = null!;
+    private User? emailUser;
 
     protected override async Task OnInitializedAsync()
     {
@@ -33,7 +36,32 @@ public partial class Users : ComponentBase
     private async Task ShowResetAsync(User user)
     {
         resetUser = user;
+        newPassword = "";
         await editModal.ShowAsync();
+    }
+
+    private async Task ShowEmailAsync(User user)
+    {
+        emailUser = user;
+        newEmail = user.Email ?? "";
+        await emailModal.ShowAsync();
+    }
+
+    private async Task SaveEmailAsync()
+    {
+        try
+        {
+            await UserService.SetEmailAsync(emailUser!.Id, newEmail);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Messenger.AddError(ex.Message);
+            return;
+        }
+
+        newEmail = "";
+        await emailModal.HideAsync();
+        await LoadAsync();
     }
 
     private async Task SaveAsync()
@@ -41,7 +69,7 @@ public partial class Users : ComponentBase
         try
         {
             if (resetUser is null)
-                await UserService.CreateAsync(newUserName, newPassword, mustChangePassword);
+                await UserService.CreateAsync(newUserName, newPassword, mustChangePassword, newEmail);
             else
                 await UserService.ResetPasswordAsync(resetUser.Id, newPassword, mustChangePassword);
         }
@@ -53,6 +81,7 @@ public partial class Users : ComponentBase
 
         newUserName = "";
         newPassword = "";
+        newEmail = "";
         mustChangePassword = true;
         await editModal.HideAsync();
         await LoadAsync();
