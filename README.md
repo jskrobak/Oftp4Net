@@ -293,6 +293,28 @@ Odette recommends); a certificate whose list is older is not used until a curren
 put down for the interoperability tests. A list is only accepted when the authority that issued the certificate
 signed it. TLS connections use the revocation check of the operating system, which has its own cache.
 
+## Where received files are stored
+
+A received file lands in the receive directory, in a sub-directory named after the code of its partner, and its
+name is the virtual file name with the date and time of the virtual file behind it, so that nothing is ever
+overwritten.
+
+*Settings* → *Where received files are stored* routes files elsewhere by their virtual file name: the first rule
+whose pattern matches decides, `*` stands for any number of characters and `?` for one, and upper and lower case
+do not matter. A file that matches a rule is written into that directory, with the same name it would have in the
+receive directory; one that matches no rule stays there.
+
+| Pattern | Directory |
+|---|---|
+| `XXX*` | `/data/a` |
+| `YYYY*` | `/data/b` |
+
+The file is written to its place while it is transferred (next to it, with the extension `.part`, until the
+transfer is complete), not copied there afterwards, and the path is the one the *Received files* page and
+`GET /api/v1/inbox/{id}/content` serve. Should the name be taken in a routed directory, because another partner
+sent a file of the same name at the same moment, a number is added. A directory that cannot be created is
+reported in the log and the file stays in the receive directory instead of the transfer failing.
+
 ## Files that cannot be delivered
 
 A file that arrives correctly but cannot be handed over to its final destination — the ERP system refuses it, the

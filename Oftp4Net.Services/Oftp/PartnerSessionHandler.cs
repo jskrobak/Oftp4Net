@@ -619,9 +619,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         if (await CheckIncomingSecurityAsync(header, security, isConfiguration, cancellationToken) is { } refusal)
             return refusal;
 
-        var directory = Path.Combine(_settingsService.ResolvePath(_settings.ReceiveDirectory), SafeFileName(partner.SSID));
-        Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, $"{SafeFileName(header.DatasetName)}_{header.Date}{header.Time}");
+        var path = ChooseTargetPath(header, partner);
 
         // A file we already have a part of is either continued or received again, but always under the same record.
         // Secured content is sent anew every time, so only a file stored as it arrives can be continued.
@@ -678,6 +676,36 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
         _fileStopwatch.Restart();
         return OftpStartFileDecision.Accept(stream, record, restartPosition);
+    }
+
+    /// <summary>
+    /// Where the file is stored: the directory of the first routing rule its virtual file name matches, otherwise
+    /// the receive directory under the code of the partner. The name is the virtual file name with the date and
+    /// time of the virtual file behind it, everywhere the same. A directory that cannot be created does not stop
+    /// the transfer, the file then goes into the receive directory.
+    /// </summary>
+    private string ChooseTargetPath(SFID header, Partner partner)
+    {
+        var name = $"{SafeFileName(header.DatasetName)}_{header.Date}{header.Time}";
+        if (InboundRoutes.Find(_settings.InboundRoutes, header.DatasetName) is { } routed)
+        {
+            try
+            {
+                var target = _settingsService.ResolvePath(routed);
+                Directory.CreateDirectory(target);
+                // Another partner may have sent a file of the same name at the same moment.
+                return InboundRoutes.UniquePath(target, name);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                _logger.LogError(ex, "The directory {Directory} of the routing rule for {VirtualFileName} cannot be " +
+                                     "used, the file stays in the receive directory", routed, header.DatasetName);
+            }
+        }
+
+        var directory = Path.Combine(_settingsService.ResolvePath(_settings.ReceiveDirectory), SafeFileName(partner.SSID));
+        Directory.CreateDirectory(directory);
+        return Path.Combine(directory, name);
     }
 
     /// <summary>

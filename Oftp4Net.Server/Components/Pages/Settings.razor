@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using Oftp4Net.Domain
 @using Oftp4Net.Services.Hooks
+@using Oftp4Net.Services.Oftp
 @using Oftp4Net.Services.Security
 @using Oftp4Net.Services.Pdx
 @using Oftp4Net.Services.Tsl
@@ -22,6 +23,42 @@
                         <HxInputText Label="Receive directory"
                                      Hint="@($"Received files are stored in a sub-directory per partner. Relative paths are resolved against {GlobalSettingsService.DataDirectory}.")"
                                      @bind-Value="@settings.ReceiveDirectory" />
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label">Where received files are stored</label>
+                        <div class="form-text mt-0 mb-1">
+                            The first rule whose pattern matches the virtual file name decides; the file keeps that
+                            name there. A file that matches no rule stays in the receive directory under the code of
+                            its partner, with the date and time of the virtual file in the name. Use <code>*</code> for
+                            any number of characters and <code>?</code> for one, e.g. <code>ORDERS*</code>.
+                        </div>
+                        @if (settings.InboundRoutes.Count > 0)
+                        {
+                            <table class="table table-sm align-middle mb-1">
+                                <tbody>
+                                @foreach (var route in settings.InboundRoutes)
+                                {
+                                    <tr>
+                                        <td class="p-1" style="width: 16rem;">
+                                            <input class="form-control form-control-sm" placeholder="ORDERS*"
+                                                   value="@route.Pattern" @onchange="e => route.Pattern = (string?)e.Value ?? string.Empty" />
+                                        </td>
+                                        <td class="p-1">
+                                            <input class="form-control form-control-sm" placeholder="/data/orders"
+                                                   value="@route.Directory" @onchange="e => route.Directory = (string?)e.Value ?? string.Empty" />
+                                        </td>
+                                        <td class="p-1" style="width: 2.5rem;">
+                                            <HxButton Size="ButtonSize.Small" Color="ThemeColor.None" Icon="BootstrapIcon.Trash"
+                                                      OnClick="() => settings.InboundRoutes.Remove(route)" />
+                                        </td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        }
+                        <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.PlusLg"
+                                  OnClick="() => settings.InboundRoutes.Add(new InboundRoute())">Add rule</HxButton>
                     </div>
 
                     <div class="col-12">

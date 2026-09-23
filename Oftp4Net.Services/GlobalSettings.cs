@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Oftp4Net.Core.Transport;
+using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.Pdx;
 using Oftp4Net.Services.Security;
 using Oftp4Net.Services.Tsl;
@@ -93,6 +94,13 @@ public class GlobalSettings
     [SettingsItem]
     [Range(10, 3600)]
     public int ResponseTimeoutSeconds { get; set; } = 180;
+
+    /// <summary>
+    /// Where received files are stored depending on their virtual file name; the first rule that matches decides.
+    /// A file that matches none stays in <see cref="ReceiveDirectory"/> under the code of its partner.
+    /// </summary>
+    [SettingsItem]
+    public List<InboundRoute> InboundRoutes { get; set; } = [];
 
     /// <summary>
     /// Our security policy, compared with the OFTP2 Communication Setup (PDX) of a partner when it is imported.
