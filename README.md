@@ -113,33 +113,45 @@ changed after the first sign in.
 
 ### Signing in with Microsoft Entra ID
 
-Users can sign in with their company account instead of a password. Register an application in Entra ID with the
-redirect URI `https://<the public address of the server>/signin-oidc` (web platform), create a client secret and
-configure the three values:
+Users can sign in with their company account instead of a password. What the administrator does once, in this
+order:
 
-```json
-"Entra": {
-  "TenantId": "…",
-  "ClientId": "…",
-  "ClientSecret": "…"
-}
-```
+1. **Register an application** in Entra ID (*App registrations → New registration*) and add a redirect URI of the
+   platform **Web**: `https://<the public address of the server>/signin-oidc`. No API permissions have to be
+   granted, the default delegated ones are enough, and no administrator consent is needed.
+2. **Create a client secret** (*Certificates & secrets*) and write down the directory (tenant) and application
+   (client) identifiers with it.
+3. **Configure the three values**:
 
-The client secret does not belong into `appsettings.json`, which is in the repository; put it into
-`appsettings.{Environment}.local.json`, the user secrets or an environment variable (`Entra__ClientSecret`), see
-*Configuration* above. Without the section nothing changes and the sign in page only asks for a password.
+   ```json
+   "Entra": {
+     "TenantId": "…",
+     "ClientId": "…",
+     "ClientSecret": "…"
+   }
+   ```
 
-Entra ID says who somebody is, the user list says who may come in: the address (e-mail or user principal name) is
-assigned to a user on the *Users* page, and an identity without a user is refused with a message that names the
-address. A user who is to sign in this way only is created without a password.
+   The secret does not belong into `appsettings.json`, which is in the repository; put it into
+   `appsettings.{Environment}.local.json`, the user secrets or an environment variable (`Entra__ClientSecret`),
+   see *Configuration* above. Without the section nothing changes and the sign in page only asks for a password.
+4. **Restart the application.** The sign in page now offers *Sign in with Microsoft*.
+5. **Sign in with a password** and give every user their address on the *Users* page (the icon with the badge):
+   the e-mail address or user principal name Entra ID knows them by. Until that is done nobody gets in that way,
+   the administrator included — Entra ID says who somebody is, the user list says who may come in. An identity
+   without a user is refused with a message that names the address, so it can be copied from there.
+6. A user who is to sign in this way only is created **without a password** on the same page.
+
+The address is compared with the claim `preferred_username` of Entra ID, and with `email` or `upn` when that is
+missing; for a work account it is normally the user principal name.
 
 The sign in with a password stays available, so that a wrong tenant or an expired secret cannot lock the
-administrator out. Signing out ends the session of this application; the session at Microsoft stays, as it does
-with every application that uses the company account.
+administrator out, and the address of a user who has no password cannot be taken away. Signing out ends the
+session of this application; the session at Microsoft stays, as it does with every application that uses the
+company account.
 
 The server needs to reach `login.microsoftonline.com` and the redirect URI has to be the public HTTPS address of
 the application. Behind a reverse proxy set `ReverseProxy:TrustAll` (or the proxy's address), otherwise the
-application builds the redirect from the internal address and Entra ID refuses it.
+application builds the redirect from the internal address and Entra ID refuses it with `AADSTS50011`.
 
 ## Running locally
 
