@@ -757,16 +757,31 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 continue;
             _claimed.Add(claim);
 
-            var response = new EERP
-            {
-                DatasetName = record.VirtualFileName,
-                Date = record.FileDate,
-                Time = record.FileTime,
-                UserData = record.UserData,
-                Destination = record.Originator,
-                Originator = record.Destination,
-                Hash = record.ContentHash ?? [],
-            };
+            // A file that could not be delivered to its final destination is reported with a NERP instead.
+            OftpCommand response = record.Status == ReceiveStatus.NOT_DELIVERED
+                ? new NERP
+                {
+                    DatasetName = record.VirtualFileName,
+                    Date = record.FileDate,
+                    Time = record.FileTime,
+                    Destination = record.Originator,
+                    Originator = record.Destination,
+                    // We are the location that could not deliver the file, so we are the creator of the response.
+                    Creator = record.Destination,
+                    ReasonCode = record.NotDeliveredReasonCode ?? AnswerReasonCodes.UnspecifiedReason,
+                    ReasonText = Truncate(record.LastError, 999),
+                    Hash = record.ContentHash ?? [],
+                }
+                : new EERP
+                {
+                    DatasetName = record.VirtualFileName,
+                    Date = record.FileDate,
+                    Time = record.FileTime,
+                    UserData = record.UserData,
+                    Destination = record.Originator,
+                    Originator = record.Destination,
+                    Hash = record.ContentHash ?? [],
+                };
 
             _pendingResponses.Add(await SignResponseAsync(response, record, cancellationToken), record);
         }
@@ -776,9 +791,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
     /// <summary>
     /// Signs the End to End Response when the partner asked for it (SFIDSIGN). A response that cannot be signed is
-    /// still sent unsigned: the file was delivered and the partner decides whether it accepts that.
+    /// still sent unsigned: the file was handled and the partner decides whether it accepts that.
     /// </summary>
-    private async Task<EERP> SignResponseAsync(EERP response, ReceivedFile record, CancellationToken cancellationToken)
+    private async Task<OftpCommand> SignResponseAsync(OftpCommand response, ReceivedFile record, CancellationToken cancellationToken)
     {
         if (!record.SignedResponseRequested)
             return response;
@@ -789,27 +804,50 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 ?? throw new FileSecurityException("No certificate for file security is configured (setting FileSecurityCertificateId).");
             var suite = CipherSuite.Get(record.CipherSuite) ?? CipherSuite.Default;
 
-            return new EERP
+            return response switch
             {
-                DatasetName = response.DatasetName,
-                Date = response.Date,
-                Time = response.Time,
-                UserData = response.UserData,
-                Destination = response.Destination,
-                Originator = response.Originator,
-                Hash = response.Hash,
-                Signature = FileSecurity.SignEndResponse(EndResponseSignature.GetSignedContent(response), certificate, suite),
+                EERP eerp => new EERP
+                {
+                    DatasetName = eerp.DatasetName,
+                    Date = eerp.Date,
+                    Time = eerp.Time,
+                    UserData = eerp.UserData,
+                    Destination = eerp.Destination,
+                    Originator = eerp.Originator,
+                    Hash = eerp.Hash,
+                    Signature = FileSecurity.SignEndResponse(EndResponseSignature.GetSignedContent(eerp), certificate, suite),
+                },
+                NERP nerp => new NERP
+                {
+                    DatasetName = nerp.DatasetName,
+                    Date = nerp.Date,
+                    Time = nerp.Time,
+                    Destination = nerp.Destination,
+                    Originator = nerp.Originator,
+                    Creator = nerp.Creator,
+                    ReasonCode = nerp.ReasonCode,
+                    ReasonText = nerp.ReasonText,
+                    Hash = nerp.Hash,
+                    Signature = FileSecurity.SignEndResponse(EndResponseSignature.GetSignedContent(nerp), certificate, suite),
+                },
+                _ => response,
             };
         }
         catch (FileSecurityException ex)
         {
-            _logger.LogWarning(ex, "EERP for {VirtualFileName} requested by {Partner} cannot be signed",
-                record.VirtualFileName, Partner?.Name);
+            _logger.LogWarning(ex, "{Response} for {VirtualFileName} requested by {Partner} cannot be signed",
+                response.Name, record.VirtualFileName, Partner?.Name);
             Record(TransferEventCategory.EndResponse, TransferEventType.EndResponseSignatureInvalid, TransferEventLevel.Warning,
-                $"EERP for {record.VirtualFileName} is sent unsigned although {Partner?.Name} asked for a signature: {ex.Message}",
+                $"{response.Name} for {record.VirtualFileName} is sent unsigned although {Partner?.Name} asked for a signature: {ex.Message}",
                 e => Describe(e, record, null));
             return response;
         }
+    }
+
+    private static string Truncate(string? value, int length)
+    {
+        var text = value ?? "";
+        return text.Length <= length ? text : text[..length];
     }
 
     public override async ValueTask OnEndResponseSentAsync(OftpCommand response, CancellationToken cancellationToken)
@@ -817,11 +855,21 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         if (!_pendingResponses.Remove(response, out var record))
             return;
 
-        record.Status = ReceiveStatus.CONFIRMED;
+        // A file reported as not delivered keeps that state, the response only records that the partner knows.
+        var negative = response is NERP;
+        if (!negative)
+            record.Status = ReceiveStatus.CONFIRMED;
+
         record.ConfirmedDate = _timeService.GetCurrentTime();
         await SaveAsync(record);
-        Record(TransferEventCategory.EndResponse, TransferEventType.EerpSent, TransferEventLevel.Information,
-            $"EERP for {record.VirtualFileName} sent to {Partner?.Name}", e => Describe(e, record, null));
+
+        Record(TransferEventCategory.EndResponse,
+            negative ? TransferEventType.NerpSent : TransferEventType.EerpSent,
+            negative ? TransferEventLevel.Warning : TransferEventLevel.Information,
+            negative
+                ? $"NERP for {record.VirtualFileName} sent to {Partner?.Name} ({record.NotDeliveredReasonCode}): {record.LastError}"
+                : $"EERP for {record.VirtualFileName} sent to {Partner?.Name}",
+            e => Describe(e, record, null));
     }
 
     public override async ValueTask OnEndResponseReceivedAsync(OftpCommand response, CancellationToken cancellationToken)

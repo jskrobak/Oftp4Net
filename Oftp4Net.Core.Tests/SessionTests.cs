@@ -246,6 +246,29 @@ public class SessionTests
     }
 
     [Fact]
+    public async Task UndeliverableFileIsAnsweredWithNerp()
+    {
+        var client = CreateClientHandler();
+        var server = CreateServerHandler();
+        client.Enqueue("LOST", "content"u8.ToArray(), ServerCode);
+        server.NotDeliverableDatasetNames.Add("LOST");
+
+        var (clientError, serverError) = await RunAsync(client, server);
+
+        Assert.Null(clientError);
+        Assert.Null(serverError);
+
+        var nerp = Assert.IsType<NERP>(Assert.Single(client.ReceivedEndResponses));
+        Assert.Equal("LOST", nerp.DatasetName);
+        Assert.Equal(ClientCode, nerp.Destination);
+        Assert.Equal(ServerCode, nerp.Originator);
+        // The node that could not deliver the file is the creator of the response.
+        Assert.Equal(ServerCode, nerp.Creator);
+        Assert.Equal(AnswerReasonCodes.InvalidDestination, nerp.ReasonCode);
+        Assert.Equal("The final destination does not accept the file.", nerp.ReasonText);
+    }
+
+    [Fact]
     public async Task FilesAreTransferredInBothDirections()
     {
         var client = CreateClientHandler();

@@ -194,4 +194,21 @@ public class DataService(
         unitOfWork.AddForUpdate(receivedFile);
         await unitOfWork.CommitAsync();
     }
+
+    public async Task ReportReceivedFileNotDeliveredAsync(ReceivedFile receivedFile, string reasonCode, string? reasonText)
+    {
+        if (receivedFile.ConfirmedDate is not null)
+            throw new InvalidOperationException(
+                $"The end response for {receivedFile.VirtualFileName} was already sent to the partner.");
+
+        if (receivedFile.Status is not (ReceiveStatus.RECEIVED or ReceiveStatus.NOT_DELIVERED))
+            throw new InvalidOperationException(
+                $"Only a received file can be reported as not delivered, {receivedFile.VirtualFileName} is {receivedFile.Status}.");
+
+        receivedFile.Status = ReceiveStatus.NOT_DELIVERED;
+        receivedFile.NotDeliveredReasonCode = reasonCode;
+        receivedFile.LastError = reasonText;
+        unitOfWork.AddForUpdate(receivedFile);
+        await unitOfWork.CommitAsync();
+    }
 }

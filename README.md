@@ -10,7 +10,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Sending files from a send queue to partners (initiator role), with retries and exponential back-off
 - Receiving files on configurable TCP / TLS listeners (responder role)
 - Both directions within one session (speaker / listener with change direction)
-- End to End Responses: EERP is sent for received files and processed for sent files (status `DELIVERED`), NERP is handled
+- End to End Responses: EERP for delivered files, NERP for those that did not reach their destination, both directions
 - TLS with the system trust store, a custom CA or a pinned partner certificate; optional client certificates
 - Character set conversion per partner: files are sent in ANSI or EBCDIC and received EBCDIC content is converted to ANSI
 - File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses
@@ -28,7 +28,7 @@ What of RFC 5024 the implementation covers:
 |---|---|
 | Session: SSRM, SSID, ESID, CD, credit (CDT) | Protocol level 5 (OFTP 2.0) only, buffer size and credit negotiated |
 | Files: SFID, SFPA, SFNA, DATA, EFID, EFPA, EFNA | Both directions in one session, several files per session |
-| End to end responses: EERP, NERP, RTR | EERP is sent for received files and both are processed for sent ones |
+| End to end responses: EERP, NERP, RTR | Both are sent for received files and processed for sent ones |
 | Buffer compression (SSIDCMPR) | Sent compressed when agreed, always accepted from a partner |
 | Restart (SSIDREST, SFIDREST) | Interrupted transfers continue at the last complete 1K block |
 | Secure authentication (SSIDAUTH, SECD, AUCH, AURP) | Both directions, challenge in a CMS envelope |
@@ -40,8 +40,6 @@ Not implemented, because the deployments this server is built for do not use it:
 
 - Record structured virtual files: files are transferred as unstructured (SFIDFMT `U`), the record format of a
   partner is accepted but records are not interpreted and no record count is reported in EFID
-- Generating NERP: a file that cannot be delivered is reported in the transfer log, the partner is not notified
-  (a NERP from a partner is processed and sets the state `NOT_DELIVERED`)
 - Broadcast and distribution to several destinations through an intermediate location
 - Special logic (SSIDSPEC) and the OFTP 1.x protocol levels
 - Transports other than TCP/IP (X.25, ISDN) and the mailbox operation of older OFTP versions
@@ -209,6 +207,22 @@ Files that cannot be unpacked are refused with the reason code that says what is
 decryption failure, invalid file signature, …). Signing, compression and encryption are done in memory, so files
 larger than *Maximum size of a secured file (MB)* (setting, default 100) are not transferred to partners with file
 security and the error is written to the transfer log.
+
+## Files that cannot be delivered
+
+A file that arrives correctly but cannot be handed over to its final destination — the ERP system refuses it, the
+addressee does not exist, the content cannot be processed — is reported to the partner with a Negative End Response
+(NERP) instead of the positive one.
+
+On the *Received files* page the warning icon of a received file opens a dialog with the answer reason code
+(NERPREAS) and a description (NERPREAST); the REST API does the same with
+`POST /api/v1/inbox/{id}/not-delivered` and the body `{ "reasonCode": "02", "reasonText": "..." }`, which is the
+way an integration reports that it could not process the file.
+
+The file changes to the state `NOT_DELIVERED` and the response is sent in the next session with the partner, signed
+when the partner asked for a signed end response. Only a file whose end response has not been sent yet can be
+reported this way. In the other direction, a NERP from a partner puts the queue item into `NOT_DELIVERED` and runs
+the `OnNotDelivered` hook.
 
 ## Buffer compression and restart
 

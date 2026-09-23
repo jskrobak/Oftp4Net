@@ -19,4 +19,10 @@ public enum ReceiveStatus
     /// (restart, SSIDREST).
     /// </summary>
     INTERRUPTED = 4,
+
+    /// <summary>
+    /// The file arrived, but could not be delivered to its final destination. A Negative End Response (NERP)
+    /// is sent to the partner instead of the EERP.
+    /// </summary>
+    NOT_DELIVERED = 5,
 }

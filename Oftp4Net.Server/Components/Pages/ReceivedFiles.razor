@@ -3,12 +3,46 @@
 @using Havit.Collections
 @using Oftp4Net.DataLayer.Filters
 @using Oftp4Net.Domain
+@using Oftp4Net.Core.Protocol
 <style>
     .scrollable-table-container {
         overflow: auto;
         height: calc(100vh - 160px);
     }
 </style>
+
+<HxModal @ref="notDeliveredModal" ShowCloseButton="true">
+    <HeaderTemplate>
+        Report as not delivered
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (notDeliveredFile is not null)
+        {
+            <p>
+                A Negative End Response (NERP) is sent to @notDeliveredFile.Partner?.Name in the next session
+                instead of the positive one, so the partner learns that
+                <strong>@notDeliveredFile.VirtualFileName</strong> did not reach its destination.
+            </p>
+
+            <HxSelect TItem="KeyValuePair<string, string>"
+                      TValue="string"
+                      Label="Reason"
+                      Data="NerpReasons"
+                      @bind-Value="notDeliveredReasonCode"
+                      TextSelector="@(r => $"{r.Key} - {r.Value}")"
+                      ValueSelector="@(r => r.Key)"
+                      Nullable="false" />
+
+            <HxInputTextArea Label="Description" Hint="Sent to the partner in the response (NERPREAST)."
+                             @bind-Value="notDeliveredReasonText" />
+
+            <HxButton Color="ThemeColor.Warning" Icon="BootstrapIcon.ExclamationTriangle"
+                      OnClick="ReportNotDelivered" CssClass="mt-3">
+                Report as not delivered
+            </HxButton>
+        }
+    </BodyTemplate>
+</HxModal>
 
 <HxListLayout Title="Received files" TFilterModel="ReceivedFileFilter"
               @bind-FilterModel="filterModel"
@@ -62,10 +96,17 @@
                 </HxGridColumn>
                 <HxGridColumn HeaderText="">
                     <ItemTemplate Context="file">
-                        @if (file.Status is ReceiveStatus.RECEIVED or ReceiveStatus.CONFIRMED)
+                        @if (file.Status is ReceiveStatus.RECEIVED or ReceiveStatus.CONFIRMED or ReceiveStatus.NOT_DELIVERED)
                         {
                             <a href="@($"received/{file.Id}/download")" target="_blank" title="Download">
                                 <HxIcon Icon="BootstrapIcon.Download"/>
+                            </a>
+                        }
+                        @if (file is { Status: ReceiveStatus.RECEIVED, ConfirmedDate: null })
+                        {
+                            <a href="javascript:void(0)" class="ms-2" title="Report as not delivered"
+                               @onclick="() => ShowNotDelivered(file)">
+                                <HxIcon Icon="BootstrapIcon.ExclamationTriangle"/>
                             </a>
                         }
                     </ItemTemplate>

@@ -1,3 +1,4 @@
+using Oftp4Net.Core.Protocol;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Oftp4Net.DataLayer.Filters;
@@ -189,6 +190,28 @@ public static class ApiEndpoints
                 return Results.Ok(ReceivedFileDto.From(file));
             })
             .WithSummary("Marks a received file as fetched, so it is no longer returned by onlyNew=true.");
+
+        api.MapPost("/inbox/{id:int}/not-delivered", async (int id, NotDeliveredRequest request,
+                IReceivedFileRepository repository, IDataService dataService, CancellationToken cancellationToken) =>
+            {
+                var file = await repository.FindWithRefsAsync(id, cancellationToken);
+                if (file is null)
+                    return Results.NotFound();
+
+                try
+                {
+                    await dataService.ReportReceivedFileNotDeliveredAsync(file,
+                        string.IsNullOrWhiteSpace(request.ReasonCode) ? AnswerReasonCodes.UnspecifiedReason : request.ReasonCode,
+                        request.ReasonText);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.Problem(ex.Message, statusCode: StatusCodes.Status409Conflict);
+                }
+
+                return Results.Ok(ReceivedFileDto.From(file));
+            })
+            .WithSummary("Reports a received file as not delivered to its final destination; the partner is told with a NERP.");
     }
 
     #endregion
@@ -271,6 +294,11 @@ public record ReceivedFileDto(int Id, string Status, string VirtualFileName, str
         f.Partner?.SSID, f.Originator, f.Destination, f.Description, f.UserData, f.Size, f.Created, f.FileDate, f.FileTime,
         f.ConfirmedDate, f.FetchedDate);
 }
+
+/// <summary>Body of the request reporting a received file as not delivered to its final destination.</summary>
+/// <param name="ReasonCode">Answer reason code sent in the NERP (01 - 99), by default 99 (unspecified).</param>
+/// <param name="ReasonText">Description sent to the partner with the response.</param>
+public record NotDeliveredRequest(string? ReasonCode, string? ReasonText);
 
 public record TransferEventDto(int Id, DateTime Timestamp, string Category, string Level, string Type, string Message,
     string? PartnerName, string? VirtualFileName, long? DurationMs, int? QueueItemId, int? ReceivedFileId, bool IsArchived)

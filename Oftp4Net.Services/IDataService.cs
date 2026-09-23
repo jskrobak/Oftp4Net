@@ -45,4 +45,10 @@ public interface IDataService
         GridDataProviderRequest<ReceivedFile> request, CancellationToken cancellationToken = default);
     Task<ReceivedFile?> GetReceivedFileAsync(int id);
     Task MarkReceivedFileFetchedAsync(ReceivedFile receivedFile);
+
+    /// <summary>
+    /// Reports a received file as not deliverable to its final destination, so that a Negative End Response
+    /// is sent to the partner in the next session instead of the positive one.
+    /// </summary>
+    Task ReportReceivedFileNotDeliveredAsync(ReceivedFile receivedFile, string reasonCode, string? reasonText);
 }

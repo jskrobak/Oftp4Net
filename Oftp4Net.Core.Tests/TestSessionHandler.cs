@@ -126,12 +126,29 @@ internal sealed class TestSessionHandler(string localCode, string localPassword,
         return ValueTask.FromResult(OftpStartFileDecision.Accept(stream, (header, stream), restartPosition));
     }
 
+    /// <summary>Files that are answered with a NERP instead of an EERP, as not deliverable further.</summary>
+    public List<string> NotDeliverableDatasetNames { get; } = [];
+
     public override ValueTask<OftpAnswer> OnFileReceivedAsync(OftpIncomingFile file, CancellationToken cancellationToken)
     {
         // The session disposes the destination stream before calling this; CapturingStream keeps its content.
         var (header, stream) = ((SFID, CapturingStream))file.State!;
         ReceivedFiles[header.DatasetName] = stream.Captured;
-        _pendingResponses.Add(EERP.For(header));
+
+        _pendingResponses.Add(NotDeliverableDatasetNames.Contains(header.DatasetName)
+            ? new NERP
+            {
+                DatasetName = header.DatasetName,
+                Date = header.Date,
+                Time = header.Time,
+                Destination = header.Originator,
+                Originator = header.Destination,
+                Creator = header.Destination,
+                ReasonCode = AnswerReasonCodes.InvalidDestination,
+                ReasonText = "The final destination does not accept the file.",
+            }
+            : EERP.For(header));
+
         return ValueTask.FromResult(OftpAnswer.Accept());
     }
 

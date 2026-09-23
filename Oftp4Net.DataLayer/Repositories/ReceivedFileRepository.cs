@@ -61,7 +61,8 @@ public class ReceivedFileRepository(
     public async Task<List<ReceivedFile>> GetUnconfirmedAsync(int partnerId, CancellationToken cancellationToken = default)
     {
         return await Data
-            .Where(i => i.PartnerId == partnerId && i.Status == ReceiveStatus.RECEIVED)
+            .Where(i => i.PartnerId == partnerId && i.ConfirmedDate == null
+                        && (i.Status == ReceiveStatus.RECEIVED || i.Status == ReceiveStatus.NOT_DELIVERED))
             .OrderBy(i => i.Id)
             .ToListAsync(cancellationToken);
     }
@@ -70,7 +71,8 @@ public class ReceivedFileRepository(
         CancellationToken cancellationToken = default)
     {
         return await Data
-            .Where(i => i.PartnerId != null && i.Status == ReceiveStatus.RECEIVED && i.Created < createdBefore)
+            .Where(i => i.PartnerId != null && i.ConfirmedDate == null && i.Created < createdBefore
+                        && (i.Status == ReceiveStatus.RECEIVED || i.Status == ReceiveStatus.NOT_DELIVERED))
             .ToListAsync(cancellationToken);
     }
 

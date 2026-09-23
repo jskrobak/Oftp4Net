@@ -36,6 +36,7 @@ public enum TransferEventType
     FileRefused,
     FileReceiveFailed,
     EerpSent,
+    NerpSent,
     EerpReceived,
     NerpReceived,
     UnknownEndResponse,

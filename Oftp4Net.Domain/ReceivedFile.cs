@@ -72,6 +72,13 @@ public class ReceivedFile
     /// </summary>
     public long RestartedFrom { get; set; }
 
+    /// <summary>
+    /// Answer reason code of the Negative End Response sent for this file (NERPREAS); set together with the
+    /// state <see cref="ReceiveStatus.NOT_DELIVERED"/>, the text is in <see cref="LastError"/>.
+    /// </summary>
+    [StringLength(2)]
+    public string? NotDeliveredReasonCode { get; set; }
+
     /// <summary>Hash of the transferred content, sent back in EERPHSH.</summary>
     public byte[]? ContentHash { get; set; }
 }
