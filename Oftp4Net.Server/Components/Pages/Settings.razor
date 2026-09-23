@@ -274,6 +274,16 @@
                                         Hint="Stricter: an unreachable revocation list then stops the transfer instead of being tolerated."
                                         @bind-Value="@settings.RequireRevocationInformation" />
                         </div>
+                        <div class="col-md-6">
+                            <HxInputNumber Label="Read a revocation list again after (hours)"
+                                           Hint="How often the list of a certification authority is downloaded again."
+                                           @bind-Value="@settings.CrlRefreshHours" />
+                        </div>
+                        <div class="col-md-6">
+                            <HxInputNumber Label="Maximum age of a revocation list (days)"
+                                           Hint="A certificate whose list is older is not used until it has been read again (Odette recommends 15 days)."
+                                           @bind-Value="@settings.CrlMaxAgeDays" />
+                        </div>
                     }
                     <div class="col-md-8">
                         <HxInputText Label="Address" @bind-Value="@settings.TslUrl" />

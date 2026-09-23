@@ -141,6 +141,8 @@ builder.Services.AddSingleton<PartnerSetupScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PartnerSetupScheduler>());
 builder.Services.AddHttpClient(WebhookDispatcher.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient(TslService.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddHttpClient(CrlStore.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<CrlStore>();
 builder.Services.AddSingleton<TslService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TslService>());
 builder.Services.AddSingleton<WebhookDispatcher>();

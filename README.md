@@ -283,6 +283,13 @@ is verified, the certificate is checked for its validity period and against the 
 file secured with a certificate that must not be used any more is refused with the reason *file decryption failure*
 or *invalid file signature*, and a queued file is not sent at all.
 
+The lists of the certification authorities are downloaded from the addresses in the certificates and kept
+(Odette OP08 2.6). *Read a revocation list again after (hours)* is the standard period between updates (default 24)
+and *Maximum age of a revocation list (days)* the longest a list may go without being refreshed (default 15, as
+Odette recommends); a certificate whose list is older is not used until a current one has been read. Both can be
+put down for the interoperability tests. A list is only accepted when the authority that issued the certificate
+signed it. TLS connections use the revocation check of the operating system, which has its own cache.
+
 ## Files that cannot be delivered
 
 A file that arrives correctly but cannot be handed over to its final destination — the ERP system refuses it, the
@@ -547,6 +554,22 @@ server without access to the internet, switch the trust list off.
 Every entry of the list carries the OFTP2 certification authority and its root, which is there to verify that
 authority only. A certificate issued directly by such a root is refused although its chain is sound, because only
 the listed authority may issue the certificate of a partner (Odette OP08 2.7).
+
+## Certificates for the interoperability tests
+
+[`samples/odette-test-pki.sh`](samples/odette-test-pki.sh) creates the certificates of the Odette interoperability
+tests (OP09 chapter 4.6) with OpenSSL: a root and an OFTP2 authority for company A and for company B, the
+certificates CA01 - CA14 and CB01, CB04 - CB06 with the subjects and key usages the test cases prescribe, and a
+revocation list per authority.
+
+```bash
+samples/odette-test-pki.sh --out ./pki --crl-url https://crl.example.com --host-a oftp.example.com --id-a O0013000000MYCOMPANY
+```
+
+Publish the `crl` directory under that address, send the four authority certificates to Odette for the test list
+and import the PKCS#12 bundles of your own stations. `--revoke CA12` revokes one certificate and writes the list
+again, which is what test case 7.1 needs. The certificate CB05 is issued by the root directly and CB06 by an
+authority outside the trust list; both are meant to be refused (test cases 7.2 and 7.3).
 
 ## Requesting a certificate
 

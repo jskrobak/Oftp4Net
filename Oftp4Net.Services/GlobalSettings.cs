@@ -105,6 +105,22 @@ public class GlobalSettings
     public PdxAutoApply PdxAutoApply { get; set; } = PdxAutoApply.SignedOnly;
 
     /// <summary>
+    /// How often the revocation list of a certification authority is downloaded again (Odette OP08 2.6: the
+    /// standard period between updates).
+    /// </summary>
+    [SettingsItem]
+    [Range(1, 720)]
+    public int CrlRefreshHours { get; set; } = 24;
+
+    /// <summary>
+    /// How old the revocation list of a certificate may be at most (Odette OP08 2.6 recommends 15 days). A
+    /// certificate whose list could not be refreshed within this period is not used until it has been read again.
+    /// </summary>
+    [SettingsItem]
+    [Range(1, 365)]
+    public int CrlMaxAgeDays { get; set; } = 15;
+
+    /// <summary>
     /// Which certificates received from partners over OFTP (ODETTE_CERTIFICATE_DELIVER and its siblings) are taken
     /// over without the administrator.
     /// </summary>

@@ -50,43 +50,6 @@ public static class CertificateTrust
         return CertificateTrustSource.None;
     }
 
-    /// <summary>
-    /// Whether the issuer of the certificate put it on a revocation list (OP08 2.6). A certificate that is trusted
-    /// by itself (self signed, stored here by the administrator) has no list and is never revoked this way, so the
-    /// answer is <c>false</c> for it as well as for a certificate whose chain cannot be built at all.
-    /// </summary>
-    /// <param name="problem">What the revocation lists say about the certificate.</param>
-    public static bool IsRevoked(X509Certificate2 certificate, IEnumerable<X509Certificate2> intermediates,
-        X509Certificate2Collection anchors, CertificateRevocationPolicy? revocation, out string? problem)
-    {
-        var policy = revocation ?? new CertificateRevocationPolicy();
-        problem = null;
-        if (!policy.Check)
-            return false;
-
-        var extra = intermediates.ToList();
-        return IsRevoked(certificate, extra, anchors.Count > 0 ? anchors : null, policy, out problem) ||
-               IsRevoked(certificate, extra, null, policy, out problem);
-    }
-
-    private static bool IsRevoked(X509Certificate2 certificate, IReadOnlyList<X509Certificate2> intermediates,
-        X509Certificate2Collection? anchors, CertificateRevocationPolicy revocation, out string? problem)
-    {
-        using var chain = new X509Chain();
-        revocation.ApplyTo(chain.ChainPolicy);
-        chain.ChainPolicy.ExtraStore.AddRange(intermediates.ToArray());
-        if (anchors is not null)
-        {
-            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-            chain.ChainPolicy.CustomTrustStore.AddRange(anchors);
-        }
-
-        chain.Build(certificate);
-        var revoked = chain.ChainStatus.Any(s => (s.Status & X509ChainStatusFlags.Revoked) != 0);
-        problem = revoked ? CertificateRevocationPolicy.Describe(chain.ChainStatus) : null;
-        return revoked;
-    }
-
     private static bool Build(X509Certificate2 certificate, IReadOnlyList<X509Certificate2> intermediates,
         X509Certificate2Collection? anchors, CertificateRevocationPolicy revocation,
         X509Certificate2Collection? verificationOnly, out string? problem)

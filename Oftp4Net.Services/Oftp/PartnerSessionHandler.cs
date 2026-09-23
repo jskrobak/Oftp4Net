@@ -70,7 +70,8 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _webhooks = scopedServices.GetRequiredService<IWebhookDispatcher>();
         _apiTokens = scopedServices.GetRequiredService<ApiTokenService>();
         _fileSecurity = new SessionFileSecurity(scopedServices.GetRequiredService<ICertificateRepository>(), settings,
-            scopedServices.GetRequiredService<TslService>().TrustAnchors);
+            scopedServices.GetRequiredService<TslService>().TrustAnchors,
+            scopedServices.GetRequiredService<CrlStore>());
         _setups = scopedServices.GetRequiredService<PartnerSetupService>();
         _certificateExchange = scopedServices.GetRequiredService<CertificateExchangeService>();
         _remoteEndPoint = remoteEndPoint;
@@ -481,10 +482,10 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 $"File level security requires OFTP 2.0, partner {partner.Name} is configured for " +
                 $"ODETTE-FTP {ProtocolLevels.Name(partner.ProtocolLevel)}.");
 
-        if (settings.Sign && _fileSecurity.CheckUsable(settings.SigningCertificate) is { } signingProblem)
+        if (settings.Sign && await _fileSecurity.CheckUsableAsync(settings.SigningCertificate, cancellationToken) is { } signingProblem)
             throw new FileSecurityException(signingProblem);
 
-        if (settings.Encrypt && _fileSecurity.CheckUsable(settings.EncryptionCertificate) is { } encryptionProblem)
+        if (settings.Encrypt && await _fileSecurity.CheckUsableAsync(settings.EncryptionCertificate, cancellationToken) is { } encryptionProblem)
             throw new FileSecurityException(encryptionProblem);
 
         // A datasheet must be sent without a signed EERP (Odette OP08 part 3, "Transfer parameters"), and so is
@@ -868,7 +869,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
             // A revoked or expired certificate must not be used any more, not even for a file that is already on
             // its way: the partner encrypted for our certificate and signed with its own (Odette OP08 2.6).
-            if (_fileSecurity.CheckUsable(ownCertificate) is { } ownProblem)
+            if (await _fileSecurity.CheckUsableAsync(ownCertificate, cancellationToken) is { } ownProblem)
                 return OftpStartFileDecision.Reject(AnswerReasonCodes.FileDecryptionFailure, ownProblem);
         }
 
@@ -877,7 +878,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             var partnerCertificate = await _fileSecurity.GetPartnerCertificateAsync(station,
                 CertificateUsage.FileSignature, cancellationToken);
 
-            if (_fileSecurity.CheckUsable(partnerCertificate) is { } partnerProblem)
+            if (await _fileSecurity.CheckUsableAsync(partnerCertificate, cancellationToken) is { } partnerProblem)
                 return OftpStartFileDecision.Reject(AnswerReasonCodes.InvalidFileSignature, partnerProblem);
 
             // A datasheet or a certificate signed with a certificate we do not know yet is still accepted: the
@@ -1250,7 +1251,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             var station = StationSettings.For(Partner!, item.DestinationSfid);
             var certificate = await _fileSecurity.GetPartnerCertificateAsync(station, CertificateUsage.EndResponse, cancellationToken)
                 ?? throw new FileSecurityException($"partner {Partner!.Name} has no certificate configured");
-            if (_fileSecurity.CheckUsable(certificate) is { } problem)
+            if (await _fileSecurity.CheckUsableAsync(certificate, cancellationToken) is { } problem)
                 throw new FileSecurityException(problem);
 
             var previous = await _fileSecurity.GetPreviousPartnerCertificateAsync(station, CertificateUsage.EndResponse, cancellationToken);
