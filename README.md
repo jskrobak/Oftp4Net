@@ -336,7 +336,13 @@ the monitoring asks `/health/send-queue` and decides itself: the endpoint return
 Ages are whole minutes and `0` when there is nothing, so that every value is a number. Every partner is listed,
 also with an empty queue, so that the items the monitoring discovers per partner do not come and go.
 
-In Zabbix:
+In Zabbix (7.0 or later) import the template [`samples/zabbix/oftp4net_by_http.yaml`](samples/zabbix/oftp4net_by_http.yaml)
+(*Data collection → Templates → Import*), link it to a host and set the macros `{$OFTP.URL}` and `{$OFTP.TOKEN}`.
+It watches the state of the server, every health check and the send queue of every partner; the thresholds are
+the macros `{$OFTP.WAITING.MAX.AGE}` (default `1h`) and `{$OFTP.EERP.MAX.AGE}` (default `1d`), and a partner
+gets its own with its SSID as context, e.g. `{$OFTP.WAITING.MAX.AGE:"O0013000000PARTNER"}` = `4h`.
+
+What the template does, to build it by hand or in another monitoring:
 
 1. A host with the macros `{$OFTP.URL}` (e.g. `https://oftp.example.com`) and `{$OFTP.TOKEN}` (secret text).
 2. A master item of the type *HTTP agent*: URL `{$OFTP.URL}/health/send-queue`, header
@@ -345,15 +351,15 @@ In Zabbix:
 3. Dependent items for the totals with the preprocessing *JSONPath*, e.g. `$.oldestWaitingMinutes` or `$.failed`.
 4. A discovery rule of the type *Dependent item* on the master item, with the preprocessing *JSONPath*
    `$.partners` and the LLD macros `{#PARTNER}` = `$.partner` and `{#SSID}` = `$.ssid`.
-5. Item prototypes with *JSONPath* such as `$.partners[?(@.ssid=='{#SSID}')].oldestWaitingMinutes.first()`, and
-   trigger prototypes, e.g.:
+5. Item prototypes with *JSONPath* such as `$.partners[?(@.ssid=='{#SSID}')].oldestWaitingMinutes.first()`
+   (multiplied by 60, so that Zabbix shows the minutes as a time), and trigger prototypes, e.g.:
 
 | Trigger | Expression |
 |---|---|
-| A file for {#PARTNER} waits for more than an hour | `last(/oftp/oftp.waiting.age[{#SSID}])>60` |
-| A file for {#PARTNER} failed for good | `last(/oftp/oftp.failed[{#SSID}])>0` |
-| {#PARTNER} has not confirmed a file for a day | `last(/oftp/oftp.eerp.age[{#SSID}])>1440` |
-| The server does not answer | `nodata(/oftp/oftp.send-queue,15m)=1` on the master item |
+| A file for {#PARTNER} waits for more than an hour | `last(/Oftp4Net by HTTP/oftp.partner.waiting.age[{#SSID}])>1h` |
+| A file for {#PARTNER} failed for good | `last(/Oftp4Net by HTTP/oftp.partner.failed[{#SSID}])>0` |
+| {#PARTNER} has not confirmed a file for a day | `last(/Oftp4Net by HTTP/oftp.partner.eerp.age[{#SSID}])>1d` |
+| The server does not answer | `nodata(/Oftp4Net by HTTP/oftp.health.ready,15m)=1` |
 
 The last trigger matters as much as the others: a server that is down sends no alert of its own.
 

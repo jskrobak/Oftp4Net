@@ -1,0 +1,481 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 96a0a7ad7b69472ba8a4d5b40b4b217f
+      name: Templates/Applications
+  templates:
+    - uuid: fd0e55609eef4bfe9487bfb9bf526c22
+      template: 'Oftp4Net by HTTP'
+      name: 'Oftp4Net by HTTP'
+      description: |
+        Oftp4Net OFTP2 server: the state of the server, its health checks and the send queue of every partner.
+        
+        Set {$OFTP.URL} to the address of the server (without a trailing slash) and {$OFTP.TOKEN} to an API token
+        from Settings / API tokens. Thresholds can be set for one partner with the SSID as context, e.g.
+        {$OFTP.WAITING.MAX.AGE:"O0013000000PARTNER"}=4h.
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: 457bc07095204a7bb93a0d543607096a
+          name: 'Oftp4Net: State'
+          type: HTTP_AGENT
+          key: oftp.health.ready
+          delay: 1m
+          history: 31d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Overall state from /health/ready: database, storage, listeners and send service.'
+          valuemap:
+            name: 'Oftp4Net health state'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - 'return {Healthy: 0, Degraded: 1, Unhealthy: 2}[value.trim()];'
+          timeout: 10s
+          url: '{$OFTP.URL}/health/ready'
+          status_codes: '200,503'
+          tags:
+            - tag: component
+              value: health
+          triggers:
+            - uuid: 59d34596b71243d0ba0075c79330a709
+              expression: 'last(/Oftp4Net by HTTP/oftp.health.ready)=2'
+              name: 'Oftp4Net: Server is unhealthy'
+              priority: HIGH
+              description: 'Database, storage, a listener or the send service fails. The details are in the health check items.'
+              tags:
+                - tag: scope
+                  value: availability
+            - uuid: b38fa6a8f8b4496b8e1b10e3e6e8ff6c
+              expression: 'nodata(/Oftp4Net by HTTP/oftp.health.ready,{$OFTP.NODATA})=1'
+              name: 'Oftp4Net: Server does not answer for {$OFTP.NODATA}'
+              priority: HIGH
+              description: 'The server is down or cannot be reached; it cannot report anything itself.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 2aad966c3fb34e0e812a34edb02b488f
+          name: 'Oftp4Net: Health details'
+          type: HTTP_AGENT
+          key: oftp.health.details
+          delay: 5m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'All health checks from /health/details, the source of the discovered checks.'
+          timeout: 10s
+          url: '{$OFTP.URL}/health/details'
+          status_codes: '200,503'
+          headers:
+            - name: Authorization
+              value: 'Bearer {$OFTP.TOKEN}'
+          tags:
+            - tag: component
+              value: raw
+        - uuid: 83f7f24af5ad47e2bfc4bbf9afcb6820
+          name: 'Oftp4Net: Send queue'
+          type: HTTP_AGENT
+          key: oftp.send-queue
+          delay: 5m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'The send queue in numbers from /health/send-queue, the source of the queue items.'
+          timeout: 10s
+          url: '{$OFTP.URL}/health/send-queue'
+          headers:
+            - name: Authorization
+              value: 'Bearer {$OFTP.TOKEN}'
+          tags:
+            - tag: component
+              value: raw
+        - uuid: e34602d33217452688fcaf66b6a9fd27
+          name: 'Oftp4Net: Files waiting'
+          type: DEPENDENT
+          key: oftp.queue.waiting
+          delay: '0'
+          history: 31d
+          value_type: UNSIGNED
+          description: 'Files new or waiting for a retry, all partners.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.waiting
+          master_item:
+            key: oftp.send-queue
+          tags:
+            - tag: component
+              value: queue
+          triggers:
+            - uuid: d10adac7ffda44ec878ac2ba150e8120
+              expression: 'nodata(/Oftp4Net by HTTP/oftp.queue.waiting,{$OFTP.NODATA})=1'
+              name: 'Oftp4Net: No data about the send queue for {$OFTP.NODATA}'
+              priority: AVERAGE
+              description: 'The send queue cannot be read, e.g. because the API token expired or was disabled.'
+              dependencies:
+                - name: 'Oftp4Net: Server does not answer for {$OFTP.NODATA}'
+                  expression: 'nodata(/Oftp4Net by HTTP/oftp.health.ready,{$OFTP.NODATA})=1'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 481e044b45c6485289782233dbfb4672
+          name: 'Oftp4Net: Oldest waiting file'
+          type: DEPENDENT
+          key: oftp.queue.waiting.age
+          delay: '0'
+          history: 31d
+          value_type: UNSIGNED
+          units: s
+          description: 'How long the oldest file waiting to be sent has been in the queue, all partners.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.oldestWaitingMinutes
+            - type: MULTIPLIER
+              parameters:
+                - '60'
+          master_item:
+            key: oftp.send-queue
+          tags:
+            - tag: component
+              value: queue
+        - uuid: 32afe2f8ff85460085d7d12188c0b416
+          name: 'Oftp4Net: Files failed'
+          type: DEPENDENT
+          key: oftp.queue.failed
+          delay: '0'
+          history: 31d
+          value_type: UNSIGNED
+          description: 'Files that failed for good and wait for the administrator, all partners.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.failed
+          master_item:
+            key: oftp.send-queue
+          tags:
+            - tag: component
+              value: queue
+        - uuid: 4ad8ea67198e44329cfd9951d13debdd
+          name: 'Oftp4Net: Files awaiting End to End Response'
+          type: DEPENDENT
+          key: oftp.queue.eerp
+          delay: '0'
+          history: 31d
+          value_type: UNSIGNED
+          description: 'Files sent whose EERP has not arrived yet, all partners.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.awaitingEndResponse
+          master_item:
+            key: oftp.send-queue
+          tags:
+            - tag: component
+              value: queue
+        - uuid: f488e3ae77be4b0bb06f0cce14698a73
+          name: 'Oftp4Net: Oldest file awaiting End to End Response'
+          type: DEPENDENT
+          key: oftp.queue.eerp.age
+          delay: '0'
+          history: 31d
+          value_type: UNSIGNED
+          units: s
+          description: 'How long ago the oldest file still awaiting its EERP was sent, all partners.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.oldestAwaitingEndResponseMinutes
+            - type: MULTIPLIER
+              parameters:
+                - '60'
+          master_item:
+            key: oftp.send-queue
+          tags:
+            - tag: component
+              value: queue
+      discovery_rules:
+        - uuid: 9f7b9dfb8ff14d40b9fffd6c9c910bfd
+          name: 'Health checks'
+          type: DEPENDENT
+          key: oftp.checks.discovery
+          delay: '0'
+          description: 'The health checks of /health/details.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var checks = JSON.parse(value).checks;
+                  var result = [];
+                  for (var name in checks)
+                      result.push({'{#CHECK}': name, '{#TAGS}': checks[name].tags.join(',')});
+                  return JSON.stringify(result);
+          master_item:
+            key: oftp.health.details
+          item_prototypes:
+            - uuid: 74f48dd3742d4d08932f8cbb3765781d
+              name: 'Oftp4Net: Check {#CHECK}'
+              type: DEPENDENT
+              key: 'oftp.check.state[{#CHECK}]'
+              delay: '0'
+              history: 31d
+              trends: 365d
+              value_type: UNSIGNED
+              description: 'State of the health check {#CHECK} ({#TAGS}).'
+              valuemap:
+                name: 'Oftp4Net health state'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.checks[''{#CHECK}''].status'
+                - type: JAVASCRIPT
+                  parameters:
+                    - 'return {Healthy: 0, Degraded: 1, Unhealthy: 2}[value];'
+              master_item:
+                key: oftp.health.details
+              tags:
+                - tag: check
+                  value: '{#CHECK}'
+                - tag: component
+                  value: health
+            - uuid: f767f97f33b04c1ab8d2c5831c84ec26
+              name: 'Oftp4Net: Check {#CHECK} description'
+              type: DEPENDENT
+              key: 'oftp.check.description[{#CHECK}]'
+              delay: '0'
+              history: 7d
+              value_type: TEXT
+              description: 'What the health check {#CHECK} found.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.checks[''{#CHECK}''].description'
+                  error_handler: DISCARD_VALUE
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: oftp.health.details
+              tags:
+                - tag: check
+                  value: '{#CHECK}'
+                - tag: component
+                  value: health
+          trigger_prototypes:
+            - uuid: 79e4887ad91c480c9175dd52fdc0444a
+              expression: 'last(/Oftp4Net by HTTP/oftp.check.state[{#CHECK}])=2 and length(last(/Oftp4Net by HTTP/oftp.check.description[{#CHECK}]))>=0'
+              name: 'Oftp4Net: Health check {#CHECK} is unhealthy'
+              opdata: '{ITEM.LASTVALUE2}'
+              priority: HIGH
+              tags:
+                - tag: scope
+                  value: availability
+            - uuid: 45b02223fd574f1d9e83021cc89100fa
+              expression: 'last(/Oftp4Net by HTTP/oftp.check.state[{#CHECK}])=1 and length(last(/Oftp4Net by HTTP/oftp.check.description[{#CHECK}]))>=0'
+              name: 'Oftp4Net: Health check {#CHECK} is degraded'
+              opdata: '{ITEM.LASTVALUE2}'
+              priority: WARNING
+              tags:
+                - tag: scope
+                  value: notice
+        - uuid: bc906e694d314478a95f8f852326ef1d
+          name: 'Partners'
+          type: DEPENDENT
+          key: oftp.partners.discovery
+          delay: '0'
+          description: 'The partners of /health/send-queue; every partner is listed, also with an empty queue.'
+          lifetime: 7d
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.partners
+          master_item:
+            key: oftp.send-queue
+          lld_macro_paths:
+            - lld_macro: '{#PARTNER}'
+              path: $.partner
+            - lld_macro: '{#SSID}'
+              path: $.ssid
+          item_prototypes:
+            - uuid: bc516101e8784b52aeb0c17ce9dd1702
+              name: 'Oftp4Net: {#PARTNER}: Files waiting'
+              type: DEPENDENT
+              key: 'oftp.partner.waiting[{#SSID}]'
+              delay: '0'
+              history: 31d
+              value_type: UNSIGNED
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.partners[?(@.ssid==''{#SSID}'')].waiting.first()'
+              master_item:
+                key: oftp.send-queue
+              tags:
+                - tag: component
+                  value: queue
+                - tag: partner
+                  value: '{#PARTNER}'
+            - uuid: eda3fc23066846f68f0689bec6410c83
+              name: 'Oftp4Net: {#PARTNER}: Oldest waiting file'
+              type: DEPENDENT
+              key: 'oftp.partner.waiting.age[{#SSID}]'
+              delay: '0'
+              history: 31d
+              value_type: UNSIGNED
+              units: s
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.partners[?(@.ssid==''{#SSID}'')].oldestWaitingMinutes.first()'
+                - type: MULTIPLIER
+                  parameters:
+                    - '60'
+              master_item:
+                key: oftp.send-queue
+              tags:
+                - tag: component
+                  value: queue
+                - tag: partner
+                  value: '{#PARTNER}'
+            - uuid: c7981bf41cf64efea3776d998b01ea6f
+              name: 'Oftp4Net: {#PARTNER}: Files failed'
+              type: DEPENDENT
+              key: 'oftp.partner.failed[{#SSID}]'
+              delay: '0'
+              history: 31d
+              value_type: UNSIGNED
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.partners[?(@.ssid==''{#SSID}'')].failed.first()'
+              master_item:
+                key: oftp.send-queue
+              tags:
+                - tag: component
+                  value: queue
+                - tag: partner
+                  value: '{#PARTNER}'
+            - uuid: 63bcf261a2ed4894850c012a1c5e2cb3
+              name: 'Oftp4Net: {#PARTNER}: Files awaiting End to End Response'
+              type: DEPENDENT
+              key: 'oftp.partner.eerp[{#SSID}]'
+              delay: '0'
+              history: 31d
+              value_type: UNSIGNED
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.partners[?(@.ssid==''{#SSID}'')].awaitingEndResponse.first()'
+              master_item:
+                key: oftp.send-queue
+              tags:
+                - tag: component
+                  value: queue
+                - tag: partner
+                  value: '{#PARTNER}'
+            - uuid: 924bff6a781b4717b07499151991d5fc
+              name: 'Oftp4Net: {#PARTNER}: Oldest file awaiting End to End Response'
+              type: DEPENDENT
+              key: 'oftp.partner.eerp.age[{#SSID}]'
+              delay: '0'
+              history: 31d
+              value_type: UNSIGNED
+              units: s
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.partners[?(@.ssid==''{#SSID}'')].oldestAwaitingEndResponseMinutes.first()'
+                - type: MULTIPLIER
+                  parameters:
+                    - '60'
+              master_item:
+                key: oftp.send-queue
+              tags:
+                - tag: component
+                  value: queue
+                - tag: partner
+                  value: '{#PARTNER}'
+            - uuid: 7485052c73584dd2b9b5ef36a0e55523
+              name: 'Oftp4Net: {#PARTNER}: Last error'
+              type: DEPENDENT
+              key: 'oftp.partner.error[{#SSID}]'
+              delay: '0'
+              history: 7d
+              value_type: TEXT
+              description: 'The error of the file that failed last, among those waiting or failed; - when there is none.'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var partner = JSON.parse(value).partners.filter(function (p) { return p.ssid == '{#SSID}'; })[0];
+                      return partner && partner.lastError ? partner.lastError : '-';
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: oftp.send-queue
+              tags:
+                - tag: component
+                  value: queue
+                - tag: partner
+                  value: '{#PARTNER}'
+          trigger_prototypes:
+            - uuid: 35088fc230994a28ad4fc68e07e75e61
+              expression: 'last(/Oftp4Net by HTTP/oftp.partner.waiting.age[{#SSID}])>{$OFTP.WAITING.MAX.AGE:"{#SSID}"} and length(last(/Oftp4Net by HTTP/oftp.partner.error[{#SSID}]))>=0'
+              name: 'Oftp4Net: A file for {#PARTNER} waits longer than {$OFTP.WAITING.MAX.AGE:"{#SSID}"}'
+              opdata: 'Waiting: {ITEM.LASTVALUE1}, last error: {ITEM.LASTVALUE2}'
+              priority: AVERAGE
+              description: 'The partner cannot be reached or refuses the session; the send queue keeps retrying.'
+              tags:
+                - tag: scope
+                  value: notice
+            - uuid: 7a49c00d0caf462eb34eaa712de03197
+              expression: 'last(/Oftp4Net by HTTP/oftp.partner.failed[{#SSID}])>0 and length(last(/Oftp4Net by HTTP/oftp.partner.error[{#SSID}]))>=0'
+              name: 'Oftp4Net: Files for {#PARTNER} failed for good'
+              opdata: 'Failed: {ITEM.LASTVALUE1}, last error: {ITEM.LASTVALUE2}'
+              priority: HIGH
+              description: 'The retries are exhausted or the partner refused the file. Send the file again or delete it in Queues / Send queue.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: notice
+            - uuid: c4579255586144dc85c50f2f8729fd44
+              expression: 'last(/Oftp4Net by HTTP/oftp.partner.eerp.age[{#SSID}])>{$OFTP.EERP.MAX.AGE:"{#SSID}"}'
+              name: '{#PARTNER} has not confirmed a file for {$OFTP.EERP.MAX.AGE:"{#SSID}"}'
+              opdata: 'Oldest: {ITEM.LASTVALUE1}'
+              priority: WARNING
+              description: 'The partner received the file but has not sent its End to End Response (EERP). Raise the threshold for partners that confirm late or never.'
+              tags:
+                - tag: scope
+                  value: notice
+      tags:
+        - tag: class
+          value: application
+        - tag: target
+          value: oftp4net
+      macros:
+        - macro: '{$OFTP.EERP.MAX.AGE}'
+          value: 1d
+          description: 'A file may wait this long for its End to End Response; SSID as context for one partner.'
+        - macro: '{$OFTP.NODATA}'
+          value: 15m
+          description: 'Time without an answer after which the server is reported as not answering.'
+        - macro: '{$OFTP.TOKEN}'
+          type: SECRET_TEXT
+          description: 'API token from Settings / API tokens.'
+        - macro: '{$OFTP.URL}'
+          value: 'https://oftp.example.com'
+          description: 'Address of the server without a trailing slash.'
+        - macro: '{$OFTP.WAITING.MAX.AGE}'
+          value: 1h
+          description: 'A file may wait this long to be sent; SSID as context for one partner.'
+      valuemaps:
+        - uuid: e2cca0fba05d4bf2af6f6cead1ee3204
+          name: 'Oftp4Net health state'
+          mappings:
+            - value: '0'
+              newvalue: Healthy
+            - value: '1'
+              newvalue: Degraded
+            - value: '2'
+              newvalue: Unhealthy
