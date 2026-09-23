@@ -24,7 +24,7 @@ public sealed class OftpSessionOptions
     public string LocalPassword { get; init; } = "";
 
     /// <summary>Proposed data exchange buffer size. The smaller of both proposals is used.</summary>
-    public int ExchangeBufferSize { get; init; } = 4096;
+    public int ExchangeBufferSize { get; init; } = 65536;
 
     /// <summary>Proposed credit (number of DATA buffers sent before waiting for CDT). The smaller of both proposals is used.</summary>
     public int Credit { get; init; } = 64;

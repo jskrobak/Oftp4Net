@@ -47,7 +47,7 @@ public class GlobalSettings
     /// <summary>Data exchange buffer size proposed in SSID.</summary>
     [SettingsItem]
     [Range(128, 99999)]
-    public int ExchangeBufferSize { get; set; } = 4096;
+    public int ExchangeBufferSize { get; set; } = 65536;
 
     /// <summary>Credit (DATA buffers before CDT) proposed in SSID.</summary>
     [SettingsItem]
