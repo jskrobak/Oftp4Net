@@ -27,6 +27,8 @@ public sealed class OftpSession
     private readonly List<int> _recordEnds = [];
 
     private bool _peerAcceptsFiles = true;
+    private CancellationTokenSource? _receiveTimeout;
+    private CancellationToken _receiveTimeoutToken;
 
     public OftpSession(OftpTransport transport, OftpSessionOptions options, OftpSessionHandler handler, ILogger logger)
     {
@@ -120,6 +122,11 @@ public sealed class OftpSession
                 ReasonText = "Service is shutting down."
             });
             throw;
+        }
+        finally
+        {
+            _receiveTimeout?.Dispose();
+            _receiveTimeout = null;
         }
     }
 
@@ -682,8 +689,7 @@ public sealed class OftpSession
 
     private async Task<OftpCommand> ReceiveAsync(CancellationToken cancellationToken)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(_options.ResponseTimeout);
+        var timeout = RenewReceiveTimeout(cancellationToken);
 
         byte[] buffer;
         try
@@ -717,6 +723,23 @@ public sealed class OftpSession
                 $"Exchange buffer of {buffer.Length} octets exceeds negotiated size {ExchangeBufferSize}.");
 
         return command;
+    }
+
+    /// <summary>
+    /// Starts the response timeout for the next receive. The source is reused as long as it did not fire, so a
+    /// transfer does not allocate a linked source and a timer for every DATA buffer.
+    /// </summary>
+    private CancellationTokenSource RenewReceiveTimeout(CancellationToken cancellationToken)
+    {
+        if (_receiveTimeout is null || _receiveTimeoutToken != cancellationToken || !_receiveTimeout.TryReset())
+        {
+            _receiveTimeout?.Dispose();
+            _receiveTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _receiveTimeoutToken = cancellationToken;
+        }
+
+        _receiveTimeout.CancelAfter(_options.ResponseTimeout);
+        return _receiveTimeout;
     }
 
     private async Task<T> ReceiveAsync<T>(CancellationToken cancellationToken) where T : OftpCommand

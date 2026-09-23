@@ -530,6 +530,39 @@ public class SessionTests
     }
 
     [Fact]
+    public async Task ConnectionOverTheSessionLimitIsRefusedWithEsid()
+    {
+        using var cts = new CancellationTokenSource(TestTimeout);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var refused = 0;
+
+        await using var listener = new OftpListener(new IPEndPoint(IPAddress.Loopback, 0), null,
+            (_, _, ct) => release.Task.WaitAsync(ct), NullLogger.Instance, maxSessions: 1);
+        listener.SessionLimitReached += _ => Interlocked.Increment(ref refused);
+        listener.Start();
+
+        await using var first = await OftpConnector.ConnectAsync("localhost", listener.LocalEndPoint.Port, null, cts.Token);
+        while (listener.ActiveSessions == 0)
+            await Task.Delay(10, cts.Token);
+
+        // The second partner is told to try later instead of getting SSRM.
+        await using (var second = await OftpConnector.ConnectAsync("localhost", listener.LocalEndPoint.Port, null, cts.Token))
+        {
+            var esid = Assert.IsType<ESID>(OftpCommand.Decode(await second.ReadAsync(cts.Token)));
+            Assert.Equal(ReasonCodes.ResourcesNotAvailable, esid.ReasonCode);
+        }
+
+        Assert.Equal(1, refused);
+        Assert.Equal(1, listener.ActiveSessions);
+
+        // A slot freed by the first session is available again.
+        release.SetResult();
+        while (listener.ActiveSessions > 0)
+            await Task.Delay(10, cts.Token);
+        Assert.Equal(1, refused);
+    }
+
+    [Fact]
     public async Task TlsWithUntrustedCertificateIsRejected()
     {
         using var certificate = CreateSelfSignedCertificate();

@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace Oftp4Net.Core.Protocol;
 
 /// <summary>
@@ -14,6 +16,7 @@ public sealed class OftpTransport(Stream stream) : IAsyncDisposable
     private const byte Version = 0x10;
 
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly byte[] _readHeader = new byte[HeaderLength];
 
     public Stream Stream => stream;
 
@@ -31,11 +34,15 @@ public sealed class OftpTransport(Stream stream) : IAsyncDisposable
     {
         var header = CreateHeader(exchangeBuffer.Length);
 
+        // Header and buffer go out in a single write: two writes would cost two TLS records and, with Nagle
+        // disabled, two TCP segments for every exchange buffer.
+        var frame = ArrayPool<byte>.Shared.Rent(HeaderLength + exchangeBuffer.Length);
         await _writeLock.WaitAsync(cancellationToken);
         try
         {
-            await stream.WriteAsync(header, cancellationToken);
-            await stream.WriteAsync(exchangeBuffer, cancellationToken);
+            header.CopyTo(frame, 0);
+            exchangeBuffer.CopyTo(frame, HeaderLength);
+            await stream.WriteAsync(frame.AsMemory(0, HeaderLength + exchangeBuffer.Length), cancellationToken);
             await stream.FlushAsync(cancellationToken);
         }
         catch (IOException ex)
@@ -45,6 +52,7 @@ public sealed class OftpTransport(Stream stream) : IAsyncDisposable
         finally
         {
             _writeLock.Release();
+            ArrayPool<byte>.Shared.Return(frame);
         }
     }
 
@@ -53,7 +61,8 @@ public sealed class OftpTransport(Stream stream) : IAsyncDisposable
     /// </summary>
     public async Task<byte[]> ReadAsync(CancellationToken cancellationToken)
     {
-        var header = new byte[HeaderLength];
+        // Only one read is in progress at a time, so the header buffer is reused.
+        var header = _readHeader;
         await ReadExactlyAsync(header, cancellationToken);
 
         if ((header[0] & 0xF0) != Version)

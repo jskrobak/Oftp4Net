@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Authentication;
 using Havit.Services.TimeServices;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,11 @@ namespace Oftp4Net.Services;
 /// Periodically connects to partners that have files waiting in the send queue (or End to End Responses
 /// waiting to be delivered) and runs an OFTP session as initiator.
 /// </summary>
+/// <remarks>
+/// Sessions with different partners run in parallel, up to <see cref="GlobalSettings.MaxParallelSessions"/>; a
+/// partner has at most one session of ours at a time. A session does not wait for the others, so a large transfer
+/// to one partner does not hold up the files of the rest.
+/// </remarks>
 public class SendService(ILogger<SendService> logger,
     IServiceScopeFactory serviceScopeFactory,
     GlobalSettingsService globalSettingsService,
@@ -28,9 +34,21 @@ public class SendService(ILogger<SendService> logger,
 
     private readonly SemaphoreSlim _trigger = new(0, 1);
 
+    /// <summary>Running sessions by partner.</summary>
+    private readonly ConcurrentDictionary<int, Task> _active = new();
+
+    /// <summary>A session was not started because all the slots were taken; run again when one is free.</summary>
+    private volatile bool _slotWanted;
+
+    /// <summary>Partners with more to send than their running session took; run again when it ends.</summary>
+    private readonly ConcurrentDictionary<int, bool> _partnerWanted = new();
+
     public bool IsRunning { get; private set; }
     public bool IsPaused { get; private set; }
     public DateTime? LastRun { get; private set; }
+
+    /// <summary>Number of sessions with partners running at the moment.</summary>
+    public int ActiveSessions => _active.Count;
 
     public void Pause() => IsPaused = true;
 
@@ -90,6 +108,8 @@ public class SendService(ILogger<SendService> logger,
         }
         finally
         {
+            // The running sessions end with the stopping token, each of them records its outcome.
+            await Task.WhenAll(_active.Values);
             IsRunning = false;
         }
     }
@@ -125,16 +145,58 @@ public class SendService(ILogger<SendService> logger,
             }
         }
 
-        if (sessions.Count > 0)
-            logger.LogInformation("Send queue: {Count} partner session(s) to run", sessions.Count);
-
+        _slotWanted = false;
+        var started = 0;
         foreach (var (partner, identity) in sessions)
         {
             if (stoppingToken.IsCancellationRequested || IsPaused)
                 break;
 
-            await RunSessionAsync(partner, identity, settings, stoppingToken);
+            // The partner is served by a running session (or another of our identities waits for it), or all the
+            // slots are taken: the next run comes when a session ends.
+            if (_active.ContainsKey(partner.Id))
+            {
+                _partnerWanted[partner.Id] = true;
+                continue;
+            }
+
+            if (_active.Count >= settings.MaxParallelSessions)
+            {
+                _slotWanted = true;
+                continue;
+            }
+
+            StartSession(partner, identity, settings, stoppingToken);
+            started++;
         }
+
+        if (started > 0)
+            logger.LogInformation("Send queue: {Started} partner session(s) started, {Active} running", started, _active.Count);
+    }
+
+    private void StartSession(Partner partner, Identity identity, GlobalSettings settings, CancellationToken stoppingToken)
+    {
+        var session = Task.Run(async () =>
+        {
+            try
+            {
+                await RunSessionAsync(partner, identity, settings, stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Session with {Partner} failed", partner.Name);
+            }
+        }, CancellationToken.None);
+
+        _active[partner.Id] = session;
+        // Registered after the session is added, so it is removed even when it ends right away.
+        _ = session.ContinueWith(ended =>
+        {
+            _active.TryRemove(new KeyValuePair<int, Task>(partner.Id, ended));
+            var wanted = _partnerWanted.TryRemove(partner.Id, out _);
+            if ((wanted || _slotWanted) && !stoppingToken.IsCancellationRequested)
+                Trigger();
+        }, TaskScheduler.Default);
     }
 
     private async Task RunSessionAsync(Partner partner, Identity identity, GlobalSettings settings, CancellationToken stoppingToken)

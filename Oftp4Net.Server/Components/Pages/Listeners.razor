@@ -36,6 +36,8 @@
                               Nullable="true"
                               NullText="-select identity-" />
 
+                    <HxInputNumber Decimals="0" Label="Maximum sessions" Hint="Incoming sessions at the same time; a partner over the limit is asked to try later. Empty for no limit." @bind-Value="@currentListener.MaxSessions" />
+
                     <HxCheckbox Label="Use TLS" @bind-Value="@currentListener.UseTls" />
 
                     @if (currentListener.UseTls)
@@ -115,9 +117,9 @@
                         else if (status is { Running: true })
                         {
                             <HxBadge Color="ThemeColor.Success">Running</HxBadge>
-                            @if (status.ActiveSessions > 0)
+                            @if (status.ActiveSessions > 0 || listener.MaxSessions is not null)
                             {
-                                <span class="ms-2">@status.ActiveSessions active session(s)</span>
+                                <span class="ms-2">@status.ActiveSessions@(listener.MaxSessions is { } max ? $" / {max}" : "") active session(s)</span>
                             }
                         }
                         else

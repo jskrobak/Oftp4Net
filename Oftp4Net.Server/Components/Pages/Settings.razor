@@ -66,6 +66,9 @@
                         <HxInputNumber Label="Send queue interval (seconds)" Decimals="0" @bind-Value="@settings.SendIntervalSeconds" />
                     </div>
                     <div class="col-md-6">
+                        <HxInputNumber Label="Parallel outgoing sessions" Hint="Sessions with different partners run at the same time, 1 - 100" Decimals="0" @bind-Value="@settings.MaxParallelSessions" />
+                    </div>
+                    <div class="col-md-6">
                         <HxInputNumber Label="Maximum retry count" Decimals="0" @bind-Value="@settings.MaxRetryCount" />
                     </div>
                     <div class="col-md-6">

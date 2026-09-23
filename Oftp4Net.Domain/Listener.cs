@@ -33,4 +33,11 @@ public class Listener
 
     /// <summary>Require partners to authenticate with a TLS client certificate.</summary>
     public bool RequireClientCertificate { get; set; }
+
+    /// <summary>
+    /// Incoming sessions handled at the same time; a partner connecting over the limit is asked to try later.
+    /// Empty for no limit.
+    /// </summary>
+    [Range(1, 1000)]
+    public int? MaxSessions { get; set; }
 }

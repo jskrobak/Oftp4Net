@@ -34,6 +34,7 @@
                                 <HxBadge Color="ThemeColor.Success">Running</HxBadge>
                             }
                             <div class="small text-body-secondary mt-1">Last run: @(SendService.LastRun?.ToString("g") ?? "never")</div>
+                            <div class="small text-body-secondary">Active sessions: @SendService.ActiveSessions</div>
                         </div>
                         <HxButtonGroup>
                             <HxButton Color="ThemeColor.Primary" Tooltip="Send now" OnClick="SendService.Trigger" Icon="BootstrapIcon.Send" />

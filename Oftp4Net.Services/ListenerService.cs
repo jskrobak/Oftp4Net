@@ -169,7 +169,16 @@ public class ListenerService(
             }
 
             var oftpListener = new OftpListener(new IPEndPoint(address, listener.Port), tls,
-                (transport, connection, ct) => HandleConnectionAsync(listener, transport, connection, ct), logger);
+                (transport, connection, ct) => HandleConnectionAsync(listener, transport, connection, ct), logger,
+                listener.MaxSessions);
+            oftpListener.SessionLimitReached += remote => transferEvents.Record(new TransferEvent
+            {
+                Category = TransferEventCategory.Incoming,
+                Type = TransferEventType.SessionFailed,
+                Level = TransferEventLevel.Warning,
+                RemoteEndPoint = remote.ToString(),
+                Message = $"Connection from {remote} to listener {listener.Name} refused: the limit of {listener.MaxSessions} sessions is reached",
+            });
             oftpListener.ConnectionFailed += (remote, exception) => transferEvents.Record(new TransferEvent
             {
                 Category = TransferEventCategory.Incoming,

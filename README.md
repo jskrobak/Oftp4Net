@@ -7,8 +7,10 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 
 ## Features
 
-- Sending files from a send queue to partners (initiator role), with retries and exponential back-off
-- Receiving files on configurable TCP / TLS listeners (responder role)
+- Sending files from a send queue to partners (initiator role), with retries and exponential back-off; sessions with
+  several partners run in parallel
+- Receiving files on configurable TCP / TLS listeners (responder role), sessions in parallel with an optional
+  limit per listener
 - Both directions within one session (speaker / listener with change direction)
 - End to End Responses: EERP for delivered files, NERP for those that did not reach their destination or were not
   accepted (e.g. an unusable OFTP2 Communication Setup), both directions

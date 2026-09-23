@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
 using Oftp4Net.Core.Protocol;
+using Oftp4Net.Core.Protocol.Commands;
 
 namespace Oftp4Net.Core.Transport;
 
@@ -27,11 +28,21 @@ public sealed class OftpListener : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<Task, bool> _connections = new();
     private readonly CancellationTokenSource _stopping = new();
+    private readonly int? _maxSessions;
     private Task? _acceptLoop;
+    private int _sessions;
 
+    /// <param name="maxSessions">
+    /// Sessions handled at the same time; a connection over the limit is ended with ESID "Resources not available"
+    /// right after it is accepted. <c>null</c> means no limit.
+    /// </param>
     public OftpListener(IPEndPoint endPoint, OftpTlsOptions? tls,
-        Func<OftpTransport, OftpConnectionInfo, CancellationToken, Task> onConnection, ILogger logger)
+        Func<OftpTransport, OftpConnectionInfo, CancellationToken, Task> onConnection, ILogger logger,
+        int? maxSessions = null)
     {
+        if (maxSessions is < 1)
+            throw new ArgumentOutOfRangeException(nameof(maxSessions), "The session limit must be at least 1.");
+
         if (tls is { LocalCertificate: null })
             throw new ArgumentException("A server certificate is required for TLS.", nameof(tls));
 
@@ -39,12 +50,19 @@ public sealed class OftpListener : IAsyncDisposable
         _tls = tls;
         _onConnection = onConnection;
         _logger = logger;
+        _maxSessions = maxSessions;
     }
 
     /// <summary>
     /// Raised when an accepted connection fails before it is handed over, e.g. when the TLS handshake fails.
     /// </summary>
     public event Action<EndPoint, Exception>? ConnectionFailed;
+
+    /// <summary>Raised when a connection is refused because <c>maxSessions</c> sessions are running already.</summary>
+    public event Action<EndPoint>? SessionLimitReached;
+
+    /// <summary>Sessions handled at the moment.</summary>
+    public int ActiveSessions => Volatile.Read(ref _sessions);
 
     /// <summary>The local end point, useful when listening on port 0.</summary>
     public IPEndPoint LocalEndPoint => (IPEndPoint)_listener.LocalEndpoint;
@@ -90,6 +108,7 @@ public sealed class OftpListener : IAsyncDisposable
 
         OftpTransport? transport = null;
         var handedOver = false;
+        var counted = false;
         try
         {
             Stream stream = new NetworkStream(socket, ownsSocket: true);
@@ -117,6 +136,17 @@ public sealed class OftpListener : IAsyncDisposable
             }
 
             transport = new OftpTransport(stream);
+
+            counted = true;
+            if (Interlocked.Increment(ref _sessions) > _maxSessions)
+            {
+                _logger.LogWarning("OFTP connection from {RemoteEndPoint} refused: {Limit} sessions are running already",
+                    remote, _maxSessions);
+                SessionLimitReached?.Invoke(remote);
+                await RefuseAsync(transport, cancellationToken);
+                return;
+            }
+
             handedOver = true;
             await _onConnection(transport, new OftpConnectionInfo
             {
@@ -135,12 +165,38 @@ public sealed class OftpListener : IAsyncDisposable
         }
         finally
         {
+            if (counted)
+                Interlocked.Decrement(ref _sessions);
+
             if (transport is not null)
                 await transport.DisposeAsync();
             else
                 socket.Dispose();
 
             _logger.LogInformation("OFTP connection from {RemoteEndPoint} closed", remote);
+        }
+    }
+
+    /// <summary>
+    /// Ends the connection before the session starts: the initiator waits for SSRM and gets ESID instead, which
+    /// tells it to try later (RFC 5024, section 5.3.4).
+    /// </summary>
+    private async Task RefuseAsync(OftpTransport transport, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            await transport.WriteAsync(new ESID
+            {
+                ReasonCode = ReasonCodes.ResourcesNotAvailable,
+                ReasonText = "Too many sessions, try again later.",
+            }.Encode(), timeout.Token);
+        }
+        catch (Exception ex)
+        {
+            // The connection is closed anyway.
+            _logger.LogDebug(ex, "Could not send ESID to the refused connection");
         }
     }
 

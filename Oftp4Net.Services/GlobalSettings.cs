@@ -34,6 +34,11 @@ public class GlobalSettings
     [Range(5, 86400)]
     public int SendIntervalSeconds { get; set; } = 60;
 
+    /// <summary>Sessions with different partners run at the same time up to this number.</summary>
+    [SettingsItem]
+    [Range(1, 100)]
+    public int MaxParallelSessions { get; set; } = 8;
+
     /// <summary>Failed transfers are retried up to this number of times, then marked as FAILED.</summary>
     [SettingsItem]
     [Range(0, 1000)]
