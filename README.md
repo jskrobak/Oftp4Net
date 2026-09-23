@@ -20,6 +20,8 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses,
   cipher suites 01 - 10
 - Certificates assigned per station and purpose where one certificate does not serve everything, with roll-over
+- Revocation lists of the certification authorities downloaded and kept, with the periods between updates and the
+  maximum age of a list as settings
 - Secure authentication (SSIDAUTH with SECD/AUCH/AURP): both sides prove they hold the private key of their certificate
 - Restart of interrupted transfers and ODETTE-FTP buffer compression, both negotiated per partner
 - Partners on the older ODETTE-FTP 1.2 - 1.4 (RFC 2204) with their own command layout
@@ -29,6 +31,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Automatic exchange of certificates over OFTP (ODETTE_CERTIFICATE_DELIVER, _REQUEST and _REPLACE): renewals,
   roll-overs and replacements taken over without the administrator
 - Certificate signing requests (CSR) with the profile of the OFTP2 Certificate Policy, for the Odette CA and others
+- A script that creates the certificates of the Odette interoperability tests, including the ones that must be refused
 - Import of partners from an existing OS4X installation
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
 
@@ -47,7 +50,7 @@ What of RFC 5024 the implementation covers:
 | Secure authentication (SSIDAUTH, SECD, AUCH, AURP) | Both directions, challenge in a CMS envelope |
 | File level security (SFIDSEC, SFIDCIPH, SFIDCOMP, SFIDENV) | Signing, zlib compression and encryption, cipher suites 01 – 10 (08 – 10 with RSA-PSS and RSA-OAEP) |
 | Certificate exchange (ODETTE_CERTIFICATE_DELIVER, _REQUEST, _REPLACE) | Sent and received, assigned per station and purpose, answered with an EERP or a NERP |
-| Certificate validation | Chain against the Odette trust list or the system, revocation lists, and the logical identification data of the partner |
+| Certificate validation | Chain against the Odette trust list or the system, revocation lists read and kept here, and the logical identification data of the partner |
 | Signed end responses (SFIDSIGN, EERPSIG, NERPSIG) | Requested, produced and verified, with the hash of the content |
 | Transport | TCP/IP, with TLS 1.2 / 1.3 and optional client certificates |
 
