@@ -16,6 +16,8 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
   accepted (e.g. an unusable OFTP2 Communication Setup), both directions
 - TLS with the system trust store, the Odette trust list (TSL), a custom CA or a pinned partner certificate; optional
   client certificates, with the validity and the revocation list of every certificate checked
+- Received files stored where their virtual file name says: rules route them into their own directories, what
+  matches none stays in the receive directory
 - Character set conversion per partner: files are sent in ANSI or EBCDIC and received EBCDIC content is converted to ANSI
 - File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses,
   cipher suites 01 - 10
