@@ -13,9 +13,11 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - End to End Responses: EERP for delivered files, NERP for those that did not reach their destination or were not
   accepted (e.g. an unusable OFTP2 Communication Setup), both directions
 - TLS with the system trust store, the Odette trust list (TSL), a custom CA or a pinned partner certificate; optional
-  client certificates
+  client certificates, with the validity and the revocation list of every certificate checked
 - Character set conversion per partner: files are sent in ANSI or EBCDIC and received EBCDIC content is converted to ANSI
-- File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses
+- File level security per partner: CMS signing, zlib compression, encryption and signed End to End Responses,
+  cipher suites 01 - 10
+- Certificates assigned per station and purpose where one certificate does not serve everything, with roll-over
 - Secure authentication (SSIDAUTH with SECD/AUCH/AURP): both sides prove they hold the private key of their certificate
 - Restart of interrupted transfers and ODETTE-FTP buffer compression, both negotiated per partner
 - Partners on the older ODETTE-FTP 1.2 - 1.4 (RFC 2204) with their own command layout
@@ -24,6 +26,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
   received by e-mail or over OFTP, our own datasheet exported and sent
 - Automatic exchange of certificates over OFTP (ODETTE_CERTIFICATE_DELIVER, _REQUEST and _REPLACE): renewals,
   roll-overs and replacements taken over without the administrator
+- Certificate signing requests (CSR) with the profile of the OFTP2 Certificate Policy, for the Odette CA and others
 - Import of partners from an existing OS4X installation
 - Web UI: identities, partners, certificates, listeners, send queue, received files, settings and a live log
 
@@ -40,14 +43,14 @@ What of RFC 5024 the implementation covers:
 | Buffer compression (SSIDCMPR) | Sent compressed when agreed, always accepted from a partner |
 | Restart (SSIDREST, SFIDREST) | Interrupted transfers continue at the last complete 1K block |
 | Secure authentication (SSIDAUTH, SECD, AUCH, AURP) | Both directions, challenge in a CMS envelope |
-| File level security (SFIDSEC, SFIDCIPH, SFIDCOMP, SFIDENV) | Signing, zlib compression and encryption, cipher suites 01 – 07 |
+| File level security (SFIDSEC, SFIDCIPH, SFIDCOMP, SFIDENV) | Signing, zlib compression and encryption, cipher suites 01 – 10 (08 – 10 with RSA-PSS and RSA-OAEP) |
+| Certificate exchange (ODETTE_CERTIFICATE_DELIVER, _REQUEST, _REPLACE) | Sent and received, assigned per station and purpose, answered with an EERP or a NERP |
+| Certificate validation | Chain against the Odette trust list or the system, revocation lists, and the logical identification data of the partner |
 | Signed end responses (SFIDSIGN, EERPSIG, NERPSIG) | Requested, produced and verified, with the hash of the content |
 | Transport | TCP/IP, with TLS 1.2 / 1.3 and optional client certificates |
 
 Not implemented, because the deployments this server is built for do not use it:
 
-- Automatic exchange of certificates (ODETTE_CERTIFICATE_REQUEST, _DELIVER, _REPLACE); certificates are exchanged
-  with the OFTP2 Communication Setup instead
 - Broadcast and distribution to several destinations through an intermediate location
 - Special logic (SSIDSPEC)
 - Transports other than TCP/IP (X.25, ISDN) and the mailbox operation of older OFTP versions
@@ -191,7 +194,9 @@ Two certificates are involved:
 | the partner's, public part | *Partners* → *Partner certificate* | encrypting files for the partner, verifying its signatures |
 
 Give the public part of your certificate to the partner and import theirs on the *Certificates* page. The
-self signed certificate created at the first start can be used for both TLS and file security.
+self signed certificate created at the first start can be used for both TLS and file security. A station that uses
+a different certificate for signing, encryption, end responses or authentication assigns them per purpose, see
+*Certificates per station and purpose* below.
 
 Each partner has (on the *Partners* page):
 
