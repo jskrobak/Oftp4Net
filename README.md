@@ -502,6 +502,10 @@ server without access to the internet, switch the trust list off.
 dotnet test
 ```
 
+## Support
+
+Commercial support and hosting are available at [oftp4net.com](https://oftp4net.com).
+
 ## License
 
 [MIT](LICENSE)
