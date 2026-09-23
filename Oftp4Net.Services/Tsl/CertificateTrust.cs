@@ -1,4 +1,5 @@
 using System.Security.Cryptography.X509Certificates;
+using Oftp4Net.Core.Transport;
 
 namespace Oftp4Net.Services.Tsl;
 
@@ -25,25 +26,26 @@ public static class CertificateTrust
     /// <param name="anchors">Trusted certification authorities, usually <see cref="TslService.TrustAnchors"/>.</param>
     /// <param name="problem">Why the certificate is not trusted.</param>
     public static CertificateTrustSource Check(X509Certificate2 certificate, IEnumerable<X509Certificate2> intermediates,
-        X509Certificate2Collection anchors, out string? problem)
+        X509Certificate2Collection anchors, out string? problem, CertificateRevocationPolicy? revocation = null)
     {
         problem = null;
         var extra = intermediates.ToList();
+        var policy = revocation ?? new CertificateRevocationPolicy();
 
-        if (anchors.Count > 0 && Build(certificate, extra, anchors, out _))
+        if (anchors.Count > 0 && Build(certificate, extra, anchors, policy, out _))
             return CertificateTrustSource.Tsl;
 
-        if (Build(certificate, extra, null, out problem))
+        if (Build(certificate, extra, null, policy, out problem))
             return CertificateTrustSource.System;
 
         return CertificateTrustSource.None;
     }
 
     private static bool Build(X509Certificate2 certificate, IReadOnlyList<X509Certificate2> intermediates,
-        X509Certificate2Collection? anchors, out string? problem)
+        X509Certificate2Collection? anchors, CertificateRevocationPolicy revocation, out string? problem)
     {
         using var chain = new X509Chain();
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        revocation.ApplyTo(chain.ChainPolicy);
         chain.ChainPolicy.ExtraStore.AddRange(intermediates.ToArray());
         if (anchors is not null)
         {
@@ -57,7 +59,7 @@ public static class CertificateTrust
             return true;
         }
 
-        problem = string.Join(", ", chain.ChainStatus.Select(s => s.StatusInformation.Trim()).Where(s => s.Length > 0).Distinct());
+        problem = CertificateRevocationPolicy.Describe(chain.ChainStatus);
         return false;
     }
 }

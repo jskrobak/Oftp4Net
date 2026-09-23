@@ -202,9 +202,20 @@ Each partner has (on the *Partners* page):
 | *Ask partner for a signed EERP or NERP* | the partner is asked to sign the end response of our files (SFIDSIGN) |
 | *Cipher suite* | algorithms used for signatures, encryption and hashes (SFIDCIPH) |
 
-The cipher suites are those of RFC 5024 and its common extensions; `01` (3DES, SHA-1) and `02` (AES-256, SHA-1) are
-supported by every OFTP2 node, `03`–`06` use SHA-256 or SHA-512 and `07` (AES-256, SHA3-512) is offered only where the
-platform provides SHA3 (Linux with OpenSSL 1.1.1+, recent Windows; not macOS).
+The cipher suites are those of RFC 5024 and the extensions of the Odette OFTP2 Experts Group:
+
+| Suite | Content encryption | Signature and key transport | Hash |
+|---|---|---|---|
+| `01`, `02` | 3DES-EDE-CBC, AES-256-CBC | RSA PKCS#1 v1.5 | SHA-1 |
+| `03`, `04` | the same | the same | SHA-256 |
+| `05`, `06` | the same | the same | SHA-512 |
+| `07` | AES-256-CBC | the same | SHA3-512 |
+| `08`, `09`, `10` | AES-256-CBC | RSA-PSS and RSA-OAEP | SHA-256, SHA-512, SHA3-512 |
+
+`01` and `02` are supported by every OFTP2 node. The suites with SHA3 (`07` and `10`) are offered only where the
+platform provides it (Linux with OpenSSL 1.1.1+, recent Windows; not macOS). The datasheet of a partner (PDX) can
+only announce the suites its schema knows, up to `07`; `08` to `10` are used with partners that agreed on them in
+another way.
 
 A partner can require files to be signed, encrypted or compressed (*Require … files from the partner*); a file
 without it is refused before it is transferred. Sub-stations of a partner (other SFIDs reached through its connection,
@@ -241,6 +252,18 @@ file is a record number, which is not supported.
 
 Records of a `V` file cannot be converted to EBCDIC, because the lengths stored in the file are binary; the
 transfer of such a file to a partner with the conversion switched on fails with a clear error.
+
+## Certificate revocation
+
+Certificates accepted through a chain — the Odette trust list or the operating system — are checked against the
+revocation lists (CRL) of their issuers, in TLS connections and when a partner's certificate is validated; a
+certificate on such a list is refused.
+
+*Check certificate revocation (CRL)* switches the check on (default) and *Refuse a certificate whose revocation
+state is unknown* decides what happens when the list cannot be read: by default an unreachable list is tolerated
+so that transfers do not stop, with the stricter setting the certificate is refused as well.
+
+A certificate pinned for a partner is trusted by itself and not through a chain, so no list is read for it.
 
 ## Files that cannot be delivered
 

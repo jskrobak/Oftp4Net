@@ -143,7 +143,8 @@ public static class FileSecurity
             throw new FileSecurityException($"Certificate '{certificate.Subject}' has no private key to sign with.");
 
         var cms = new SignedCms(new ContentInfo(content), detached: false);
-        var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, certificate)
+        var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, certificate,
+            privateKey: null, suite.SignaturePadding)
         {
             DigestAlgorithm = suite.DigestAlgorithm,
             IncludeOption = X509IncludeOption.EndCertOnly,
@@ -216,7 +217,8 @@ public static class FileSecurity
         var enveloped = new EnvelopedCms(new ContentInfo(content), new AlgorithmIdentifier(suite.SymmetricAlgorithm));
         try
         {
-            enveloped.Encrypt(new CmsRecipient(SubjectIdentifierType.IssuerAndSerialNumber, certificate));
+            enveloped.Encrypt(new CmsRecipient(SubjectIdentifierType.IssuerAndSerialNumber, certificate,
+                suite.EncryptionPadding));
         }
         catch (CryptographicException ex)
         {

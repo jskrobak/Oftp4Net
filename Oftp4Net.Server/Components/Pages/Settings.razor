@@ -247,6 +247,19 @@
                     <div class="col-12">
                         <HxCheckbox Label="Download and use the trust list" @bind-Value="@settings.TslEnabled" />
                     </div>
+                    <div class="col-12">
+                        <HxCheckbox Label="Check certificate revocation (CRL)"
+                                    Hint="Certificates accepted through a chain are checked against the revocation lists of their issuers; a certificate pinned for a partner is trusted by itself."
+                                    @bind-Value="@settings.CheckCertificateRevocation" />
+                    </div>
+                    @if (settings.CheckCertificateRevocation)
+                    {
+                        <div class="col-12">
+                            <HxCheckbox Label="Refuse a certificate whose revocation state is unknown"
+                                        Hint="Stricter: an unreachable revocation list then stops the transfer instead of being tolerated."
+                                        @bind-Value="@settings.RequireRevocationInformation" />
+                        </div>
+                    }
                     <div class="col-md-8">
                         <HxInputText Label="Address" @bind-Value="@settings.TslUrl" />
                         <div class="small mt-1">

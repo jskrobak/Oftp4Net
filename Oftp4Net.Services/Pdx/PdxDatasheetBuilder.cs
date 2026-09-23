@@ -108,7 +108,8 @@ public static class PdxDatasheetBuilder
             ? new PdxSupport(SecurityUsage.Forbidden)
             : new PdxSupport(profile.TlsClientAuthentication, profile.TlsClientAuthentication == SecurityUsage.Forbidden ? [] : [clientRef]);
 
-        var accepted = CipherSuite.Supported.Select(s => s.Code).ToList();
+        // The schema of the datasheet knows the cipher suites up to 07 only.
+        var accepted = CipherSuite.Supported.Where(s => s.InCommunicationSetup).Select(s => s.Code).ToList();
         var alternates = (profile.AlternateCipherSuites.Count == 0 ? accepted : profile.AlternateCipherSuites.Where(accepted.Contains))
             .Where(c => c != profile.PrimaryCipherSuite)
             .ToList();

@@ -5,11 +5,17 @@ namespace Oftp4Net.Services.Security;
 
 /// <summary>
 /// Cipher suite of file level security (SFIDCIPH). Suites 01 and 02 are mandatory in RFC 5024, section 10.2,
-/// the rest are the commonly used extensions with stronger hashes. Suite 07 (SHA3-512) was added by the Odette
-/// OFTP2 Experts Group and is required by the OFTP2 Communication Setup (PDX) 1.2.
+/// the rest are the extensions of the Odette OFTP2 Experts Group: 03 to 07 with stronger hashes, 08 to 10 with
+/// RSA-PSS signatures and RSA-OAEP key transport.
 /// </summary>
 public sealed record CipherSuite(string Code, string Name, HashAlgorithmName HashAlgorithm, Oid SymmetricAlgorithm)
 {
+    /// <summary>Padding of the CMS signature: PKCS#1 v1.5, or PSS from suite 08 on.</summary>
+    public RSASignaturePadding SignaturePadding { get; init; } = RSASignaturePadding.Pkcs1;
+
+    /// <summary>Padding the content encryption key is wrapped with: PKCS#1 v1.5, or OAEP from suite 08 on.</summary>
+    public RSAEncryptionPadding EncryptionPadding { get; init; } = RSAEncryptionPadding.Pkcs1;
+
     /// <summary>3DES-EDE-CBC, OID 1.2.840.113549.3.7.</summary>
     private const string TripleDesCbc = "1.2.840.113549.3.7";
 
@@ -28,10 +34,34 @@ public sealed record CipherSuite(string Code, string Name, HashAlgorithmName Has
         new(CipherSuites.TripleDesSha512, "3DES-EDE-CBC, RSA, SHA-512", HashAlgorithmName.SHA512, new Oid(TripleDesCbc)),
         new(CipherSuites.Aes256Sha512, "AES-256-CBC, RSA, SHA-512", HashAlgorithmName.SHA512, new Oid(Aes256Cbc)),
         new(CipherSuites.Aes256Sha3512, "AES-256-CBC, RSA, SHA3-512", HashAlgorithmName.SHA3_512, new Oid(Aes256Cbc)),
+        new(CipherSuites.Aes256PssOaepSha256, "AES-256-CBC, RSA-PSS, RSA-OAEP, SHA-256",
+            HashAlgorithmName.SHA256, new Oid(Aes256Cbc))
+        {
+            SignaturePadding = RSASignaturePadding.Pss,
+            EncryptionPadding = RSAEncryptionPadding.OaepSHA256,
+        },
+        new(CipherSuites.Aes256PssOaepSha512, "AES-256-CBC, RSA-PSS, RSA-OAEP, SHA-512",
+            HashAlgorithmName.SHA512, new Oid(Aes256Cbc))
+        {
+            SignaturePadding = RSASignaturePadding.Pss,
+            EncryptionPadding = RSAEncryptionPadding.OaepSHA512,
+        },
+        new(CipherSuites.Aes256PssOaepSha3512, "AES-256-CBC, RSA-PSS, RSA-OAEP, SHA3-512",
+            HashAlgorithmName.SHA3_512, new Oid(Aes256Cbc))
+        {
+            SignaturePadding = RSASignaturePadding.Pss,
+            EncryptionPadding = RSAEncryptionPadding.OaepSHA3_512,
+        },
     ];
 
     /// <summary>The suites this platform can use (SHA3 is not available everywhere, e.g. not on macOS).</summary>
     public static IEnumerable<CipherSuite> Supported => All.Where(s => s.IsSupported);
+
+    /// <summary>
+    /// The suite can be announced in an OFTP2 Communication Setup (PDX): its schema 1.2 enumerates the codes up
+    /// to 07, so the newer suites are used with partners that agreed on them in another way.
+    /// </summary>
+    public bool InCommunicationSetup => int.TryParse(Code, out var number) && number <= 7;
 
     /// <summary>The platform provides the hash algorithm of the suite.</summary>
     public bool IsSupported => HashAlgorithm != HashAlgorithmName.SHA3_512 || SHA3_512.IsSupported;

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 using Oftp4Net.Core.Protocol;
 using Oftp4Net.Services.Security;
@@ -68,6 +69,9 @@ public class FileSecurityTests
     [InlineData(CipherSuites.TripleDesSha512)]
     [InlineData(CipherSuites.Aes256Sha512)]
     [InlineData(CipherSuites.Aes256Sha3512)]
+    [InlineData(CipherSuites.Aes256PssOaepSha256)]
+    [InlineData(CipherSuites.Aes256PssOaepSha512)]
+    [InlineData(CipherSuites.Aes256PssOaepSha3512)]
     public void EveryCipherSuiteSignsAndEncrypts(string code)
     {
         // SHA3 is provided by the platform only on some systems (not on macOS).
@@ -171,6 +175,36 @@ public class FileSecurityTests
         var exception = Assert.Throws<FileSecurityException>(() => FileSecurity.Unprotect(Content, descriptor, Ours, null));
 
         Assert.Equal(AnswerReasonCodes.CipherSuiteNotSupported, exception.ReasonCode);
+    }
+
+    [Theory]
+    [InlineData(CipherSuites.Aes256PssOaepSha256)]
+    [InlineData(CipherSuites.Aes256PssOaepSha512)]
+    [InlineData(CipherSuites.Aes256PssOaepSha3512)]
+    public void NewerSuitesUsePssSignaturesAndOaepKeyTransport(string code)
+    {
+        if (CipherSuite.Get(code) is not { } suite)
+            return;
+
+        var signed = FileSecurity.Protect(Content, new FileSecuritySettings
+        {
+            Sign = true, Suite = suite, SigningCertificate = Ours,
+        });
+
+        var signedCms = new SignedCms();
+        signedCms.Decode(signed);
+        // RSASSA-PSS, 1.2.840.113549.1.1.10.
+        Assert.Equal("1.2.840.113549.1.1.10", signedCms.SignerInfos[0].SignatureAlgorithm.Value);
+
+        var encrypted = FileSecurity.Protect(Content, new FileSecuritySettings
+        {
+            Encrypt = true, Suite = suite, EncryptionCertificate = Partner,
+        });
+
+        var envelopedCms = new EnvelopedCms();
+        envelopedCms.Decode(encrypted);
+        // RSAES-OAEP, 1.2.840.113549.1.1.7.
+        Assert.Equal("1.2.840.113549.1.1.7", envelopedCms.RecipientInfos[0].KeyEncryptionAlgorithm.Oid.Value);
     }
 
     [Fact]

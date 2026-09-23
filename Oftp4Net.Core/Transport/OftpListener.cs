@@ -110,7 +110,7 @@ public sealed class OftpListener : IAsyncDisposable
                     ClientCertificateRequired = _tls.RequireClientCertificate,
                     RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
                         OftpCertificateValidator.Validate(certificate, errors, _tls.TrustedCertificates,
-                            _tls.RequireClientCertificate),
+                            _tls.RequireClientCertificate, _tls.Revocation),
                 }, handshakeTimeout.Token);
 
                 remoteCertificate = ssl.RemoteCertificate as X509Certificate2;

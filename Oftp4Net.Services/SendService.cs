@@ -208,6 +208,7 @@ public class SendService(ILogger<SendService> logger,
             Protocols = partner.Tls == SslProtocols.None ? SslProtocols.Tls12 | SslProtocols.Tls13 : partner.Tls,
             TrustedCertificates = trusted,
             LocalCertificate = clientCertificate,
+            Revocation = settings.RevocationPolicy,
         };
     }
 }

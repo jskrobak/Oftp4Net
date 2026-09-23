@@ -82,6 +82,15 @@ public static class CipherSuites
     public const string TripleDesSha512 = "05";
     public const string Aes256Sha512 = "06";
     public const string Aes256Sha3512 = "07";
+
+    /// <summary>AES-256 with RSA-PSS signatures and RSA-OAEP key transport, SHA-256.</summary>
+    public const string Aes256PssOaepSha256 = "08";
+
+    /// <summary>The same with SHA-512.</summary>
+    public const string Aes256PssOaepSha512 = "09";
+
+    /// <summary>The same with SHA3-512.</summary>
+    public const string Aes256PssOaepSha3512 = "10";
 }
 
 /// <summary>File compression algorithm (SFIDCOMP).</summary>

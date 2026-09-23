@@ -119,8 +119,9 @@ public class ListenerService(
                 partnerCertificates = await scope.ServiceProvider.GetRequiredService<IPartnerRepository>().GetTrustedCertificatesAsync();
             }
 
+            var revocation = (await globalSettingsService.GetGlobalSettingsAsync()).RevocationPolicy;
             foreach (var listener in configured)
-                StartListener(listener, partnerCertificates);
+                StartListener(listener, partnerCertificates, revocation);
         }
         finally
         {
@@ -133,7 +134,8 @@ public class ListenerService(
     /// Trusted certificates of all partners; a TLS client certificate is accepted when it is one of them or issued by one
     /// of them (the partner is only known after SSID, so the TLS layer accepts any configured partner).
     /// </param>
-    private void StartListener(Listener listener, IReadOnlyList<Certificate> partnerCertificates)
+    private void StartListener(Listener listener, IReadOnlyList<Certificate> partnerCertificates,
+        CertificateRevocationPolicy revocation)
     {
         var endPoint = $"{listener.ListenIPAddress}:{listener.Port}";
         try
@@ -155,6 +157,7 @@ public class ListenerService(
                     Protocols = listener.Tls == SslProtocols.None ? SslProtocols.Tls12 | SslProtocols.Tls13 : listener.Tls,
                     RequireClientCertificate = listener.RequireClientCertificate,
                     TrustedCertificates = LoadTrustedCertificates(partnerCertificates),
+                    Revocation = revocation,
                 };
                 _tlsOptions.Add(tls);
             }

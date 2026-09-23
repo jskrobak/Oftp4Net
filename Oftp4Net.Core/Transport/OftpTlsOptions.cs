@@ -23,12 +23,19 @@ public sealed class OftpTlsOptions
 
     /// <summary>Listener only: require the client to present a certificate.</summary>
     public bool RequireClientCertificate { get; init; }
+
+    /// <summary>
+    /// How the revocation of the certificate of the other side is checked. A pinned certificate is trusted by
+    /// itself, so the policy applies to certificates that are accepted through a chain.
+    /// </summary>
+    public CertificateRevocationPolicy Revocation { get; init; } = new();
 }
 
 internal static class OftpCertificateValidator
 {
     public static bool Validate(X509Certificate? certificate, SslPolicyErrors errors,
-        X509Certificate2Collection trusted, bool certificateRequired)
+        X509Certificate2Collection trusted, bool certificateRequired,
+        CertificateRevocationPolicy? revocation = null)
     {
         if (certificate is null)
             return !certificateRequired;
@@ -54,7 +61,7 @@ internal static class OftpCertificateValidator
         using var chain = new X509Chain();
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
         chain.ChainPolicy.CustomTrustStore.AddRange(trusted);
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        (revocation ?? new CertificateRevocationPolicy()).ApplyTo(chain.ChainPolicy);
         return chain.Build(leaf);
     }
 }

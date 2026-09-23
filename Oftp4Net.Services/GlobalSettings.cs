@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Oftp4Net.Core.Transport;
 using Oftp4Net.Services.Pdx;
 using Oftp4Net.Services.Tsl;
 
@@ -6,6 +7,13 @@ namespace Oftp4Net.Services;
 
 public class GlobalSettings
 {
+    /// <summary>How certificate revocation is checked, as the transport expects it.</summary>
+    public CertificateRevocationPolicy RevocationPolicy => new()
+    {
+        Check = CheckCertificateRevocation,
+        Require = RequireRevocationInformation,
+    };
+
     /// <summary>Certificate with private key presented to partners as TLS client certificate.</summary>
     [SettingsItem]
     public int? OftpClientCertificateId { get; set; } = null;
@@ -59,6 +67,21 @@ public class GlobalSettings
     [SettingsItem]
     [Range(1, 4096)]
     public int MaxSecuredFileSizeMb { get; set; } = 100;
+
+    /// <summary>
+    /// Read the revocation lists (CRL) of the issuers and refuse a certificate that is on one. It applies to the
+    /// certificates of TLS connections and of the trust list; a certificate pinned for a partner is trusted by
+    /// itself and is not checked.
+    /// </summary>
+    [SettingsItem]
+    public bool CheckCertificateRevocation { get; set; } = true;
+
+    /// <summary>
+    /// Refuse a certificate whose revocation state cannot be found out at all, for example because the list is
+    /// unreachable. Off by default, so that an unreachable list does not stop the transfers.
+    /// </summary>
+    [SettingsItem]
+    public bool RequireRevocationInformation { get; set; }
 
     /// <summary>Seconds to wait for a response from the partner.</summary>
     [SettingsItem]
