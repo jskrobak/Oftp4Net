@@ -72,8 +72,7 @@ public class WebhookDispatcherTests
         var second = await server.WaitForRequestAsync();
 
         // The event is recorded after the response is read.
-        for (var i = 0; i < 100 && events.Events.Count == 0; i++)
-            await Task.Delay(100);
+        var recordedEvents = await events.WaitForEventAsync();
         await dispatcher.StopAsync(CancellationToken.None);
 
         Assert.Equal(first.Body, second.Body);
@@ -84,7 +83,7 @@ public class WebhookDispatcherTests
         Assert.Equal(WebhookDispatcher.Sign(first.Body, "s3cret"), first.Signature);
         Assert.Equal("file.sent", first.Event);
 
-        var recorded = Assert.Single(events.Events);
+        var recorded = Assert.Single(recordedEvents);
         Assert.Equal(TransferEventType.WebhookDelivered, recorded.Type);
     }
 
@@ -102,23 +101,40 @@ public class WebhookDispatcherTests
         for (var i = 0; i < 4; i++)
             await server.WaitForRequestAsync();
 
-        for (var i = 0; i < 100 && events.Events.Count == 0; i++)
-            await Task.Delay(100);
+        var recordedEvents = await events.WaitForEventAsync();
         await dispatcher.StopAsync(CancellationToken.None);
 
-        var recorded = Assert.Single(events.Events);
+        var recorded = Assert.Single(recordedEvents);
         Assert.Equal(TransferEventType.WebhookFailed, recorded.Type);
         Assert.Equal(TransferEventLevel.Error, recorded.Level);
     }
 
     private sealed class RecordingEventLog : ITransferEventLog
     {
-        public List<TransferEvent> Events { get; } = [];
+        private readonly List<TransferEvent> _events = [];
+
+        /// <summary>What was recorded so far; a copy, because the dispatcher records on its own thread.</summary>
+        public IReadOnlyList<TransferEvent> Events
+        {
+            get
+            {
+                lock (_events)
+                    return _events.ToList();
+            }
+        }
 
         public void Record(TransferEvent transferEvent)
         {
-            lock (Events)
-                Events.Add(transferEvent);
+            lock (_events)
+                _events.Add(transferEvent);
+        }
+
+        /// <summary>Waits until something was recorded; the dispatcher does it on its own thread.</summary>
+        public async Task<IReadOnlyList<TransferEvent>> WaitForEventAsync()
+        {
+            for (var i = 0; i < 100 && Events.Count == 0; i++)
+                await Task.Delay(100);
+            return Events;
         }
     }
 
@@ -137,10 +153,22 @@ public class WebhookDispatcherTests
 
         public TestWebhookServer()
         {
-            var port = Random.Shared.Next(20_000, 60_000);
-            Url = $"http://127.0.0.1:{port}/hook/";
-            _listener.Prefixes.Add(Url);
-            _listener.Start();
+            // A free port is looked for: another process may hold the one we picked.
+            for (var attempt = 0; ; attempt++)
+            {
+                Url = $"http://127.0.0.1:{Random.Shared.Next(20_000, 60_000)}/hook/";
+                _listener.Prefixes.Clear();
+                _listener.Prefixes.Add(Url);
+                try
+                {
+                    _listener.Start();
+                    break;
+                }
+                catch (HttpListenerException) when (attempt < 20)
+                {
+                }
+            }
+
             _ = AcceptAsync();
         }
 
