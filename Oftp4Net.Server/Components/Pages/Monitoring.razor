@@ -1,0 +1,104 @@
+@page "/Monitoring"
+@using Oftp4Net.Server.Api
+@inject NavigationManager NavigationManager
+
+<HxCard>
+    <HeaderTemplate>
+        <div class="d-flex align-items-center">
+            <h5 class="card-title me-auto mb-0">Monitoring</h5>
+            @* The download attribute keeps the link out of the Blazor navigation. *@
+            <a href="@MonitoringEndpoints.ZabbixTemplateUrl" download class="btn btn-primary">
+                <HxIcon Icon="BootstrapIcon.Download" CssClass="me-1" /> Zabbix template
+            </a>
+        </div>
+    </HeaderTemplate>
+    <BodyTemplate>
+        <p>
+            The Zabbix template <code>oftp4net_by_http.yaml</code> watches the state of the server, every health check,
+            the size of the database and the send queue of every partner.
+        </p>
+
+        <h6>Setup</h6>
+        <ol>
+            <li>In Zabbix (7.0 or later) import the template: <em>Data collection → Templates → Import</em>.</li>
+            <li>Create an <a href="ApiTokens">API token</a> for Zabbix.</li>
+            <li>Link the template to a host and set the macros <code>{$OFTP.URL}</code> and <code>{$OFTP.TOKEN}</code>.</li>
+        </ol>
+
+        <div class="table-responsive" style="max-width: 60rem;">
+        <table class="table table-sm mb-3">
+            <thead>
+            <tr>
+                <th>Macro</th>
+                <th>Value</th>
+                <th>Meaning</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td class="text-nowrap"><code>{$OFTP.URL}</code></td>
+                <td class="text-nowrap"><code class="user-select-all">@serverUrl</code></td>
+                <td>Address of this server as Zabbix reaches it, without a trailing slash</td>
+            </tr>
+            <tr>
+                <td class="text-nowrap"><code>{$OFTP.TOKEN}</code></td>
+                <td>secret text</td>
+                <td>The API token</td>
+            </tr>
+            <tr>
+                <td class="text-nowrap"><code>{$OFTP.WAITING.MAX.AGE}</code></td>
+                <td><code>1h</code></td>
+                <td>A file may wait this long to be sent</td>
+            </tr>
+            <tr>
+                <td class="text-nowrap"><code>{$OFTP.EERP.MAX.AGE}</code></td>
+                <td><code>1d</code></td>
+                <td>A file may wait this long for its End to End Response</td>
+            </tr>
+            <tr>
+                <td class="text-nowrap"><code>{$OFTP.NODATA}</code></td>
+                <td><code>15m</code></td>
+                <td>Time without an answer after which the server is reported as not answering</td>
+            </tr>
+            </tbody>
+        </table>
+        </div>
+        <p class="text-body-secondary small">
+            A partner gets its own threshold with its SSID as context, e.g.
+            <code>{$OFTP.WAITING.MAX.AGE:"O0013000000PARTNER"}</code> = <code>4h</code>.
+        </p>
+
+        <h6>Endpoints</h6>
+        <div class="table-responsive" style="max-width: 60rem;">
+        <table class="table table-sm mb-0">
+            <tbody>
+            <tr>
+                <td class="text-nowrap"><code>/health/live</code></td>
+                <td>The process answers; without a token</td>
+            </tr>
+            <tr>
+                <td class="text-nowrap"><code>/health/ready</code></td>
+                <td>The server can work (503 when not); without a token</td>
+            </tr>
+            <tr>
+                <td class="text-nowrap"><code>/health/details</code></td>
+                <td>All health checks as JSON; with an API token</td>
+            </tr>
+            <tr>
+                <td class="text-nowrap"><code>/health/send-queue</code></td>
+                <td>The send queue in numbers, in total and for every partner; with an API token</td>
+            </tr>
+            </tbody>
+        </table>
+        </div>
+    </BodyTemplate>
+</HxCard>
+
+@code {
+    private string serverUrl = "";
+
+    protected override void OnInitialized()
+    {
+        serverUrl = NavigationManager.BaseUri.TrimEnd('/');
+    }
+}

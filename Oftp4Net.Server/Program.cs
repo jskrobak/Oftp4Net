@@ -254,6 +254,7 @@ app.MapRazorComponents<App>()
 
 app.MapApi();
 app.MapHealth();
+app.MapMonitoring();
 
 // API description and its documentation; both require a signed in administrator (fallback policy).
 app.MapOpenApi();

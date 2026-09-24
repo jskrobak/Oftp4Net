@@ -343,6 +343,8 @@ also with an empty queue, so that the items the monitoring discovers per partner
 
 In Zabbix (7.0 or later) import the template [`samples/zabbix/oftp4net_by_http.yaml`](samples/zabbix/oftp4net_by_http.yaml)
 (*Data collection → Templates → Import*), link it to a host and set the macros `{$OFTP.URL}` and `{$OFTP.TOKEN}`.
+The template is also downloaded in the administration from *Settings → Monitoring*, with the setup and the address
+of the server for `{$OFTP.URL}`.
 It watches the state of the server, every health check, the size of the database and the send queue of every
 partner; the thresholds are the macros `{$OFTP.WAITING.MAX.AGE}` (default `1h`) and `{$OFTP.EERP.MAX.AGE}`
 (default `1d`), and a partner gets its own with its SSID as context, e.g.

@@ -13,6 +13,11 @@
     </ItemGroup>
 
     <ItemGroup>
+      <!-- The Zabbix template is downloaded from Settings / Monitoring, so it is part of the application. -->
+      <EmbeddedResource Include="..\samples\zabbix\oftp4net_by_http.yaml" LogicalName="$(MSBuildProjectName).oftp4net_by_http.yaml" Link="Monitoring\oftp4net_by_http.yaml" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="BitzArt.Blazor.Cookies.Server" />
       <PackageReference Include="Havit.Blazor.Components.Web.Bootstrap" />
       <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
