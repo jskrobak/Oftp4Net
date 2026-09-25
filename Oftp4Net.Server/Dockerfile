@@ -13,8 +13,12 @@ COPY ["Oftp4Net.Entity/Oftp4Net.Entity.csproj", "Oftp4Net.Entity/"]
 COPY ["Oftp4Net.Services/Oftp4Net.Services.csproj", "Oftp4Net.Services/"]
 RUN dotnet restore "Oftp4Net.Server/Oftp4Net.Server.csproj"
 COPY . .
+# Without the restore of the whole source the static web assets of the packages are left out and the published
+# application has no wwwroot/_framework: the browser then gets the sign in page instead of the scripts of Blazor
+# and nothing is interactive. The packages are in the image from the restore above, so this costs no download.
 RUN dotnet publish "Oftp4Net.Server/Oftp4Net.Server.csproj" -c $BUILD_CONFIGURATION -o /app/publish \
-        /p:UseAppHost=false --no-restore \
+        /p:UseAppHost=false \
+    && test -f /app/publish/wwwroot/_framework/blazor.web.js \
     && mkdir -p /app/data
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final

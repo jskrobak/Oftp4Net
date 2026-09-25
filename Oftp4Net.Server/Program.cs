@@ -13,7 +13,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Oftp4Net.DependencyInjection;
@@ -251,16 +250,7 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode()
-    .Add(endpoint =>
-    {
-        // The scripts of Blazor itself are public. Without this the fallback policy sends them to the sign in page
-        // as well, the browser reads its HTML as a script and nothing on the page works - in the published
-        // application, where they are not served as static assets, that is every page including the sign in one.
-        if (endpoint is RouteEndpointBuilder { RoutePattern.RawText: { } route } &&
-            route.TrimStart('/').StartsWith("_framework/", StringComparison.OrdinalIgnoreCase))
-            endpoint.Metadata.Add(new AllowAnonymousAttribute());
-    });
+    .AddInteractiveServerRenderMode();
 
 app.MapApi();
 app.MapHealth();
