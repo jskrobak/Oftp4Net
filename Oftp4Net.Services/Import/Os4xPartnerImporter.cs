@@ -41,6 +41,17 @@ public class Os4xPartnerImporter(
             candidates.Add(candidate);
         }
 
+        // OS4X has a row per identity a partner is used with; only one of them can become the partner here.
+        foreach (var group in candidates.Where(c => c.CanImport).GroupBy(c => c.Ssid, StringComparer.OrdinalIgnoreCase)
+                     .Where(g => g.Count() > 1))
+        {
+            var rowNames = string.Join(", ", group.Select(c => c.Source.ShortName));
+            foreach (var candidate in group)
+                candidate.Notes.Add($"The partner code is in several rows ({rowNames}); only one of them can be imported.");
+            foreach (var candidate in group.Skip(1))
+                candidate.Selected = false;
+        }
+
         return candidates;
     }
 
@@ -50,6 +61,7 @@ public class Os4xPartnerImporter(
     {
         var errors = new List<string>();
         var identityCache = new Dictionary<string, Identity>(StringComparer.OrdinalIgnoreCase);
+        var importedSsids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var importedPartners = 0;
         var createdIdentities = 0;
 
@@ -64,8 +76,21 @@ public class Os4xPartnerImporter(
                 continue;
             }
 
+            // OS4X keeps a row per identity the partner is used with; here the partner exists once.
+            if (!importedSsids.Add(partner.SSID))
+            {
+                errors.Add($"{partner.Name}: the partner with the code {partner.SSID} is already imported from another row.");
+                continue;
+            }
+
+            // The partner knows us by the code of its row, also when it calls us.
             if (!string.IsNullOrEmpty(candidate.IdentitySsid))
-                createdIdentities += await GetIdentityAsync(candidate, identityCache, cancellationToken);
+            {
+                var (identity, created) = await GetIdentityAsync(candidate, identityCache, cancellationToken);
+                partner.InboundIdentity = identity;
+                if (created)
+                    createdIdentities++;
+            }
 
             unitOfWork.AddForInsert(partner);
             importedPartners++;
@@ -80,12 +105,12 @@ public class Os4xPartnerImporter(
         return new Os4xImportResult(importedPartners, createdIdentities, errors);
     }
 
-    /// <summary>Returns 1 when the identity of the candidate had to be created, 0 when it already exists.</summary>
-    private async Task<int> GetIdentityAsync(Os4xPartnerCandidate candidate, Dictionary<string, Identity> cache,
-        CancellationToken cancellationToken)
+    /// <summary>Returns the identity of the candidate and whether it had to be created.</summary>
+    private async Task<(Identity Identity, bool Created)> GetIdentityAsync(Os4xPartnerCandidate candidate,
+        Dictionary<string, Identity> cache, CancellationToken cancellationToken)
     {
-        if (cache.ContainsKey(candidate.IdentitySsid))
-            return 0;
+        if (cache.TryGetValue(candidate.IdentitySsid, out var cached))
+            return (cached, false);
 
         var existing = (await identities.GetAllAsync(cancellationToken))
             .FirstOrDefault(i => string.Equals(i.SSID.Trim(), candidate.IdentitySsid, StringComparison.OrdinalIgnoreCase));
@@ -93,7 +118,7 @@ public class Os4xPartnerImporter(
         if (existing is not null)
         {
             cache.Add(candidate.IdentitySsid, existing);
-            return 0;
+            return (existing, false);
         }
 
         var identity = new Identity
@@ -107,7 +132,7 @@ public class Os4xPartnerImporter(
 
         unitOfWork.AddForInsert(identity);
         cache.Add(candidate.IdentitySsid, identity);
-        return 1;
+        return (identity, true);
     }
 
     private static async Task<List<Os4xPartnerRow>> ReadRowsAsync(Os4xImportOptions options, CancellationToken cancellationToken)

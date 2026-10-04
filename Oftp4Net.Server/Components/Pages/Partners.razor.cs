@@ -28,6 +28,7 @@ public partial class Partners : ComponentBase
     private HxModal partnerEditModal = null!;
     
     private List<Certificate> availableCertificates = [];
+    private List<Identity> availableIdentities = [];
 
     [Inject] protected Os4xPartnerImporter Os4xImporter { get; set; } = null!;
 
@@ -56,6 +57,7 @@ public partial class Partners : ComponentBase
     protected override async Task OnInitializedAsync()
     {
         availableCertificates = await DataService.GetAllCertificatesAsync();
+        availableIdentities = await DataService.GetAllIdentitiesAsync();
         openSetups = await SetupDocuments.GetOpenAsync();
     }
 
@@ -319,6 +321,7 @@ public partial class Partners : ComponentBase
 
             await ListenerService.RefreshTrustedCertificatesAsync();
             availableCertificates = await DataService.GetAllCertificatesAsync();
+            availableIdentities = await DataService.GetAllIdentitiesAsync();
             await pdxModal.HideAsync();
             pdxPlan = null;
             await gridComponent.RefreshDataAsync();
@@ -388,6 +391,7 @@ public partial class Partners : ComponentBase
                 ? $"{result.Partners} partner(s) and {result.Identities} identity(ies) imported."
                 : $"{result.Partners} partner(s) imported.");
 
+            availableIdentities = await DataService.GetAllIdentitiesAsync();
             await importModal.HideAsync();
             importCandidates = null;
             await gridComponent.RefreshDataAsync();

@@ -48,6 +48,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
     private readonly Identity? _identity;
     private readonly Listener? _listener;
+    private Identity? _inboundIdentity;
     private readonly List<string> _claimed = [];
     private readonly Dictionary<string, Identity?> _identityCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<OftpCommand, ReceivedFile> _pendingResponses = new(ReferenceEqualityComparer.Instance);
@@ -97,10 +98,11 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     public Partner? Partner { get; private set; }
 
     /// <summary>
-    /// The identity the session runs under: the one we call the partner with, or the one of the listener the
-    /// partner called. A file may still be addressed to another of our identities (a sub-station).
+    /// The identity the session runs under: the one we call the partner with, or for a partner calling us its
+    /// inbound identity, else the one of the listener. A file may still be addressed to another of our identities
+    /// (a sub-station).
     /// </summary>
-    private Identity? SessionIdentity => _identity ?? _listener?.Identity;
+    private Identity? SessionIdentity => _identity ?? _inboundIdentity ?? _listener?.Identity;
 
     /// <summary>
     /// Our identity a file is addressed to (SFIDDEST), which decides the certificates used for it. Falls back to
@@ -180,14 +182,17 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             return OftpAuthenticationResult.Reject(ReasonCodes.InvalidPassword, "Invalid password.");
         }
 
-        if (_listener.Identity is null)
+        // A partner that knows us by another code than the listener's gets the identity set on the partner.
+        var identity = partner.InboundIdentity ?? _listener.Identity;
+        if (identity is null)
         {
             _logger.LogError("Listener {Listener} has no identity configured", _listener.Name);
             return OftpAuthenticationResult.Reject(ReasonCodes.ResourcesNotAvailable, "Listener is not configured.");
         }
 
         Partner = partner;
-        return OftpAuthenticationResult.Accept(_listener.Identity.SSID, _listener.Identity.Password ?? "",
+        _inboundIdentity = partner.InboundIdentity;
+        return OftpAuthenticationResult.Accept(identity.SSID, identity.Password ?? "",
             secureAuthentication: partner.SecureAuthentication,
             bufferCompression: partner.BufferCompression,
             restart: partner.Restart,

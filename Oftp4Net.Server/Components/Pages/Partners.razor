@@ -33,6 +33,17 @@
                     <HxInputText Label="Host" @bind-Value="@currentPartner.Host" />
                     <HxInputNumber Decimals="0" Type="InputType.Number" Label="Port" @bind-Value="@currentPartner.Port" />
 
+                    <HxSelect TItem="Identity"
+                              TValue="int?"
+                              Label="Inbound identity"
+                              Hint="Our code presented to the partner when it calls us. Leave empty to use the identity of the listener."
+                              Data="availableIdentities"
+                              @bind-Value="@currentPartner.InboundIdentityId"
+                              TextSelector="@(i => $"{i.Name} ({i.SSID})")"
+                              ValueSelector="@(i => i.Id)"
+                              Nullable="true"
+                              NullText="-identity of the listener-" />
+
                     <HxSelect TItem="int"
                               TValue="int"
                               Label="ODETTE-FTP release"

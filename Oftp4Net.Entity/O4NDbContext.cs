@@ -73,6 +73,7 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
         modelBuilder.Entity<Partner>(entity =>
         {
             entity.HasOne(e => e.TrustedCertificate).WithMany().OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.InboundIdentity).WithMany().OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(e => e.SecurityCertificate).WithMany().OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(e => e.PreviousSecurityCertificate).WithMany().OnDelete(DeleteBehavior.SetNull);
             // Details from the OFTP2 Communication Setup are only read and written together with the partner.

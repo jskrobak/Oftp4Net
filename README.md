@@ -738,13 +738,16 @@ happen — *new*, *already exists* (an existing partner is never changed) or *ca
 for example an OFTP 1.x partner.
 
 OS4X keeps both sides of a relation in one row, so the identity of a partner comes from the same record: its
-`my_ssid` / `my_sfid` / `my_password` become an identity here, reused when one with that code already exists.
+`my_ssid` / `my_sfid` / `my_password` become an identity here, reused when one with that code already exists. That
+identity is also set as the partner's *inbound identity*, so a partner calling us gets the code it knows from OS4X
+whatever identity the listener has. OS4X may hold the same partner in several rows, one per identity; here a partner
+code exists once, so the preview marks those rows and only one of them is imported.
 
 | OS4X | Oftp4Net |
 |---|---|
 | `shortname`, `longname` | name and description |
 | `his_ssid`, `his_sfid`, `his_password` | partner codes and password |
-| `my_ssid`, `my_sfid`, `my_password` | identity |
+| `my_ssid`, `my_sfid`, `my_password` | identity, also the inbound identity of the partner |
 | `address`, `port` / `port_tls`, `use_tls` | host, port and TLS |
 | `oftp2_cipher_suite` | cipher suite (`01`–`06`) |
 | `oftpv2_sign`, `oftpv2_encrypt`, `oftp2_compression_level` | file signing, encryption and compression |
@@ -927,7 +930,9 @@ is the better choice.
 1. *Identities*: create your own identity (SSID code, SFID code, password you send to partners).
 2. *Certificates*: request a certificate from a CA (*Request certificate*) or import one with its private key (PFX), and,
    if needed, the partner's certificate or CA.
-3. *Listeners*: create a listener (port 6619 for TLS), assign the identity and the server certificate.
+3. *Listeners*: create a listener (port 6619 for TLS), assign the identity and the server certificate. A partner that
+   knows us by another of our codes gets that identity as its *inbound identity* (partner dialog); the listener then
+   answers it with that code instead of its own.
 4. *Partners*: add the partner with its SSID/SFID codes, the password it sends to you, host and port, and, for a
    mainframe partner, the character set conversion — or import its datasheet (*Import PDX*) and send it ours.
 5. *Partners*: if the partner requires file level security, assign its certificate and switch on signing,

@@ -26,6 +26,13 @@ public class Partner: BaseParty
     public Certificate? TrustedCertificate { get; set; }
 
     /// <summary>
+    /// Our identity presented to the partner when it calls us, instead of the identity of the listener. For partners
+    /// that know us by another code than the other partners do, so that one listener serves all of them.
+    /// </summary>
+    public int? InboundIdentityId { get; set; }
+    public Identity? InboundIdentity { get; set; }
+
+    /// <summary>
     /// Encoding the content of a virtual file is converted to while it is sent to the partner. Files are stored
     /// locally in <see cref="AnsiCodePage"/>, so <see cref="FileCharacterEncoding.ANSI"/> sends them unchanged.
     /// </summary>
