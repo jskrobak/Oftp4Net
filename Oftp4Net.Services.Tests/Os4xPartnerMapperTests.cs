@@ -199,4 +199,43 @@ public class Os4xPartnerMapperTests
         Assert.True(candidate.CanImport);
         Assert.Contains(candidate.Notes, n => n.Contains("inactive"));
     }
+
+    [Fact]
+    public void SameIdentityGetsNoNote()
+    {
+        var candidate = Os4xPartnerMapper.Map(Row());
+        var notes = candidate.Notes.Count;
+
+        Os4xPartnerMapper.CompareIdentity(candidate,
+            new Oftp4Net.Domain.Identity { SSID = "O0013000000US", SFID = "o0013000000usf ", Password = "OURS" }, sourceRow: null);
+
+        Assert.Equal(notes, candidate.Notes.Count);
+    }
+
+    [Fact]
+    public void ExistingIdentityWithAnotherSfidAndPasswordIsNoted()
+    {
+        var candidate = Os4xPartnerMapper.Map(Row());
+
+        Os4xPartnerMapper.CompareIdentity(candidate,
+            new Oftp4Net.Domain.Identity { SSID = "O0013000000US", SFID = "O0013000000OTHER", Password = "OTHER" }, sourceRow: null);
+
+        Assert.Contains(candidate.Notes, n => n.Contains("SFID O0013000000OTHER here") && n.Contains("used unchanged"));
+        Assert.Contains(candidate.Notes, n => n.Contains("another password here") && n.Contains("used unchanged"));
+        // The password itself is never shown.
+        Assert.DoesNotContain(candidate.Notes, n => n.Contains("password OTHER"));
+    }
+
+    [Fact]
+    public void IdentityOfAnotherRowWithAnotherSfidIsNoted()
+    {
+        var candidate = Os4xPartnerMapper.Map(Row());
+
+        Os4xPartnerMapper.CompareIdentity(candidate,
+            new Oftp4Net.Domain.Identity { SSID = "O0013000000US", SFID = "O0013000000OTHER", Password = "OURS" }, "FIRST");
+
+        var note = Assert.Single(candidate.Notes, n => n.Contains("Our identity"));
+        Assert.Contains("in row FIRST", note);
+        Assert.Contains("row imported first", note);
+    }
 }

@@ -52,6 +52,23 @@ public class Os4xPartnerImporter(
                 candidate.Selected = false;
         }
 
+        // An identity is created once, from the first row with its SSID, or an existing one is reused as it is.
+        var existing = (await identities.GetAllAsync(cancellationToken))
+            .GroupBy(i => i.SSID.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var firstRows = new Dictionary<string, Os4xPartnerCandidate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in candidates.Where(c => c.CanImport && !string.IsNullOrEmpty(c.IdentitySsid)))
+        {
+            if (existing.TryGetValue(candidate.IdentitySsid, out var identity))
+                Os4xPartnerMapper.CompareIdentity(candidate, identity, sourceRow: null);
+            else if (firstRows.TryGetValue(candidate.IdentitySsid, out var first))
+                Os4xPartnerMapper.CompareIdentity(candidate,
+                    new Identity { SSID = first.IdentitySsid, SFID = first.IdentitySfid, Password = first.IdentityPassword },
+                    first.Source.ShortName);
+            else
+                firstRows.Add(candidate.IdentitySsid, candidate);
+        }
+
         return candidates;
     }
 
