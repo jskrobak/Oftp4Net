@@ -1,5 +1,6 @@
 using Havit.Data.Patterns.UnitOfWorks;
 using Havit.Services.TimeServices;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Oftp4Net.DataLayer.Repositories;
@@ -32,6 +33,7 @@ public class UserService(
         var user = new User
         {
             UserName = DefaultUserName,
+            SecurityStamp = NewSecurityStamp(),
             MustChangePassword = true,
             Created = timeService.GetCurrentTime(),
         };
@@ -70,6 +72,7 @@ public class UserService(
         if (result == PasswordVerificationResult.SuccessRehashNeeded)
             user.PasswordHash = PasswordHasher.HashPassword(user, password);
 
+        EnsureSecurityStamp(user);
         user.LastLogin = timeService.GetCurrentTime();
         unitOfWork.AddForUpdate(user);
         await unitOfWork.CommitAsync(cancellationToken);
@@ -81,6 +84,19 @@ public class UserService(
     public async Task<User?> FindByUserNameAsync(string userName) => await userRepository.FindByUserNameAsync(userName);
 
     /// <summary>
+    /// Whether a sign in issued to <paramref name="userName"/> with <paramref name="securityStamp"/> is still valid:
+    /// the user exists and neither the password nor the Entra ID address changed since.
+    /// </summary>
+    public async Task<bool> IsSignInValidAsync(string userName, string securityStamp, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(securityStamp))
+            return false;
+
+        var user = await userRepository.FindByUserNameAsync(userName, cancellationToken);
+        return user is not null && user.SecurityStamp == securityStamp;
+    }
+
+    /// <summary>
     /// The user an identity from Microsoft Entra ID belongs to, found by the e-mail address or user principal
     /// name configured for them; <c>null</c> when no user is configured for it, who is then not let in.
     /// </summary>
@@ -90,6 +106,7 @@ public class UserService(
         if (user is null)
             return null;
 
+        EnsureSecurityStamp(user);
         user.LastLogin = timeService.GetCurrentTime();
         unitOfWork.AddForUpdate(user);
         await unitOfWork.CommitAsync(cancellationToken);
@@ -118,6 +135,7 @@ public class UserService(
         {
             UserName = normalized,
             Email = address.Length == 0 ? null : address,
+            SecurityStamp = NewSecurityStamp(),
             MustChangePassword = password.Length > 0 && mustChangePassword,
             Created = timeService.GetCurrentTime(),
         };
@@ -137,7 +155,11 @@ public class UserService(
             throw new InvalidOperationException($"User '{user.UserName}' has no password and could not sign in any more.");
 
         await CheckEmailAsync(address, user.Id);
-        user.Email = address.Length == 0 ? null : address;
+        var newEmail = address.Length == 0 ? null : address;
+        // Who signed in with the previous address is not this user any more.
+        if (!string.Equals(user.Email, newEmail, StringComparison.OrdinalIgnoreCase))
+            user.SecurityStamp = NewSecurityStamp();
+        user.Email = newEmail;
         unitOfWork.AddForUpdate(user);
         await unitOfWork.CommitAsync();
     }
@@ -151,8 +173,11 @@ public class UserService(
             throw new InvalidOperationException($"'{email}' is already used by the user '{other.UserName}'.");
     }
 
-    /// <summary>Sets a new password of the signed in user after verifying the current one.</summary>
-    public async Task ChangePasswordAsync(string userName, string currentPassword, string newPassword)
+    /// <summary>
+    /// Sets a new password of the signed in user after verifying the current one. Returns the user, whose cookie
+    /// is to be issued again: the old ones stop working.
+    /// </summary>
+    public async Task<User> ChangePasswordAsync(string userName, string currentPassword, string newPassword)
     {
         var user = await userRepository.FindByUserNameAsync(userName)
                    ?? throw new InvalidOperationException("User not found.");
@@ -165,6 +190,7 @@ public class UserService(
             throw new InvalidOperationException("The new password must differ from the current one.");
 
         await SetPasswordAsync(user, newPassword, mustChangePassword: false);
+        return user;
     }
 
     /// <summary>Administrator reset of another user's password.</summary>
@@ -189,6 +215,8 @@ public class UserService(
         ValidateNewPassword(newPassword);
         user.PasswordHash = PasswordHasher.HashPassword(user, newPassword);
         user.MustChangePassword = mustChangePassword;
+        // Signs the user out everywhere: a stolen cookie is useless after a password change.
+        user.SecurityStamp = NewSecurityStamp();
         unitOfWork.AddForUpdate(user);
         await unitOfWork.CommitAsync();
     }
@@ -198,6 +226,15 @@ public class UserService(
         if (password.Length < MinPasswordLength)
             throw new InvalidOperationException($"The password must have at least {MinPasswordLength} characters.");
     }
+
+    /// <summary>Users from before security stamps get one at their next sign in.</summary>
+    private static void EnsureSecurityStamp(User user)
+    {
+        if (string.IsNullOrEmpty(user.SecurityStamp))
+            user.SecurityStamp = NewSecurityStamp();
+    }
+
+    private static string NewSecurityStamp() => Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
 
     private static string NormalizeUserName(string userName) => userName.Trim().ToLowerInvariant();
 }

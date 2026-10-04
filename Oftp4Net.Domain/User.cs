@@ -25,6 +25,13 @@ public class User
     [StringLength(200)]
     public string? Email { get; set; }
 
+    /// <summary>
+    /// Random value carried in the sign in cookie. It changes with the password and the Entra ID address, so that
+    /// the cookies issued before stop working; a deleted user has none, so their cookies stop working too.
+    /// </summary>
+    [StringLength(64)]
+    public string SecurityStamp { get; set; } = string.Empty;
+
     /// <summary>The user has to set a new password after signing in (e.g. the default admin account).</summary>
     public bool MustChangePassword { get; set; }
 

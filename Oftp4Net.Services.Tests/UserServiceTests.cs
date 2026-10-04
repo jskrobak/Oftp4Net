@@ -87,6 +87,77 @@ public class UserServiceTests
         Assert.Equal("jana@example.com", entraOnly.Email);
     }
 
+    [Fact]
+    public async Task ChangingThePasswordEndsTheOtherSignIns()
+    {
+        var (service, users) = Create();
+        await service.CreateAsync("jana", "password123", mustChangePassword: false);
+        var before = Assert.Single(users.All).SecurityStamp;
+        Assert.True(await service.IsSignInValidAsync("jana", before));
+
+        var user = await service.ChangePasswordAsync("jana", "password123", "password456");
+
+        Assert.False(await service.IsSignInValidAsync("jana", before));
+        // The cookie issued again after the change carries the new stamp.
+        Assert.True(await service.IsSignInValidAsync("jana", user.SecurityStamp));
+    }
+
+    [Fact]
+    public async Task ResetOfThePasswordEndsTheSignIns()
+    {
+        var (service, users) = Create();
+        await service.CreateAsync("jana", "password123", mustChangePassword: false);
+        var user = Assert.Single(users.All);
+        var before = user.SecurityStamp;
+
+        await service.ResetPasswordAsync(user.Id, "password456", mustChangePassword: true);
+
+        Assert.False(await service.IsSignInValidAsync("jana", before));
+    }
+
+    [Fact]
+    public async Task SignInOfADeletedUserIsNotValid()
+    {
+        var (service, users) = Create(new User { Id = 1, UserName = "admin", SecurityStamp = "a1" });
+        await service.CreateAsync("jana", "password123", mustChangePassword: false);
+        var jana = users.All.Single(u => u.UserName == "jana");
+        var stamp = jana.SecurityStamp;
+
+        await service.DeleteAsync(jana.Id, "admin");
+        Assert.False(await service.IsSignInValidAsync("jana", stamp));
+
+        // A new user of the same name does not take over the cookies of the deleted one.
+        await service.CreateAsync("jana", "password123", mustChangePassword: false);
+        Assert.False(await service.IsSignInValidAsync("jana", stamp));
+    }
+
+    [Fact]
+    public async Task ChangingTheEntraAddressEndsTheSignIns()
+    {
+        var jana = new User { Id = 1, UserName = "jana", Email = "jana@example.com", SecurityStamp = "s1" };
+        var (service, _) = Create(jana);
+
+        await service.SetEmailAsync(1, "JANA@example.com");
+        Assert.Equal("s1", jana.SecurityStamp);
+
+        await service.SetEmailAsync(1, "jana.novakova@example.com");
+        Assert.False(await service.IsSignInValidAsync("jana", "s1"));
+    }
+
+    [Fact]
+    public async Task UserFromBeforeSecurityStampsGetsOneAtSignIn()
+    {
+        var jana = new User { Id = 1, UserName = "jana", Email = "jana@example.com" };
+        var (service, _) = Create(jana);
+
+        // Cookies issued before carry no stamp and are not valid.
+        Assert.False(await service.IsSignInValidAsync("jana", ""));
+
+        await service.SignInWithEntraAsync("jana@example.com");
+        Assert.NotEmpty(jana.SecurityStamp);
+        Assert.True(await service.IsSignInValidAsync("jana", jana.SecurityStamp));
+    }
+
     private sealed class FakeUserRepository(params User[] users) : IUserRepository
     {
         public List<User> All { get; } = [.. users];
@@ -136,7 +207,11 @@ public class UserServiceTests
         }
         public void AddForUpdate<TEntity>(TEntity entity) where TEntity : class { }
         public void AddRangeForUpdate<TEntity>(IEnumerable<TEntity> entities) where TEntity : class { }
-        public void AddForDelete<TEntity>(TEntity entity) where TEntity : class { }
+        public void AddForDelete<TEntity>(TEntity entity) where TEntity : class
+        {
+            if (entity is User user)
+                users.All.Remove(user);
+        }
         public void AddRangeForDelete<TEntity>(IEnumerable<TEntity> entities) where TEntity : class { }
         public void Commit() { }
         public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

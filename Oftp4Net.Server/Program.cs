@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
@@ -105,6 +106,7 @@ var authentication = builder.Services.AddAuthentication(CookieAuthenticationDefa
         options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
+        options.Events.OnValidatePrincipal = ValidateSignInAsync;
     });
 
 if (entra.IsConfigured)
@@ -150,6 +152,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddScoped<AuthenticationStateProvider, UserRevalidatingAuthenticationStateProvider>();
 
 builder.Services.AddHxServices();
 builder.Services.AddHxMessenger();
@@ -274,7 +277,7 @@ app.MapPost("/account/login", async (HttpContext httpContext, UserService userSe
         return Results.Redirect($"/Login?error=invalid&returnUrl={Uri.EscapeDataString(returnUrl ?? "")}");
     }
 
-    await SignInAsync(httpContext, user.UserName, user.MustChangePassword);
+    await SignInAsync(httpContext, user);
 
     if (user.MustChangePassword)
         return Results.Redirect("/ChangePassword");
@@ -287,20 +290,21 @@ app.MapPost("/account/change-password", async (HttpContext httpContext, UserServ
     [FromForm] string currentPassword, [FromForm] string newPassword, [FromForm] string confirmPassword) =>
 {
     var userName = httpContext.User.Identity!.Name!;
+    Oftp4Net.Domain.User user;
     try
     {
         if (newPassword != confirmPassword)
             throw new InvalidOperationException("The new passwords do not match.");
 
-        await userService.ChangePasswordAsync(userName, currentPassword, newPassword);
+        user = await userService.ChangePasswordAsync(userName, currentPassword, newPassword);
     }
     catch (InvalidOperationException ex)
     {
         return Results.Redirect($"/ChangePassword?error={Uri.EscapeDataString(ex.Message)}");
     }
 
-    // Issue a new cookie without the "must change password" flag.
-    await SignInAsync(httpContext, userName, mustChangePassword: false);
+    // Issue a new cookie with the new security stamp and without the "must change password" flag.
+    await SignInAsync(httpContext, user);
     return Results.Redirect("/?passwordChanged=1");
 }).ExcludeFromDescription();
 
@@ -418,21 +422,29 @@ static async Task OnEntraTokenValidatedAsync(TokenValidatedContext context)
     }
 
     logger.LogInformation("User {UserName} signed in with Entra ID as {Address}", user.UserName, address);
-    context.Principal = new ClaimsPrincipal(new ClaimsIdentity(
-        [new Claim(ClaimTypes.Name, user.UserName), new Claim(AuthClaims.SignedInWithEntra, "true")],
-        CookieAuthenticationDefaults.AuthenticationScheme));
+    context.Principal = AuthSessions.CreatePrincipal(user, signedInWithEntra: true);
+}
+
+// Every request with the cookie checks that the user still exists with the security stamp the cookie was issued
+// with; otherwise the cookie is dropped and the user has to sign in again. Anonymous endpoints (static files, the
+// login page) skip the check.
+static async Task ValidateSignInAsync(CookieValidatePrincipalContext context)
+{
+    if (context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+        return;
+
+    var users = context.HttpContext.RequestServices.GetRequiredService<UserService>();
+    if (context.Principal is { } principal &&
+        await AuthSessions.IsValidAsync(principal, users, context.HttpContext.RequestAborted))
+        return;
+
+    context.RejectPrincipal();
+    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 }
 
 /// <summary>A relative path of this application, so that no sign in redirects somewhere else.</summary>
 static string LocalPath(string path) =>
     Uri.IsWellFormedUriString(path, UriKind.Relative) && !path.StartsWith("//") ? path : "/";
 
-static async Task SignInAsync(HttpContext httpContext, string userName, bool mustChangePassword)
-{
-    List<Claim> claims = [new(ClaimTypes.Name, userName)];
-    if (mustChangePassword)
-        claims.Add(new Claim(AuthClaims.MustChangePassword, "true"));
-
-    var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-    await httpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
-}
+static async Task SignInAsync(HttpContext httpContext, Oftp4Net.Domain.User user) =>
+    await httpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, AuthSessions.CreatePrincipal(user));

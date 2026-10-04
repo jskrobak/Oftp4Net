@@ -1,0 +1,4 @@
+@* Pages need a signed in user also inside a running circuit: the fallback policy guards only the HTTP requests,
+   so without this a user whose sign in is revoked would keep the page they have open. Login and Error allow
+   anonymous users themselves. *@
+@attribute [Authorize]

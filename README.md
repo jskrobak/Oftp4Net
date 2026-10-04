@@ -153,6 +153,10 @@ administrator out, and the address of a user who has no password cannot be taken
 session of this application; the session at Microsoft stays, as it does with every application that uses the
 company account.
 
+A sign in lasts until the user stays away for 8 hours, but it ends sooner when the user changes: deleting the
+user, a new password (changed or reset) or a new Entra ID address signs them out everywhere, open pages included
+within a minute. A stolen cookie is therefore of no use after the password is changed.
+
 The server needs to reach `login.microsoftonline.com` and the redirect URI has to be the public HTTPS address of
 the application. Behind a reverse proxy set `ReverseProxy:TrustAll` (or the proxy's address), otherwise the
 application builds the redirect from the internal address and Entra ID refuses it with `AADSTS50011`.
