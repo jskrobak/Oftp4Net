@@ -29,8 +29,17 @@ public sealed class OftpTlsOptions
     /// </summary>
     public X509Certificate2Collection VerificationOnlyCertificates { get; set; } = [];
 
-    /// <summary>Listener only: require the client to present a certificate.</summary>
+    /// <summary>
+    /// Listener only: require the client to present a certificate and check it. Without it a certificate the
+    /// client presents is not checked; the partner is authenticated by its SSID and password.
+    /// </summary>
     public bool RequireClientCertificate { get; init; }
+
+    /// <summary>
+    /// Connecting side only: accept the certificate of the other side even when it is not valid. The problem is
+    /// still reported in <see cref="OftpConnectDiagnostics.CertificateProblem"/>.
+    /// </summary>
+    public bool AcceptInvalidCertificate { get; init; }
 
     /// <summary>
     /// How the revocation of the certificate of the other side is checked. A pinned certificate is trusted by

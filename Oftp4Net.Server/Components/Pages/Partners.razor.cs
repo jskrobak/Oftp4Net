@@ -35,6 +35,7 @@ public partial class Partners : ComponentBase
     private HxModal importModal = null!;
     private readonly Os4xImportOptions importOptions = new();
     private List<Os4xPartnerCandidate>? importCandidates;
+    private List<Os4xCertificateCandidate> importCertificates = [];
     private bool importLoading;
     private bool importRunning;
 
@@ -353,8 +354,10 @@ public partial class Partners : ComponentBase
         try
         {
             importCandidates = await Os4xImporter.LoadAsync(importOptions);
+            importCertificates = await Os4xImporter.LoadCertificatesAsync(importOptions);
             var importable = importCandidates.Count(c => c.CanImport);
-            Messenger.AddInformation($"{importCandidates.Count} partner(s) found, {importable} can be imported.");
+            Messenger.AddInformation($"{importCandidates.Count} partner(s) found, {importable} can be imported; " +
+                                     $"{importCertificates.Count} trusted certificate(s).");
         }
         catch (Exception ex)
         {
@@ -373,26 +376,33 @@ public partial class Partners : ComponentBase
             return;
 
         var selected = importCandidates.Where(c => c is { Selected: true, CanImport: true }).ToList();
-        if (selected.Count == 0)
+        var selectedCertificates = importCertificates.Where(c => c is { Selected: true, CanImport: true }).ToList();
+        if (selected.Count == 0 && selectedCertificates.Count == 0)
         {
-            Messenger.AddWarning("No partner is selected.");
+            Messenger.AddWarning("No partner or certificate is selected.");
             return;
         }
 
         importRunning = true;
         try
         {
+            // Certificates first: the partners' TLS connections can use them right away.
+            var importedCertificates = await Os4xImporter.ImportCertificatesAsync(selectedCertificates);
             var result = await Os4xImporter.ImportAsync(selected);
 
             foreach (var error in result.Errors)
                 Messenger.AddWarning(error);
 
-            Messenger.AddInformation($"{result.Partners} partner(s), {result.SubStations} sub-station(s) and " +
-                                     $"{result.Identities} identity(ies) imported.");
+            Messenger.AddInformation($"{result.Partners} partner(s), {result.SubStations} sub-station(s), " +
+                                     $"{result.Identities} identity(ies) and {importedCertificates} trusted certificate(s) imported.");
+
+            availableCertificates = await DataService.GetAllCertificatesAsync();
+            await ListenerService.RefreshTrustedCertificatesAsync();
 
             availableIdentities = await DataService.GetAllIdentitiesAsync();
             await importModal.HideAsync();
             importCandidates = null;
+            importCertificates = [];
             await gridComponent.RefreshDataAsync();
         }
         catch (Exception ex)

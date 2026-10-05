@@ -240,7 +240,11 @@ public sealed class ConnectionTestService(
                 await session.RunAsync(cancellationToken);
             }
 
-            return Result(ConnectionTestStage.Completed, "The session started and was ended without transferring anything.",
+            // A certificate accepted only because the partner is set to accept an invalid one is still a problem.
+            var accepted = diagnostics.CertificateProblem is { } problem
+                ? $" The certificate of {partner.Name} is accepted although it is not valid: {problem}"
+                : "";
+            return Result(ConnectionTestStage.Completed, "The session started and was ended without transferring anything." + accepted,
                 negotiated: Negotiated(session), tls: Tls(diagnostics), certificate: Certificate(diagnostics));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

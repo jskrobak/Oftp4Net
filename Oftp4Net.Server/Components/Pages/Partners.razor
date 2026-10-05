@@ -56,6 +56,9 @@
                               Nullable="false" />
 
                     <HxCheckbox Label="Use TLS" @bind-Value="@currentPartner.UseTls"></HxCheckbox>
+                    <HxCheckbox Label="Accept an invalid TLS certificate"
+                                Hint="Calls the partner even when its certificate expired, is not trusted or is issued for another name, as OS4X did. The connection stays encrypted, but TLS no longer proves who answers; connection tests still report the problem."
+                                @bind-Value="@currentPartner.AcceptInvalidTlsCertificate" />
                 
                     <HxSelect TItem="Certificate"
                               TValue="int?"
@@ -347,9 +350,49 @@
                     </tbody>
                 </table>
 
+                @if (importCertificates.Count > 0)
+                {
+                    <h6 class="mt-3">Trusted certificates</h6>
+                    <p class="small text-body-secondary">
+                        Certificates OS4X trusts for the TLS connections of all partners, added there by hand. They are
+                        imported as trusted for TLS of all partners; the Odette trust list is read by Oftp4Net itself.
+                    </p>
+                    <table class="table table-sm align-middle">
+                        <thead>
+                        <tr>
+                            <th style="width: 2rem;"></th>
+                            <th>Name</th>
+                            <th>Subject</th>
+                            <th>Valid to</th>
+                            <th>State</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var certificate in importCertificates)
+                        {
+                            <tr class="@(certificate.CanImport ? "" : "text-body-secondary")">
+                                <td>
+                                    <HxCheckbox @bind-Value="certificate.Selected" Enabled="certificate.CanImport" />
+                                </td>
+                                <td>@certificate.Name</td>
+                                <td class="small">@certificate.Subject</td>
+                                <td>@certificate.ValidTo.ToString("d")</td>
+                                <td>
+                                    @certificate.Status
+                                    @foreach (var note in certificate.Notes)
+                                    {
+                                        <div class="small text-body-secondary">@note</div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+
                 <HxButton Color="ThemeColor.Primary" Icon="BootstrapIcon.Download" Spinner="importRunning"
                           OnClick="ImportOs4xPartners">
-                    Import selected (@importCandidates.Count(c => c.Selected))
+                    Import selected (@importCandidates.Count(c => c.Selected) partner rows, @importCertificates.Count(c => c.Selected) certificates)
                 </HxButton>
             }
         }

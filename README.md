@@ -767,9 +767,16 @@ left out (files to that SFID go to the partner itself), and of the same sub-stat
 | `oftpv2_sign`, `oftpv2_encrypt`, `oftp2_compression_level` | file signing, encryption and compression |
 | `oftpv2_sec_auth_req`, `oftpv2_req_sig_eerp` | secure authentication, signed end responses |
 
-Certificates are not part of the OS4X partner table, so the trusted certificate of a TLS connection and the
-partner's certificate for file security are assigned after the import. Buffer size and credit are per partner in
-OS4X but global here, so they are not taken over.
+Certificates are not part of the OS4X partner table, so the partner's certificate for file security is assigned
+after the import. The certificates OS4X trusts for TLS are listed below the partners: those added there by hand
+(partner certificates and CAs) are imported as *trusted for TLS of all partners*, as OS4X trusts them; those of the
+Odette trust list are not, Oftp4Net reads the list itself. Expired ones are not selected. Buffer size and credit are
+per partner in OS4X but global here, so they are not taken over.
+
+OS4X is lenient with TLS: it accepts expired and self-signed certificates of partners and does not check the
+certificates partners present. Oftp4Net checks the certificates of partners it calls; run the connection tests after
+the import and, for a partner whose certificate cannot be fixed, switch on *Accept an invalid TLS certificate* in the
+partner dialog. Certificates partners present when they call us are checked only when the listener requires one.
 
 ## Testing the connection to partners
 
@@ -871,6 +878,21 @@ moves a received certificate on exactly where the one it replaces was used: an O
 signing certificate of a sub-station leaves the encryption certificate and the certificates of other stations
 alone. A certificate request is answered with every certificate of the station addressed, each in its own file as
 the specification requires.
+
+## Certificates trusted for TLS
+
+A partner's TLS certificate is accepted when it is valid for the operating system, when it chains up to the Odette
+trust list, to the *trusted certificate* of the partner (its own certificate pinned, or its CA) or to a certificate
+*trusted for TLS of all partners* (*Certificates* → edit), or when it is that certificate itself. The last ones serve
+CAs and certificates that several partners use, like the trusted certificates of OS4X.
+
+*Accept an invalid TLS certificate* in the partner dialog accepts the partner's certificate even when it is expired,
+not trusted or issued for another name. The connection stays encrypted, but TLS no longer proves who answers, so it is
+meant for a partner whose certificate cannot be fixed; connection tests still report what is wrong with it.
+
+A listener checks the certificate a calling partner presents only when it requires one (*Require client
+certificate*); otherwise partners are authenticated by their SSID and password, and a certificate they present on
+their own cannot lock them out.
 
 ## Odette trust list (TSL)
 

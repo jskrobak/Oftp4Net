@@ -26,6 +26,13 @@ public class Partner: BaseParty
     public Certificate? TrustedCertificate { get; set; }
 
     /// <summary>
+    /// Accepts the TLS certificate of the partner when we call it even when it is not valid (expired, not trusted,
+    /// issued for another name). The connection stays encrypted, but TLS no longer proves who answers; for a
+    /// partner whose certificate cannot be fixed. Connection tests still report the problem.
+    /// </summary>
+    public bool AcceptInvalidTlsCertificate { get; set; }
+
+    /// <summary>
     /// Our identity presented to the partner when it calls us, instead of the identity of the listener. For partners
     /// that know us by another code than the other partners do, so that one listener serves all of them.
     /// </summary>

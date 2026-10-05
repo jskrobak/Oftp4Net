@@ -273,6 +273,9 @@ public class SendService(ILogger<SendService> logger,
         // until it starts using the new one (Odette OP08 2.5 F).
         foreach (var id in new[] { partner.TrustedCertificateId, partner.PreviousSecurityCertificateId }.OfType<int>().Distinct())
             trusted.Add(CertificateLoader.Load(await certificates.GetObjectAsync(id, cancellationToken)));
+        // Certificates trusted for all partners, e.g. those taken over from OS4X.
+        foreach (var certificate in await certificates.GetTrustedForTlsAsync(cancellationToken))
+            trusted.Add(CertificateLoader.Load(certificate));
 
         var clientCertificate = settings.OftpClientCertificateId is { } clientId
             ? CertificateLoader.Load(await certificates.GetObjectAsync(clientId, cancellationToken))
@@ -283,6 +286,7 @@ public class SendService(ILogger<SendService> logger,
             Protocols = partner.Tls == SslProtocols.None ? SslProtocols.Tls12 | SslProtocols.Tls13 : partner.Tls,
             TrustedCertificates = trusted,
             VerificationOnlyCertificates = tslVerificationRoots,
+            AcceptInvalidCertificate = partner.AcceptInvalidTlsCertificate,
             LocalCertificate = clientCertificate,
             Revocation = settings.RevocationPolicy,
         };

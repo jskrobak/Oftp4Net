@@ -18,6 +18,7 @@ public partial class Certificates : ComponentBase
     [Inject] protected IHxMessageBoxService MessageBox { get; set; } = null!;
     [Inject] protected IUploadService UploadService { get; set; } = null!;
     [Inject] protected IFileService FileService { get; set; } = null!;
+    [Inject] protected ListenerService ListenerService { get; set; } = null!;
     
     
     private Certificate currentCertificate = new();
@@ -94,7 +95,9 @@ public partial class Certificates : ComponentBase
     private async Task SaveCertificate()
     {
         await DataService.SaveCertificateAsync(currentCertificate);
-        
+        // The listeners check client certificates against the certificates trusted for all partners as well.
+        await ListenerService.RefreshTrustedCertificatesAsync();
+
         await gridComponent.RefreshDataAsync();
         await certificateEditModal.HideAsync();
     }   

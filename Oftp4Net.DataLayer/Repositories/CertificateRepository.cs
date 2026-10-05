@@ -38,4 +38,7 @@ public class CertificateRepository(
             TotalCount = cnt
         };
     }
+
+    public async Task<List<Certificate>> GetTrustedForTlsAsync(CancellationToken cancellationToken = default) =>
+        await Data.Where(c => c.TrustedForTls).ToListAsync(cancellationToken);
 }

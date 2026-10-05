@@ -21,6 +21,9 @@
                     <DataAnnotationsValidator />
 
                     <HxInputText Label="Name" @bind-Value="@currentCertificate.Name" />
+                    <HxCheckbox Label="Trusted for TLS of all partners"
+                                Hint="A partner certificate or a CA accepted in the TLS connections of every partner, as the trusted certificates of OS4X. A certificate of one partner is assigned to that partner instead."
+                                @bind-Value="@currentCertificate.TrustedForTls" />
                 
                     <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
 
@@ -76,6 +79,15 @@
                         @if (cert.HasPrivateKey)
                         {
                             <HxIcon Icon="BootstrapIcon.Key"/>
+                        }
+                    </ItemTemplate>
+                </HxGridColumn>
+                <HxGridColumn HeaderText="Trusted for TLS"
+                              SortKeySelector="d => d.TrustedForTls">
+                    <ItemTemplate Context="cert">
+                        @if (cert.TrustedForTls)
+                        {
+                            <HxIcon Icon="BootstrapIcon.ShieldCheck"/>
                         }
                     </ItemTemplate>
                 </HxGridColumn>

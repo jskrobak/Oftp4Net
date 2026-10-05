@@ -127,9 +127,12 @@ public sealed class OftpListener : IAsyncDisposable
                     ServerCertificate = _tls.LocalCertificate,
                     EnabledSslProtocols = _tls.Protocols,
                     ClientCertificateRequired = _tls.RequireClientCertificate,
+                    // A client certificate is checked only when it is required: partners are authenticated by
+                    // their SSID and password, and a certificate they present on their own must not lock them out.
                     RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
+                        !_tls.RequireClientCertificate ||
                         OftpCertificateValidator.Validate(certificate, errors, _tls.TrustedCertificates,
-                            _tls.RequireClientCertificate, _tls.Revocation, _tls.VerificationOnlyCertificates),
+                            certificateRequired: true, _tls.Revocation, _tls.VerificationOnlyCertificates),
                 }, handshakeTimeout.Token);
 
                 remoteCertificate = ssl.RemoteCertificate as X509Certificate2;

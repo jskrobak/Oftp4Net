@@ -9,4 +9,7 @@ public interface ICertificateRepository: IRepository<Certificate, int>
 {
     Task<DataFragment<Certificate>> GetFragmentAsync(CertificateFilter filter, GridDataProviderRequest<Certificate> request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Certificates trusted for the TLS connections of all partners.</summary>
+    Task<List<Certificate>> GetTrustedForTlsAsync(CancellationToken cancellationToken = default);
 }

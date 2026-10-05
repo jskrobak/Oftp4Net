@@ -17,6 +17,7 @@ public sealed record Os4xImportResult(int Partners, int SubStations, int Identit
 public class Os4xPartnerImporter(
     IPartnerRepository partners,
     IIdentityRepository identities,
+    ICertificateRepository certificates,
     IUnitOfWork unitOfWork,
     ILogger<Os4xPartnerImporter> logger)
 {
@@ -241,6 +242,40 @@ public class Os4xPartnerImporter(
         return new Os4xImportResult(imported.Count, importedSubStations, createdIdentities, errors);
     }
 
+    /// <summary>The certificates OS4X trusts for TLS that were added there by hand.</summary>
+    public async Task<List<Os4xCertificateCandidate>> LoadCertificatesAsync(Os4xImportOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        var pems = await ReadTrustedCertificatesAsync(options, cancellationToken);
+        return Os4xCertificateCandidate.Plan(pems, await certificates.GetAllAsync(cancellationToken), DateTime.Now);
+    }
+
+    /// <summary>Creates the selected certificates, trusted for the TLS connections of all partners as in OS4X.</summary>
+    public async Task<int> ImportCertificatesAsync(IEnumerable<Os4xCertificateCandidate> candidates,
+        CancellationToken cancellationToken = default)
+    {
+        var imported = 0;
+        foreach (var candidate in candidates.Where(c => c is { Selected: true, CanImport: true }))
+        {
+            unitOfWork.AddForInsert(new Certificate
+            {
+                Name = candidate.Name,
+                Base64Data = candidate.Base64Data,
+                ValidFrom = candidate.ValidFrom,
+                ValidTo = candidate.ValidTo,
+                HasPrivateKey = false,
+                TrustedForTls = true,
+            });
+            imported++;
+        }
+
+        if (imported > 0)
+            await unitOfWork.CommitAsync(cancellationToken);
+
+        logger.LogInformation("Imported {Count} trusted certificate(s) from OS4X", imported);
+        return imported;
+    }
+
     /// <summary>Returns the identity of the candidate and whether it had to be created.</summary>
     private async Task<(Identity Identity, bool Created)> GetIdentityAsync(Os4xPartnerCandidate candidate,
         Dictionary<string, Identity> cache, CancellationToken cancellationToken)
@@ -278,19 +313,40 @@ public class Os4xPartnerImporter(
 
     private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
 
+    /// <summary>
+    /// The PEM certificates of the trusted certificates table: only those added by hand, those of the Odette trust
+    /// list (and the certificates that help to verify it) Oftp4Net reads from the trust list itself.
+    /// </summary>
+    private static async Task<List<string>> ReadTrustedCertificatesAsync(Os4xImportOptions options, CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(ConnectionString(options));
+        await connection.OpenAsync(cancellationToken);
+
+        var table = $"{SafeTableName(options.TablePrefix)}trusted_certs";
+        await using var command = new MySqlCommand(
+            $"SELECT cert FROM {table} WHERE is_tsl = 0 AND is_tsl_helper = 0 AND is_trusted = 1 AND cert IS NOT NULL",
+            connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var pems = new List<string>();
+        while (await reader.ReadAsync(cancellationToken))
+            pems.Add(reader.GetString(0));
+        return pems;
+    }
+
+    private static string ConnectionString(Os4xImportOptions options) => new MySqlConnectionStringBuilder
+    {
+        Server = options.Host,
+        Port = (uint)options.Port,
+        Database = options.Database,
+        UserID = options.User,
+        Password = options.Password,
+        ConnectionTimeout = 15,
+    }.ConnectionString;
+
     private static async Task<List<Os4xPartnerRow>> ReadRowsAsync(Os4xImportOptions options, CancellationToken cancellationToken)
     {
-        var builder = new MySqlConnectionStringBuilder
-        {
-            Server = options.Host,
-            Port = (uint)options.Port,
-            Database = options.Database,
-            UserID = options.User,
-            Password = options.Password,
-            ConnectionTimeout = 15,
-        };
-
-        await using var connection = new MySqlConnection(builder.ConnectionString);
+        await using var connection = new MySqlConnection(ConnectionString(options));
         await connection.OpenAsync(cancellationToken);
 
         // The table prefix is configurable in OS4X (TABLEPREFIX in os4x.conf), so it cannot be a parameter.

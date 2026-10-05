@@ -80,15 +80,26 @@ public class ListenerService(
     }
 
     /// <summary>
-    /// Reloads the certificates trusted for TLS client authentication (after partners changed) without restarting
-    /// the listeners, so running transfers are not interrupted.
+    /// Certificates a client certificate is checked against: those assigned to partners and those trusted for all
+    /// partners (e.g. taken over from OS4X).
+    /// </summary>
+    private static async Task<List<Certificate>> LoadTrustedCertificatesAsync(IServiceProvider services)
+    {
+        var assigned = await services.GetRequiredService<IPartnerRepository>().GetTrustedCertificatesAsync();
+        var shared = await services.GetRequiredService<ICertificateRepository>().GetTrustedForTlsAsync();
+        return assigned.Concat(shared).DistinctBy(c => c.Id).ToList();
+    }
+
+    /// <summary>
+    /// Reloads the certificates trusted for TLS client authentication (after partners or certificates changed)
+    /// without restarting the listeners, so running transfers are not interrupted.
     /// </summary>
     public async Task RefreshTrustedCertificatesAsync()
     {
         List<Certificate> partnerCertificates;
         using (var scope = serviceScopeFactory.CreateScope())
         {
-            partnerCertificates = await scope.ServiceProvider.GetRequiredService<IPartnerRepository>().GetTrustedCertificatesAsync();
+            partnerCertificates = await LoadTrustedCertificatesAsync(scope.ServiceProvider);
         }
 
         await _lock.WaitAsync();
@@ -119,7 +130,7 @@ public class ListenerService(
             using (var scope = serviceScopeFactory.CreateScope())
             {
                 configured = await scope.ServiceProvider.GetRequiredService<IListenerRepository>().GetEnabledWithRefsAsync();
-                partnerCertificates = await scope.ServiceProvider.GetRequiredService<IPartnerRepository>().GetTrustedCertificatesAsync();
+                partnerCertificates = await LoadTrustedCertificatesAsync(scope.ServiceProvider);
             }
 
             var revocation = (await globalSettingsService.GetGlobalSettingsAsync()).RevocationPolicy;

@@ -13,6 +13,12 @@ public class Certificate
     public DateTime ValidFrom { get; set; }
     public DateTime ValidTo { get; set; }
     public bool HasPrivateKey { get; set; } = false;
+
+    /// <summary>
+    /// Trusted for the TLS connections of all partners, in both directions: a partner certificate or a CA that
+    /// issues them. Certificates of a single partner are assigned to it instead (trusted certificate).
+    /// </summary>
+    public bool TrustedForTls { get; set; }
     
     [StringLength(50)]
     public string Password { get; set; } = string.Empty;

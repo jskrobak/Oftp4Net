@@ -59,7 +59,7 @@ public static class OftpConnector
                                 diagnostics.CertificateProblem = problem;
                             }
 
-                            return valid;
+                            return valid || tls.AcceptInvalidCertificate && certificate is not null;
                         },
                     }, cancellationToken);
                     if (diagnostics is not null)
