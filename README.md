@@ -93,6 +93,8 @@ Not implemented, because the deployments this server is built for do not use it:
 | `Upload:MaxOutboxFileSizeMB` | Maximum size of a file uploaded to the send queue (default 512) |
 | `Tls:GenerateCertificate` | Create a self-signed TLS certificate on startup when there is none with a private key (default `true`) |
 | `Tls:CertificateSubject` | Host name in the generated certificate (default: machine / container name) |
+| `Authentication:PasswordSignIn` | Where the user name and password form works: `Everywhere`, `LocalNetworks` or `Never`; with Entra ID configured the default is `LocalNetworks`, without it passwords always work from everywhere (see *Signing in with Microsoft Entra ID*) |
+| `Authentication:PasswordSignInNetworks` | Further networks or addresses passwords are accepted from in `LocalNetworks`, e.g. `203.0.113.0/24, 198.51.100.5` |
 | `ReverseProxy:TrustAll` | Trust `X-Forwarded-*` headers from any proxy |
 | `HealthChecks:MinFreeDiskSpaceMB` | Free disk space below which the storage is reported as degraded (default 1024) |
 | `HealthChecks:WebhookUrl`, `HealthChecks:WebhookSecret` | Webhook `health.changed` called when the state of a health check changes |
@@ -148,18 +150,28 @@ order:
 The address is compared with the claim `preferred_username` of Entra ID, and with `email` or `upn` when that is
 missing; for a work account it is normally the user principal name.
 
-The sign in with a password stays available, so that a wrong tenant or an expired secret cannot lock the
-administrator out, and the address of a user who has no password cannot be taken away. Signing out ends the
-session of this application; the session at Microsoft stays, as it does with every application that uses the
-company account.
+Once Entra ID is configured, the user name and password form works **only from localhost and private networks**
+(`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, IPv6 unique local addresses): from the internet the sign in page
+shows *Sign in with Microsoft* alone and `POST /account/login` answers `404`, so bots have no form to try passwords
+on. A password still works from the internal network or through an SSH tunnel
+(`ssh -L 18090:localhost:8080 server`, then `http://localhost:18090`), so that a wrong tenant or an expired secret
+cannot lock the administrator out. `Authentication:PasswordSignIn` changes it: `Everywhere` as without Entra ID,
+`Never` for Entra ID only; `Authentication:PasswordSignInNetworks` adds networks such as a VPN. Refused attempts are
+logged with the address.
+
+The address of a user who has no password cannot be taken away. Signing out ends the session of this application;
+the session at Microsoft stays, as it does with every application that uses the company account.
 
 A sign in lasts until the user stays away for 8 hours, but it ends sooner when the user changes: deleting the
 user, a new password (changed or reset) or a new Entra ID address signs them out everywhere, open pages included
 within a minute. A stolen cookie is therefore of no use after the password is changed.
 
 The server needs to reach `login.microsoftonline.com` and the redirect URI has to be the public HTTPS address of
-the application. Behind a reverse proxy set `ReverseProxy:TrustAll` (or the proxy's address), otherwise the
-application builds the redirect from the internal address and Entra ID refuses it with `AADSTS50011`.
+the application. Behind a reverse proxy set `ReverseProxy:TrustAll` (or the proxy's address): otherwise the
+application builds the redirect from the internal address and Entra ID refuses it with `AADSTS50011`, and every
+request seems to come from the proxy, so that with a proxy on the same host passwords would be accepted from the
+internet. The client address is the last one in `X-Forwarded-For`, the one the proxy added; an address a client puts
+in front of it is ignored.
 
 ## Running locally
 

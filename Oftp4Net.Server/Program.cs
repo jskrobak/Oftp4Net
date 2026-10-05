@@ -92,9 +92,13 @@ builder.Services.AddOpenApi(options =>
 });
 
 // Signing in with Microsoft Entra ID is optional: without the configuration section the password login is the
-// only way in, and it stays available in any case, so that a wrong tenant cannot lock the administrator out.
+// only way in. With it, passwords are accepted by default only from localhost and private networks (an SSH tunnel,
+// the internal network), so that bots on the internet have no form to try them on and a wrong tenant still cannot
+// lock the administrator out.
 var entra = builder.Configuration.GetSection(EntraOptions.SectionName).Get<EntraOptions>() ?? new EntraOptions();
 builder.Services.AddSingleton(entra);
+var passwordSignIn = PasswordSignInPolicy.Create(builder.Configuration, entra.IsConfigured);
+builder.Services.AddSingleton(passwordSignIn);
 
 var authentication = builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>(ApiTokenAuthenticationHandler.SchemeName, null)
@@ -216,6 +220,11 @@ builder.Services.AddResponseCompression(opts =>
 
 var app = builder.Build();
 
+if (passwordSignIn.Warning is not null)
+    app.Logger.LogWarning("{Warning}", passwordSignIn.Warning);
+app.Logger.LogInformation("Signing in: {PasswordSignIn}{Entra}", passwordSignIn.Describe(),
+    entra.IsConfigured ? "; Microsoft Entra ID from everywhere" : "");
+
 // Create or update the database schema, the default user admin/admin on an empty database
 // the development data (SeedCertificates, SeedLoopback) and, when there is none, an own TLS certificate.
 using (var scope = app.Services.CreateScope())
@@ -269,6 +278,14 @@ app.MapScalarApiReference("/ApiReference", options => options
 app.MapPost("/account/login", async (HttpContext httpContext, UserService userService, [FromForm] string username,
     [FromForm] string password, [FromForm] string? returnUrl) =>
 {
+    // Outside the networks passwords are accepted from, the endpoint does not exist: nothing to try passwords on.
+    if (!passwordSignIn.Allows(httpContext.Connection.RemoteIpAddress))
+    {
+        app.Logger.LogWarning("Password sign in for {UserName} from {RemoteIp} refused: {PasswordSignIn}", username,
+            httpContext.Connection.RemoteIpAddress, passwordSignIn.Describe());
+        return Results.NotFound();
+    }
+
     var user = await userService.ValidateCredentialsAsync(username, password);
     if (user is null)
     {

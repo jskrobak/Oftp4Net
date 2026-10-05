@@ -4,6 +4,7 @@
 @attribute [ExcludeFromInteractiveRouting]
 @using Microsoft.AspNetCore.Authorization
 @inject EntraOptions Entra
+@inject Oftp4Net.Services.PasswordSignInPolicy PasswordSignIn
 
 <PageTitle>Oftp4Net | Sign in</PageTitle>
 
@@ -18,29 +19,41 @@
             <div class="alert alert-danger py-2">@ErrorMessage</div>
         }
 
-        <form method="post" action="account/login" data-enhance="false">
-            <AntiforgeryToken />
-            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
-            <div class="mb-3">
-                <label for="username" class="form-label">User name</label>
-                <input id="username" name="username" class="form-control" autocomplete="username" required autofocus />
-            </div>
-            <div class="mb-3">
-                <label for="password" class="form-label">Password</label>
-                <input id="password" name="password" type="password" class="form-control" autocomplete="current-password" required />
-            </div>
-            <button type="submit" class="btn btn-primary w-100">Sign in</button>
-        </form>
+        @if (PasswordAllowed)
+        {
+            <form method="post" action="account/login" data-enhance="false">
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                <div class="mb-3">
+                    <label for="username" class="form-label">User name</label>
+                    <input id="username" name="username" class="form-control" autocomplete="username" required autofocus />
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">Password</label>
+                    <input id="password" name="password" type="password" class="form-control" autocomplete="current-password" required />
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Sign in</button>
+            </form>
+        }
 
         @if (Entra.IsConfigured)
         {
-            <div class="text-center text-body-secondary my-3 small">or</div>
-            <a class="btn btn-outline-secondary w-100" href="@EntraUrl">@Entra.ButtonText</a>
+            @if (PasswordAllowed)
+            {
+                <div class="text-center text-body-secondary my-3 small">or</div>
+                <a class="btn btn-outline-secondary w-100" href="@EntraUrl">@Entra.ButtonText</a>
+            }
+            else
+            {
+                <a class="btn btn-primary w-100" href="@EntraUrl">@Entra.ButtonText</a>
+            }
         }
     </div>
 </div>
 
 @code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = null!;
+
     [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
     [SupplyParameterFromQuery] private string? Error { get; set; }
 
@@ -51,4 +64,6 @@
     private string EntraUrl => "account/entra-login?returnUrl=" + Uri.EscapeDataString(ReturnUrl ?? "");
 
     [SupplyParameterFromQuery] private string? Message { get; set; }
+
+    private bool PasswordAllowed => PasswordSignIn.Allows(HttpContext.Connection.RemoteIpAddress);
 }
