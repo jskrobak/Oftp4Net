@@ -312,11 +312,12 @@
                     <thead>
                     <tr>
                         <th style="width: 2rem;"></th>
-                        <th>Name</th>
+                        <th>OS4X name</th>
+                        <th>Imported as</th>
                         <th>SSID</th>
                         <th>Address</th>
                         <th>Security</th>
-                        <th>Identity</th>
+                        <th>Our identity</th>
                         <th>State</th>
                     </tr>
                     </thead>
@@ -328,10 +329,11 @@
                                 <HxCheckbox @bind-Value="candidate.Selected" Enabled="candidate.CanImport" />
                             </td>
                             <td>@candidate.Name</td>
+                            <td>@candidate.Target</td>
                             <td>@candidate.Ssid</td>
                             <td>@candidate.Address</td>
                             <td>@candidate.Security</td>
-                            <td>@(string.IsNullOrEmpty(candidate.IdentitySsid) ? "-" : candidate.IdentitySsid)</td>
+                            <td>@candidate.Identity</td>
                             <td>
                                 @candidate.Status
                                 @foreach (var note in candidate.Notes)

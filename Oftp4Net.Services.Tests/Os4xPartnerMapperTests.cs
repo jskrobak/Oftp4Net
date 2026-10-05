@@ -222,29 +222,49 @@ public class Os4xPartnerMapperTests
     }
 
     [Fact]
-    public void ExistingIdentityWithAnotherSfidAndPasswordIsNoted()
+    public void ExistingIdentityWithAnotherPasswordIsNoted()
     {
         var candidate = Os4xPartnerMapper.Map(Row());
 
         Os4xPartnerMapper.CompareIdentity(candidate,
-            new Oftp4Net.Domain.Identity { SSID = "O0013000000US", SFID = "O0013000000OTHER", Password = "OTHER" }, sourceRow: null);
+            new Oftp4Net.Domain.Identity { SSID = "O0013000000US", SFID = "O0013000000USF", Password = "OTHER" }, sourceRow: null);
 
-        Assert.Contains(candidate.Notes, n => n.Contains("SFID O0013000000OTHER here") && n.Contains("used unchanged"));
         Assert.Contains(candidate.Notes, n => n.Contains("another password here") && n.Contains("used unchanged"));
         // The password itself is never shown.
-        Assert.DoesNotContain(candidate.Notes, n => n.Contains("password OTHER"));
+        Assert.DoesNotContain(candidate.Notes, n => n.Contains("OTHER"));
     }
 
     [Fact]
-    public void IdentityOfAnotherRowWithAnotherSfidIsNoted()
+    public void IdentityOfAnotherRowWithAnotherPasswordIsNoted()
     {
         var candidate = Os4xPartnerMapper.Map(Row());
 
         Os4xPartnerMapper.CompareIdentity(candidate,
-            new Oftp4Net.Domain.Identity { SSID = "O0013000000US", SFID = "O0013000000OTHER", Password = "OURS" }, "FIRST");
+            new Oftp4Net.Domain.Identity { SSID = "O0013000000US", SFID = "O0013000000USF", Password = "OTHER" }, "FIRST");
 
         var note = Assert.Single(candidate.Notes, n => n.Contains("Our identity"));
         Assert.Contains("in row FIRST", note);
         Assert.Contains("row imported first", note);
+    }
+
+    [Theory]
+    [InlineData("ARTIPA__VW", "ARTIPA", "VW")]
+    [InlineData("ARTIPA__DINET_ITWBYTCA", "ARTIPA", "DINET_ITWBYTCA")]
+    [InlineData("LETOPLAST__VW-AUDI", "LETOPLAST", "VW-AUDI")]
+    [InlineData("VOLVO", null, "VOLVO")]
+    [InlineData("__VW", null, "__VW")]
+    [InlineData("ARTIPA__", null, "ARTIPA__")]
+    public void OsxNameIsSplitIntoIdentityAndPartner(string name, string? identity, string partner)
+    {
+        Assert.Equal((identity, partner), Os4xPartnerMapper.SplitName(name));
+    }
+
+    [Fact]
+    public void PartnerIsNamedAfterThePartBehindTheSeparatorAndTheIdentityBeforeIt()
+    {
+        var candidate = Os4xPartnerMapper.Map(Row(r => r.ShortName = "ARTIPA__VW"));
+
+        Assert.Equal("VW", candidate.Partner!.Name);
+        Assert.Equal("ARTIPA", candidate.IdentityName);
     }
 }

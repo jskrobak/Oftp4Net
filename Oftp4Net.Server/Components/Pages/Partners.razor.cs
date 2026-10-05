@@ -387,9 +387,8 @@ public partial class Partners : ComponentBase
             foreach (var error in result.Errors)
                 Messenger.AddWarning(error);
 
-            Messenger.AddInformation(result.Identities > 0
-                ? $"{result.Partners} partner(s) and {result.Identities} identity(ies) imported."
-                : $"{result.Partners} partner(s) imported.");
+            Messenger.AddInformation($"{result.Partners} partner(s), {result.SubStations} sub-station(s) and " +
+                                     $"{result.Identities} identity(ies) imported.");
 
             availableIdentities = await DataService.GetAllIdentitiesAsync();
             await importModal.HideAsync();

@@ -58,8 +58,25 @@ public static class ApiEndpoints
                 if (file.Length == 0)
                     return Results.BadRequest(new ApiError("The file is empty."));
 
-                var partnerEntity = (await partners.GetAllAsync(cancellationToken))
-                    .FirstOrDefault(p => Matches(p.SSID, partner) || Matches(p.Name, partner));
+                // A partner by its code or name, or a sub-station by its name: the file then goes through the
+                // connection of its partner to the SFID of the sub-station.
+                var allPartners = await partners.GetAllAsync(cancellationToken);
+                var partnerEntity = allPartners.FirstOrDefault(p => Matches(p.SSID, partner) || Matches(p.Name, partner));
+                PartnerSubStation? station = null;
+                if (partnerEntity is null)
+                {
+                    var stations = allPartners
+                        .SelectMany(p => (p.SubStations ?? []).Select(s => (Partner: p, Station: s)))
+                        .Where(s => Matches(s.Station.Name, partner))
+                        .ToList();
+                    if (stations.Count > 1)
+                        return Results.BadRequest(new ApiError(
+                            $"'{partner}' is a sub-station of several partners ({string.Join(", ", stations.Select(s => s.Partner.Name))}); " +
+                            "name the partner and give the SFID of the sub-station as destination."));
+                    if (stations.Count == 1)
+                        (partnerEntity, station) = stations[0];
+                }
+
                 if (partnerEntity is null)
                     return Results.BadRequest(new ApiError($"Unknown partner '{partner}'."));
 
@@ -69,7 +86,7 @@ public static class ApiEndpoints
                     return Results.BadRequest(new ApiError($"Unknown identity '{identity}'."));
 
                 // A sub-station of the partner (e.g. a plant) with its own SFID; empty for the partner itself.
-                string? destinationSfid = null;
+                var destinationSfid = station?.SFID;
                 if (!string.IsNullOrWhiteSpace(destination) && !Matches(partnerEntity.SFID, destination))
                 {
                     var subStation = StationSettings.FindSubStation(partnerEntity, destination);
@@ -182,6 +199,7 @@ public static class ApiEndpoints
     {
         api.MapGet("/inbox", async (
                 IReceivedFileRepository repository,
+                IIdentityRepository identities,
                 ReceiveStatus? status, string? partner, bool? onlyNew, DateTime? from, DateTime? to,
                 int? skip, int? take, CancellationToken cancellationToken) =>
             {
@@ -190,13 +208,15 @@ public static class ApiEndpoints
                     Status = status, PartnerSsid = partner, OnlyNotFetched = onlyNew ?? false, From = from, To = to,
                 };
                 var page = await repository.GetListAsync(filter, Skip(skip), Take(take), cancellationToken);
-                return Results.Ok(new ApiPage<ReceivedFileDto>(page.Data.Select(ReceivedFileDto.From).ToList(), page.TotalCount));
+                var ours = await identities.GetAllAsync(cancellationToken);
+                return Results.Ok(new ApiPage<ReceivedFileDto>(page.Data.Select(f => ReceivedFileDto.From(f, ours)).ToList(), page.TotalCount));
             })
             .WithSummary("Lists received files; onlyNew=true returns files not fetched through the API yet.");
 
-        api.MapGet("/inbox/{id:int}", async (int id, IReceivedFileRepository repository, CancellationToken cancellationToken) =>
+        api.MapGet("/inbox/{id:int}", async (int id, IReceivedFileRepository repository, IIdentityRepository identities,
+                CancellationToken cancellationToken) =>
                 await repository.FindWithRefsAsync(id, cancellationToken) is { } file
-                    ? Results.Ok(ReceivedFileDto.From(file))
+                    ? Results.Ok(ReceivedFileDto.From(file, await identities.GetAllAsync(cancellationToken)))
                     : Results.NotFound())
             .WithSummary("Detail of a received file.");
 
@@ -356,14 +376,23 @@ public record QueueItemDto(int Id, string Status, string VirtualFileName, string
         string.IsNullOrEmpty(i.DestinationSfid) ? i.Partner?.SFID : i.DestinationSfid);
 }
 
+/// <param name="StationName">
+/// Who sent the file: the sub-station of the partner with the originator SFID, otherwise the partner itself.
+/// </param>
+/// <param name="IdentityName">Our identity with the destination SFID, when it is known.</param>
 public record ReceivedFileDto(int Id, string Status, string VirtualFileName, string Format, int MaxRecordSize,
     string? PartnerName, string? PartnerSsid,
     string Originator, string Destination, string? Description, string? UserData, long Size, DateTime Created,
-    string FileDate, string FileTime, DateTime? ConfirmedDate, DateTime? FetchedDate)
+    string FileDate, string FileTime, DateTime? ConfirmedDate, DateTime? FetchedDate,
+    string? StationName = null, string? IdentityName = null)
 {
-    public static ReceivedFileDto From(ReceivedFile f) => new(f.Id, f.Status.ToString(), f.VirtualFileName,
+    public static ReceivedFileDto From(ReceivedFile f) => From(f, []);
+
+    public static ReceivedFileDto From(ReceivedFile f, IReadOnlyCollection<Identity> identities) => new(f.Id, f.Status.ToString(), f.VirtualFileName,
         f.Format, f.MaxRecordSize, f.Partner?.Name, f.Partner?.SSID, f.Originator, f.Destination, f.Description, f.UserData, f.Size, f.Created, f.FileDate, f.FileTime,
-        f.ConfirmedDate, f.FetchedDate);
+        f.ConfirmedDate, f.FetchedDate,
+        f.Partner is null ? null : StationSettings.FindSubStation(f.Partner, f.Originator)?.Name ?? f.Partner.Name,
+        identities.FirstOrDefault(i => string.Equals(i.SFID.Trim(), f.Destination.Trim(), StringComparison.OrdinalIgnoreCase))?.Name);
 }
 
 /// <summary>Body of the request reporting a received file as not delivered to its final destination.</summary>

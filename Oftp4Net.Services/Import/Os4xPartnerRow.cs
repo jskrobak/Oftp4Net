@@ -30,6 +30,12 @@ public sealed class Os4xPartnerRow
 
     public bool UseTls => AddressType == Os4xAddressTypes.Tls;
 
+    /// <summary>
+    /// <c>idx</c> of the partner whose connection a sub-station uses (<c>substation_reference</c>), -1 for a partner
+    /// with a connection of its own. A sub-station has no SSID, only its SFID.
+    /// </summary>
+    public long SubStationOf { get; init; } = -1;
+
     /// <summary>OFTP release of the partner; only 2 can be imported.</summary>
     public double OftpVersion { get; init; }
 

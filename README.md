@@ -742,16 +742,26 @@ happen — *new*, *already exists* (an existing partner is never changed) or *ca
 for example an OFTP 1.x partner.
 
 OS4X keeps both sides of a relation in one row, so the identity of a partner comes from the same record: its
-`my_ssid` / `my_sfid` / `my_password` become an identity here, reused when one with that code already exists. That
-identity is also set as the partner's *inbound identity*, so a partner calling us gets the code it knows from OS4X
-whatever identity the listener has. OS4X may hold the same partner in several rows, one per identity; here a partner
-code exists once, so the preview marks those rows and only one of them is imported.
+`my_ssid` / `my_sfid` / `my_password` become an identity here, one per SSID and SFID, reused when it exists already.
+That identity is also set as the partner's *inbound identity*, so a partner calling us gets the code it knows from
+OS4X whatever identity the listener has. OS4X may hold the same partner in several rows, one per identity; here a
+partner code exists once, so the preview marks those rows and only one of them is imported.
+
+OS4X names partners by the convention `IDENTITY__PARTNER` (e.g. `ARTIPA__VW`): the partner is named after the part
+behind `__` (`VW`), our identity after the part before it (`ARTIPA`). When rows with the same identity name use
+different codes of ours, the most used one gets the name and the others get their SFID added; the preview says so.
+
+A row without an SSID of its own that refers to another partner (`substation_reference`) is a sub-station of that
+partner: a plant or a customer behind a clearing centre, reached through the partner's connection with its own SFID.
+It becomes a sub-station of the partner, imported together with it. A sub-station with the SFID of its partner is
+left out (files to that SFID go to the partner itself), and of the same sub-station in several rows only one is taken.
 
 | OS4X | Oftp4Net |
 |---|---|
-| `shortname`, `longname` | name and description |
+| `shortname`, `longname` | name (the part behind `__`) and description |
 | `his_ssid`, `his_sfid`, `his_password` | partner codes and password |
-| `my_ssid`, `my_sfid`, `my_password` | identity, also the inbound identity of the partner |
+| `my_ssid`, `my_sfid`, `my_password` | identity (named after the part before `__`), also the inbound identity of the partner |
+| `substation_reference`, `his_sfid` of a row without `his_ssid` | sub-station of the referenced partner |
 | `address`, `addresstype`, `port` / `port_tls` | host, TLS (address type 3) and port; ISDN partners are not imported |
 | `oftp2_cipher_suite` | cipher suite (`01`–`06`) |
 | `oftpv2_sign`, `oftpv2_encrypt`, `oftp2_compression_level` | file signing, encryption and compression |
