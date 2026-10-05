@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using Oftp4Net.Core.Protocol;
 using Oftp4Net.Domain;
 
@@ -10,6 +11,12 @@ public sealed class Os4xPartnerCandidate
 
     /// <summary>The partner as it would be created; <c>null</c> for a sub-station or a row that cannot be imported.</summary>
     public Partner? Partner { get; init; }
+
+    /// <summary>
+    /// The certificate of the partner for file security (encryption for it, its signatures, secure
+    /// authentication), from OS4X; <c>null</c> when OS4X has no valid one.
+    /// </summary>
+    public Certificate? PartnerCertificate { get; set; }
 
     /// <summary>The sub-station a row without SSID becomes on the partner of <see cref="Parent"/>.</summary>
     public PartnerSubStation? SubStation { get; init; }
@@ -70,6 +77,7 @@ public sealed class Os4xPartnerCandidate
             Partner.EncryptFiles ? "encrypted" : null,
             Partner.SecureAuthentication ? "authenticated" : null,
             Partner.RequestSignedEndResponse ? "signed EERP" : null,
+            PartnerCertificate is null ? null : $"certificate until {PartnerCertificate.ValidTo:d}",
         }.Where(f => f is not null)) is { Length: > 0 } features
             ? features
             : "-";
@@ -98,7 +106,9 @@ public static class Os4xPartnerMapper
             : (null, name);
     }
 
-    public static Os4xPartnerCandidate Map(Os4xPartnerRow row)
+    public static Os4xPartnerCandidate Map(Os4xPartnerRow row) => Map(row, DateTime.Now);
+
+    public static Os4xPartnerCandidate Map(Os4xPartnerRow row, DateTime now)
     {
         var (identityName, partnerName) = SplitName(row.ShortName);
 
@@ -162,8 +172,9 @@ public static class Os4xPartnerMapper
         if (row.CipherSuite > 0 && CipherSuiteCode(row.CipherSuite) is null)
             candidate.Notes.Add($"Cipher suite {row.CipherSuite} is not supported, {partner.FileCipherSuite} is used instead.");
 
-        if (partner.SignFiles || partner.EncryptFiles || partner.SecureAuthentication)
-            candidate.Notes.Add("Assign the partner's certificate after the import, it is not part of the OS4X database.");
+        candidate.PartnerCertificate = PickCertificate(row, now, candidate.Notes);
+        if (candidate.PartnerCertificate is null && (partner.SignFiles || partner.EncryptFiles || partner.SecureAuthentication))
+            candidate.Notes.Add("OS4X has no valid certificate of the partner; assign it after the import.");
 
         if (row.UseTls)
             candidate.Notes.Add("Check the trusted certificate of the TLS connection after the import.");
@@ -178,6 +189,52 @@ public static class Os4xPartnerMapper
             candidate.Notes.Add("The row has no own identification code, assign an identity after the import.");
 
         return candidate;
+    }
+
+    /// <summary>
+    /// The certificate of the partner from OS4X: of the valid ones the one valid longest. Expired ones and those
+    /// that cannot be read are left out with a note.
+    /// </summary>
+    private static Certificate? PickCertificate(Os4xPartnerRow row, DateTime now, List<string> notes)
+    {
+        Certificate? picked = null;
+        foreach (var pem in row.Certificates.Distinct())
+        {
+            X509Certificate2 certificate;
+            try
+            {
+                certificate = X509Certificate2.CreateFromPem(pem);
+            }
+            catch (Exception)
+            {
+                notes.Add("A certificate of the partner in OS4X cannot be read.");
+                continue;
+            }
+
+            using (certificate)
+            {
+                if (certificate.NotAfter < now)
+                {
+                    notes.Add($"The certificate of the partner in OS4X expired on {certificate.NotAfter:d}; it is not imported.");
+                    continue;
+                }
+
+                if (picked is not null && picked.ValidTo >= certificate.NotAfter)
+                    continue;
+
+                var name = certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
+                picked = new Certificate
+                {
+                    Name = string.IsNullOrWhiteSpace(name) ? certificate.Subject : name,
+                    Base64Data = Convert.ToBase64String(certificate.RawData),
+                    ValidFrom = certificate.NotBefore,
+                    ValidTo = certificate.NotAfter,
+                    HasPrivateKey = false,
+                };
+            }
+        }
+
+        return picked;
     }
 
     /// <summary>

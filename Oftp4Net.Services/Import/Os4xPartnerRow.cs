@@ -36,6 +36,12 @@ public sealed class Os4xPartnerRow
     /// </summary>
     public long SubStationOf { get; init; } = -1;
 
+    /// <summary>
+    /// Active certificates of the partner in PEM (<c>cipher_variable_values</c> of the remote certificate
+    /// variables): OS4X keeps one certificate per partner, stored for every purpose and cipher suite.
+    /// </summary>
+    public IReadOnlyList<string> Certificates { get; init; } = [];
+
     /// <summary>OFTP release of the partner; only 2 can be imported.</summary>
     public double OftpVersion { get; init; }
 

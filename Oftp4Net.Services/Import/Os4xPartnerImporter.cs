@@ -3,11 +3,13 @@ using Microsoft.Extensions.Logging;
 using MySqlConnector;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
+using Oftp4Net.Services.Oftp;
 
 namespace Oftp4Net.Services.Import;
 
 /// <summary>Result of an import run.</summary>
-public sealed record Os4xImportResult(int Partners, int SubStations, int Identities, IReadOnlyList<string> Errors);
+public sealed record Os4xImportResult(int Partners, int SubStations, int Identities, int Certificates,
+    IReadOnlyList<string> Errors);
 
 /// <summary>
 /// Reads the partner table of an OS4X installation (MariaDB / MySQL) and creates the partners that are not here
@@ -35,11 +37,11 @@ public class Os4xPartnerImporter(
     /// What the import would do with the rows of OS4X, given the partners and identities that are here already.
     /// </summary>
     public static List<Os4xPartnerCandidate> Plan(IReadOnlyList<Os4xPartnerRow> rows, IEnumerable<Partner> existingPartners,
-        IEnumerable<Identity> existingIdentities)
+        IEnumerable<Identity> existingIdentities, DateTime? now = null)
     {
         var known = existingPartners.Select(p => p.SSID.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var candidates = rows.Select(Os4xPartnerMapper.Map).ToList();
+        var candidates = rows.Select(r => Os4xPartnerMapper.Map(r, now ?? DateTime.Now)).ToList();
         var byIdx = candidates.GroupBy(c => c.Source.Idx).ToDictionary(g => g.Key, g => g.First());
 
         foreach (var candidate in candidates)
@@ -57,6 +59,19 @@ public class Os4xPartnerImporter(
             foreach (var candidate in group)
                 candidate.Notes.Add($"The partner code is in several rows ({rowNames}); only one of them can be imported, " +
                                     "ABP routes of the others need an entry in Oftp:Oftp4Net:Partners.");
+        }
+
+        // A partner in several rows has one certificate here: a row without it takes the one of another row.
+        foreach (var group in candidates.Where(c => c.Partner is not null).GroupBy(c => c.Ssid, StringComparer.OrdinalIgnoreCase))
+        {
+            var withCertificate = group.Where(c => c.PartnerCertificate is not null).MaxBy(c => c.PartnerCertificate!.ValidTo);
+            if (withCertificate is null)
+                continue;
+            foreach (var candidate in group.Where(c => c.PartnerCertificate is null))
+            {
+                candidate.PartnerCertificate = withCertificate.PartnerCertificate;
+                candidate.Notes.Add($"The certificate of the partner is taken from row {withCertificate.Name}.");
+            }
         }
 
         LinkSubStations(candidates, byIdx);
@@ -178,6 +193,8 @@ public class Os4xPartnerImporter(
         var imported = new Dictionary<string, Partner>(StringComparer.OrdinalIgnoreCase);
         var importedSubStations = 0;
         var createdIdentities = 0;
+        var certificateCache = await LoadCertificatesByThumbprintAsync(cancellationToken);
+        var createdCertificates = 0;
 
         foreach (var candidate in selected.Where(c => c.Partner is not null))
         {
@@ -209,6 +226,20 @@ public class Os4xPartnerImporter(
                     createdIdentities++;
             }
 
+            // The partner's certificate for file security, reused when it is here already.
+            if (candidate.PartnerCertificate is { } certificate)
+            {
+                var thumbprint = Thumbprint(certificate);
+                if (!certificateCache.TryGetValue(thumbprint, out var stored))
+                {
+                    stored = certificate;
+                    unitOfWork.AddForInsert(stored);
+                    certificateCache[thumbprint] = stored;
+                    createdCertificates++;
+                }
+                partner.SecurityCertificate = stored;
+            }
+
             unitOfWork.AddForInsert(partner);
         }
 
@@ -236,10 +267,36 @@ public class Os4xPartnerImporter(
         if (imported.Count > 0 || createdIdentities > 0)
             await unitOfWork.CommitAsync(cancellationToken);
 
-        logger.LogInformation("Imported {Partners} partner(s), {SubStations} sub-station(s) and {Identities} identity(ies) from OS4X",
-            imported.Count, importedSubStations, createdIdentities);
+        logger.LogInformation("Imported {Partners} partner(s), {SubStations} sub-station(s), {Identities} identity(ies) and " +
+                              "{Certificates} partner certificate(s) from OS4X",
+            imported.Count, importedSubStations, createdIdentities, createdCertificates);
 
-        return new Os4xImportResult(imported.Count, importedSubStations, createdIdentities, errors);
+        return new Os4xImportResult(imported.Count, importedSubStations, createdIdentities, createdCertificates, errors);
+    }
+
+    /// <summary>The certificates here by thumbprint; one that cannot be loaded is left out.</summary>
+    private async Task<Dictionary<string, Certificate>> LoadCertificatesByThumbprintAsync(CancellationToken cancellationToken)
+    {
+        var byThumbprint = new Dictionary<string, Certificate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var certificate in await certificates.GetAllAsync(cancellationToken))
+        {
+            try
+            {
+                byThumbprint.TryAdd(Thumbprint(certificate), certificate);
+            }
+            catch (Exception)
+            {
+                // Not loadable, so it cannot be a duplicate either.
+            }
+        }
+
+        return byThumbprint;
+    }
+
+    private static string Thumbprint(Certificate certificate)
+    {
+        using var loaded = CertificateLoader.Load(certificate);
+        return loaded.Thumbprint;
     }
 
     /// <summary>The certificates OS4X trusts for TLS that were added there by hand.</summary>
@@ -334,6 +391,44 @@ public class Os4xPartnerImporter(
         return pems;
     }
 
+    /// <summary>
+    /// The active certificates of the partners (the remote certificate variables of all cipher suites) by partner,
+    /// each PEM once. An installation without these tables yields none.
+    /// </summary>
+    private static async Task<Dictionary<long, List<string>>> ReadPartnerCertificatesAsync(MySqlConnection connection,
+        Os4xImportOptions options, CancellationToken cancellationToken)
+    {
+        var prefix = SafeTableName(options.TablePrefix);
+        await using var command = new MySqlCommand(
+            $"""
+             SELECT DISTINCT v.partner_idx, v.var_value
+             FROM {prefix}cipher_variable_values v
+             JOIN {prefix}cipher_variables_definition d ON d.idx = v.var_idx
+             WHERE d.is_remote_certificate = 1 AND v.active = 1
+             """, connection);
+
+        var certificates = new Dictionary<long, List<string>>();
+        try
+        {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var pem = System.Text.Encoding.ASCII.GetString((byte[])reader.GetValue(1));
+                var idx = reader.GetInt64(0);
+                if (!certificates.TryGetValue(idx, out var list))
+                    certificates[idx] = list = [];
+                if (!list.Contains(pem))
+                    list.Add(pem);
+            }
+        }
+        catch (MySqlException ex) when (ex.ErrorCode == MySqlErrorCode.NoSuchTable)
+        {
+            // An older OS4X without file security keeps no certificates of partners.
+        }
+
+        return certificates;
+    }
+
     private static string ConnectionString(Os4xImportOptions options) => new MySqlConnectionStringBuilder
     {
         Server = options.Host,
@@ -348,6 +443,7 @@ public class Os4xPartnerImporter(
     {
         await using var connection = new MySqlConnection(ConnectionString(options));
         await connection.OpenAsync(cancellationToken);
+        var certificates = await ReadPartnerCertificatesAsync(connection, options, cancellationToken);
 
         // The table prefix is configurable in OS4X (TABLEPREFIX in os4x.conf), so it cannot be a parameter.
         var table = $"{SafeTableName(options.TablePrefix)}partners";
@@ -365,9 +461,11 @@ public class Os4xPartnerImporter(
         var rows = new List<Os4xPartnerRow>();
         while (await reader.ReadAsync(cancellationToken))
         {
+            var idx = reader.GetInt64("idx");
             rows.Add(new Os4xPartnerRow
             {
-                Idx = reader.GetInt64("idx"),
+                Idx = idx,
+                Certificates = certificates.TryGetValue(idx, out var pems) ? pems : [],
                 ShortName = Text(reader, "shortname"),
                 LongName = Text(reader, "longname"),
                 HisSsid = Text(reader, "his_ssid"),

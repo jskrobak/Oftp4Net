@@ -394,7 +394,8 @@ public partial class Partners : ComponentBase
                 Messenger.AddWarning(error);
 
             Messenger.AddInformation($"{result.Partners} partner(s), {result.SubStations} sub-station(s), " +
-                                     $"{result.Identities} identity(ies) and {importedCertificates} trusted certificate(s) imported.");
+                                     $"{result.Identities} identity(ies), {result.Certificates} partner certificate(s) and " +
+                                     $"{importedCertificates} trusted certificate(s) imported.");
 
             availableCertificates = await DataService.GetAllCertificatesAsync();
             await ListenerService.RefreshTrustedCertificatesAsync();

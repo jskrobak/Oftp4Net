@@ -767,8 +767,10 @@ left out (files to that SFID go to the partner itself), and of the same sub-stat
 | `oftpv2_sign`, `oftpv2_encrypt`, `oftp2_compression_level` | file signing, encryption and compression |
 | `oftpv2_sec_auth_req`, `oftpv2_req_sig_eerp` | secure authentication, signed end responses |
 
-Certificates are not part of the OS4X partner table, so the partner's certificate for file security is assigned
-after the import. The certificates OS4X trusts for TLS are listed below the partners: those added there by hand
+The partner's certificate for file security (encryption for it, its signatures, secure authentication) comes from
+the certificates OS4X keeps per partner (`cipher_variable_values`): the valid one valid longest is assigned, an expired
+one is left out with a note, and a partner in several rows takes the certificate of whichever row has it. The
+certificates OS4X trusts for TLS are listed below the partners: those added there by hand
 (partner certificates and CAs) are imported as *trusted for TLS of all partners*, as OS4X trusts them; those of the
 Odette trust list are not, Oftp4Net reads the list itself. Expired ones are not selected. Buffer size and credit are
 per partner in OS4X but global here, so they are not taken over.

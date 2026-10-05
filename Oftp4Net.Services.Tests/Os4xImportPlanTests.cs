@@ -152,3 +152,70 @@ public class Os4xImportPlanTests
         Assert.Contains(Row(plan, "ARTIPA__VW").Notes, n => n.Contains("another password in row ARTIPA__MAHLE"));
     }
 }
+
+/// <summary>The certificate of a partner for file security, taken from OS4X.</summary>
+public class Os4xPartnerCertificateTests
+{
+    private static readonly DateTime Now = new(2026, 10, 5);
+
+    private static string Pem(string name, DateTime notAfter)
+    {
+        using var key = System.Security.Cryptography.RSA.Create(2048);
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest($"CN={name}", key,
+            System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(notAfter.AddYears(-2), notAfter);
+        return certificate.ExportCertificatePem();
+    }
+
+    private static Os4xPartnerRow Row(long idx, string name, string ssid, params string[] certificates) => new()
+    {
+        Idx = idx, ShortName = name, HisSsid = ssid, HisSfid = ssid, MySsid = "US", MySfid = "US", MyPassword = "OURS",
+        Address = "oftp.example.com", Port = 3305, PortTls = 6619, AddressType = Os4xAddressTypes.Tls, OftpVersion = 2,
+        Encrypt = true, Active = true, Certificates = certificates,
+    };
+
+    [Fact]
+    public void ValidCertificateBecomesTheCertificateOfThePartner()
+    {
+        var candidate = Os4xPartnerMapper.Map(Row(1, "ARTIPA__MUERDTER", "MUERDTER", Pem("oftp2.muerdter.de", Now.AddYears(3))), Now);
+
+        Assert.Equal("oftp2.muerdter.de", candidate.PartnerCertificate!.Name);
+        Assert.False(candidate.PartnerCertificate.HasPrivateKey);
+        Assert.DoesNotContain(candidate.Notes, n => n.Contains("assign it after the import"));
+        Assert.Contains("certificate until", candidate.Security);
+    }
+
+    [Fact]
+    public void OfSeveralTheOneValidLongestIsTaken()
+    {
+        var candidate = Os4xPartnerMapper.Map(Row(1, "ARTIPA__IABA", "IABA",
+            Pem("old.ideal-automotive.com", Now.AddYears(1)), Pem("new.ideal-automotive.com", Now.AddYears(3))), Now);
+
+        Assert.Equal("new.ideal-automotive.com", candidate.PartnerCertificate!.Name);
+    }
+
+    [Fact]
+    public void ExpiredCertificateIsNotTaken()
+    {
+        var candidate = Os4xPartnerMapper.Map(Row(1, "ARTIPA__MB-TOOL", "MBTOOL", Pem("webedi.mbtool.cz", Now.AddDays(-30))), Now);
+
+        Assert.Null(candidate.PartnerCertificate);
+        Assert.Contains(candidate.Notes, n => n.Contains("expired"));
+        // The partner encrypts files, so the certificate is missing.
+        Assert.Contains(candidate.Notes, n => n.Contains("assign it after the import"));
+    }
+
+    [Fact]
+    public void PartnerInSeveralRowsTakesTheCertificateOfAnotherRow()
+    {
+        // In OS4X the certificate of VW is in the row LETOPLAST__VW-AUDI only.
+        var plan = Os4xPartnerImporter.Plan(
+            [Row(1, "ARTIPA__VW", "VWKOI"), Row(2, "LETOPLAST__VW-AUDI", "VWKOI", Pem("oftpv2.volkswagen.de", Now.AddYears(2)))],
+            [], [], Now);
+
+        var vw = plan.Single(c => c.Name == "ARTIPA__VW");
+        Assert.True(vw.Selected);
+        Assert.Equal("oftpv2.volkswagen.de", vw.PartnerCertificate!.Name);
+        Assert.Contains(vw.Notes, n => n.Contains("taken from row LETOPLAST__VW-AUDI"));
+    }
+}
