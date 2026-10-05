@@ -174,6 +174,7 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
             : new SecretValueConverter(dataProtectionProvider.CreateProtector(SecretValueConverter.PurposeName));
 
         modelBuilder.Entity<Partner>().Property(e => e.Password).HasMaxLength(1000).HasConversion((ValueConverter?)converter);
+        modelBuilder.Entity<Partner>().Property(e => e.OurPassword).HasMaxLength(1000).HasConversion((ValueConverter?)converter);
         modelBuilder.Entity<Identity>().Property(e => e.Password).HasMaxLength(1000).HasConversion((ValueConverter?)converter);
         modelBuilder.Entity<Certificate>().Property(e => e.Password).HasMaxLength(1000).HasConversion((ValueConverter?)converter);
         // A 4096 bit key in PKCS#8 has about 3.2 kB in base64, encrypted more.

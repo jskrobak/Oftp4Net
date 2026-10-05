@@ -229,7 +229,7 @@ public class Os4xPartnerMapperTests
         Os4xPartnerMapper.CompareIdentity(candidate,
             new Oftp4Net.Domain.Identity { SSID = "O0013000000US", SFID = "O0013000000USF", Password = "OTHER" }, sourceRow: null);
 
-        Assert.Contains(candidate.Notes, n => n.Contains("another password here") && n.Contains("used unchanged"));
+        Assert.Contains(candidate.Notes, n => n.Contains("another password here") && n.Contains("our password for it"));
         // The password itself is never shown.
         Assert.DoesNotContain(candidate.Notes, n => n.Contains("OTHER"));
     }
@@ -244,7 +244,7 @@ public class Os4xPartnerMapperTests
 
         var note = Assert.Single(candidate.Notes, n => n.Contains("Our identity"));
         Assert.Contains("in row FIRST", note);
-        Assert.Contains("row imported first", note);
+        Assert.Contains("our password for it", note);
     }
 
     [Theory]

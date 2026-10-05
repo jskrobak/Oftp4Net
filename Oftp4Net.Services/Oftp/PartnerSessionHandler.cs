@@ -192,7 +192,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
         Partner = partner;
         _inboundIdentity = partner.InboundIdentity;
-        return OftpAuthenticationResult.Accept(identity.SSID, identity.Password ?? "",
+        return OftpAuthenticationResult.Accept(identity.SSID, partner.OurPasswordFor(identity),
             secureAuthentication: partner.SecureAuthentication,
             bufferCompression: partner.BufferCompression,
             restart: partner.Restart,

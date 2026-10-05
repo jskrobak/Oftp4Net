@@ -226,7 +226,7 @@ public sealed class ConnectionTestService(
                 {
                     Role = OftpRole.Initiator,
                     LocalCode = identity.SSID,
-                    LocalPassword = identity.Password ?? "",
+                    LocalPassword = partner.OurPasswordFor(identity),
                     ExchangeBufferSize = settings.ExchangeBufferSize,
                     Credit = settings.Credit,
                     ProtocolLevel = partner.ProtocolLevel,

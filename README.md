@@ -760,7 +760,7 @@ left out (files to that SFID go to the partner itself), and of the same sub-stat
 |---|---|
 | `shortname`, `longname` | name (the part behind `__`) and description |
 | `his_ssid`, `his_sfid`, `his_password` | partner codes and password |
-| `my_ssid`, `my_sfid`, `my_password` | identity (named after the part before `__`), also the inbound identity of the partner |
+| `my_ssid`, `my_sfid`, `my_password` | identity (named after the part before `__`), also the inbound identity of the partner; a `my_password` other than the identity's becomes *our password* of the partner |
 | `substation_reference`, `his_sfid` of a row without `his_ssid` | sub-station of the referenced partner |
 | `address`, `addresstype`, `port` / `port_tls` | host, TLS (address type 3) and port; ISDN partners are not imported |
 | `oftp2_cipher_suite` | cipher suite (`01`–`06`) |
@@ -946,7 +946,8 @@ is the better choice.
    if needed, the partner's certificate or CA.
 3. *Listeners*: create a listener (port 6619 for TLS), assign the identity and the server certificate. A partner that
    knows us by another of our codes gets that identity as its *inbound identity* (partner dialog); the listener then
-   answers it with that code instead of its own.
+   answers it with that code instead of its own. A partner that knows us by another password than the identity's
+   gets it as *our password* in the partner dialog; it is sent to that partner only, in both directions.
 4. *Partners*: add the partner with its SSID/SFID codes, the password it sends to you, host and port, and, for a
    mainframe partner, the character set conversion — or import its datasheet (*Import PDX*) and send it ours.
 5. *Partners*: if the partner requires file level security, assign its certificate and switch on signing,

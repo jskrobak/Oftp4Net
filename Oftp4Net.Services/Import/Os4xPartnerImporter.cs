@@ -201,6 +201,9 @@ public class Os4xPartnerImporter(
             {
                 var (identity, created) = await GetIdentityAsync(candidate, identityCache, cancellationToken);
                 partner.InboundIdentity = identity;
+                // OS4X has our password per row: a partner that knows us by another one keeps it.
+                if ((identity.Password ?? "") != candidate.IdentityPassword)
+                    partner.OurPassword = candidate.IdentityPassword;
                 if (created)
                     createdIdentities++;
             }

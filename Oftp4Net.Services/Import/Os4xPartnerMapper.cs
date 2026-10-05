@@ -203,19 +203,17 @@ public static class Os4xPartnerMapper
     }
 
     /// <summary>
-    /// Notes where our identity of the candidate differs from <paramref name="identity"/> with the same SSID and
-    /// SFID: one already here (<paramref name="sourceRow"/> <c>null</c>), or the one another row of OS4X creates. The
-    /// import keeps that identity as it is, so the partner may get another password from us than it expects.
+    /// Notes where our password in the row differs from the one of <paramref name="identity"/> with the same SSID
+    /// and SFID: one already here (<paramref name="sourceRow"/> <c>null</c>), or the one another row of OS4X
+    /// creates. The partner then gets the password of its row as our password for it.
     /// </summary>
     public static void CompareIdentity(Os4xPartnerCandidate candidate, Identity identity, string? sourceRow)
     {
-        var kept = sourceRow is null
-            ? "the existing identity is used unchanged"
-            : "the identity is created from the row imported first";
         var other = sourceRow is null ? "here" : $"in row {sourceRow}";
 
         if ((identity.Password ?? "") != candidate.IdentityPassword)
-            candidate.Notes.Add($"Our identity {candidate.IdentitySsid} has another password {other} than in this row; {kept}.");
+            candidate.Notes.Add($"Our identity {candidate.IdentitySsid} has another password {other} than in this row; " +
+                                "the partner gets the password of this row as our password for it.");
     }
 
     /// <summary>OS4X stores the cipher suite as a number, we as the two digits of SFIDCIPH.</summary>

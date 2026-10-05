@@ -30,6 +30,7 @@
                     <HxInputText Label="SSID" @bind-Value="@currentPartner.SSID" />
                     <HxInputText Label="SFID" @bind-Value="@currentPartner.SFID" />
                     <HxInputText Label="Password" Hint="Password the partner sends in its SSID. Leave empty to not check it." Type="InputType.Password" @bind-Value="@currentPartner.Password" />
+                    <HxInputText Label="Our password" Hint="Password we send to this partner instead of the password of our identity. Leave empty to use the identity's." Type="InputType.Password" @bind-Value="@currentPartner.OurPassword" />
                     <HxInputText Label="Host" @bind-Value="@currentPartner.Host" />
                     <HxInputNumber Decimals="0" Type="InputType.Number" Label="Port" @bind-Value="@currentPartner.Port" />
 

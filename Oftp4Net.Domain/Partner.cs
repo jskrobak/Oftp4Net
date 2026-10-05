@@ -33,6 +33,17 @@ public class Partner: BaseParty
     public Identity? InboundIdentity { get; set; }
 
     /// <summary>
+    /// Password we send to this partner in our SSID instead of the password of our identity, for a partner that
+    /// knows us by another one. Empty uses the password of the identity.
+    /// </summary>
+    [StringLength(8)]
+    public string? OurPassword { get; set; }
+
+    /// <summary>The password we send to the partner in the SSID of <paramref name="identity"/>.</summary>
+    public string OurPasswordFor(Identity identity) =>
+        string.IsNullOrEmpty(OurPassword) ? identity.Password ?? "" : OurPassword;
+
+    /// <summary>
     /// Encoding the content of a virtual file is converted to while it is sent to the partner. Files are stored
     /// locally in <see cref="AnsiCodePage"/>, so <see cref="FileCharacterEncoding.ANSI"/> sends them unchanged.
     /// </summary>

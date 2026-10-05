@@ -225,7 +225,7 @@ public class SendService(ILogger<SendService> logger,
             {
                 Role = OftpRole.Initiator,
                 LocalCode = identity.SSID,
-                LocalPassword = identity.Password ?? "",
+                LocalPassword = partner.OurPasswordFor(identity),
                 ExchangeBufferSize = settings.ExchangeBufferSize,
                 Credit = settings.Credit,
                 ProtocolLevel = partner.ProtocolLevel,
