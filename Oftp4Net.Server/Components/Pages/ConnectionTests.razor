@@ -17,9 +17,12 @@
 
         <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
             <div style="min-width: 22rem;">
-                <HxSelect TItem="Identity" TValue="int" Label="Test as identity"
-                          Data="identities" @bind-Value="identityId"
-                          TextSelector="@(i => $"{i.Name} ({i.SSID})")" ValueSelector="@(i => i.Id)" Nullable="false" />
+                @if (identities is not null)
+                {
+                    <HxSelect TItem="Identity" TValue="int" Label="Test as identity"
+                              Data="identities" @bind-Value="identityId"
+                              TextSelector="@(i => $"{i.Name} ({i.SSID})")" ValueSelector="@(i => i.Id)" Nullable="false" />
+                }
             </div>
             <HxButton Color="ThemeColor.Primary" Icon="BootstrapIcon.PlayFill" Enabled="CanStart"
                       OnClick="() => Start(partners)">Test all</HxButton>

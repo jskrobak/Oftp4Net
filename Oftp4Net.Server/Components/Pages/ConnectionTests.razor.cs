@@ -14,7 +14,8 @@ public partial class ConnectionTests : ComponentBase, IDisposable
     [Inject] protected IHxMessengerService Messenger { get; set; } = null!;
 
     private List<Partner> partners = [];
-    private List<Identity> identities = [];
+    // null until loaded: the page renders while the partners are read, and a select without the item of its value fails
+    private List<Identity>? identities;
     private int identityId;
 
     private bool CanStart => !Tests.IsRunning && identityId != 0;
