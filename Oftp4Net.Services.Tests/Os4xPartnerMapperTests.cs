@@ -25,7 +25,7 @@ public class Os4xPartnerMapperTests
         public string Address = "partner.example.com";
         public int Port = 3305;
         public int PortTls = 6619;
-        public bool UseTls = true;
+        public int AddressType = Os4xAddressTypes.Tls;
         public double OftpVersion = 2;
         public int CipherSuite;
         public bool Sign;
@@ -49,7 +49,7 @@ public class Os4xPartnerMapperTests
             Address = Address,
             Port = Port,
             PortTls = PortTls,
-            UseTls = UseTls,
+            AddressType = AddressType,
             OftpVersion = OftpVersion,
             CipherSuite = CipherSuite,
             Sign = Sign,
@@ -85,10 +85,19 @@ public class Os4xPartnerMapperTests
     [Fact]
     public void PlainPortIsUsedWithoutTls()
     {
-        var candidate = Os4xPartnerMapper.Map(Row(r => r.UseTls = false));
+        var candidate = Os4xPartnerMapper.Map(Row(r => r.AddressType = Os4xAddressTypes.TcpIp));
 
         Assert.Equal(3305, candidate.Partner!.Port);
         Assert.False(candidate.Partner.UseTls);
+    }
+
+    [Fact]
+    public void IsdnPartnerIsNotImported()
+    {
+        var candidate = Os4xPartnerMapper.Map(Row(r => r.AddressType = Os4xAddressTypes.Isdn));
+
+        Assert.False(candidate.CanImport);
+        Assert.Contains(candidate.Notes, n => n.Contains("ISDN"));
     }
 
     [Theory]

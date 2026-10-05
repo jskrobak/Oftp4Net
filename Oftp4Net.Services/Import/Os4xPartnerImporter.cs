@@ -172,7 +172,7 @@ public class Os4xPartnerImporter(
         await using var command = new MySqlCommand(
             $"""
              SELECT idx, shortname, longname, his_ssid, his_sfid, his_password, my_ssid, my_sfid, my_password,
-                    address, port, port_tls, use_tls, oftp_version, oftp2_cipher_suite, oftpv2_sign, oftpv2_encrypt,
+                    address, addresstype, port, port_tls, oftp_version, oftp2_cipher_suite, oftpv2_sign, oftpv2_encrypt,
                     oftp2_compression_level, oftpv2_sec_auth_req, oftpv2_req_sig_eerp, active
              FROM {table}
              ORDER BY shortname
@@ -197,7 +197,7 @@ public class Os4xPartnerImporter(
                 Address = Text(reader, "address"),
                 Port = Number(reader, "port"),
                 PortTls = Number(reader, "port_tls"),
-                UseTls = Number(reader, "use_tls") != 0,
+                AddressType = Number(reader, "addresstype"),
                 OftpVersion = reader.IsDBNull(reader.GetOrdinal("oftp_version")) ? 2 : reader.GetDouble("oftp_version"),
                 CipherSuite = Number(reader, "oftp2_cipher_suite"),
                 Sign = Number(reader, "oftpv2_sign") != 0,

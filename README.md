@@ -752,7 +752,7 @@ code exists once, so the preview marks those rows and only one of them is import
 | `shortname`, `longname` | name and description |
 | `his_ssid`, `his_sfid`, `his_password` | partner codes and password |
 | `my_ssid`, `my_sfid`, `my_password` | identity, also the inbound identity of the partner |
-| `address`, `port` / `port_tls`, `use_tls` | host, port and TLS |
+| `address`, `addresstype`, `port` / `port_tls` | host, TLS (address type 3) and port; ISDN partners are not imported |
 | `oftp2_cipher_suite` | cipher suite (`01`–`06`) |
 | `oftpv2_sign`, `oftpv2_encrypt`, `oftp2_compression_level` | file signing, encryption and compression |
 | `oftpv2_sec_auth_req`, `oftpv2_req_sig_eerp` | secure authentication, signed end responses |

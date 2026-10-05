@@ -63,6 +63,9 @@ public static class Os4xPartnerMapper
         if (string.IsNullOrWhiteSpace(row.HisSsid))
             return Refuse(row, "The partner has no ODETTE identification code.");
 
+        if (row.AddressType == Os4xAddressTypes.Isdn)
+            return Refuse(row, "The partner is reached over ISDN, only TCP/IP is supported.");
+
         var port = row.UseTls ? row.PortTls : row.Port;
         if (port is < 1 or > 65535)
             return Refuse(row, $"Port {port} of the partner is not valid.");
