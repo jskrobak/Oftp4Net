@@ -163,3 +163,19 @@ h1:focus {
 .sidebar-action:hover .sidebar-action-icon {
     color: var(--hx-sidebar-item-hover-icon-color);
 }
+
+/*
+ * The context menu of a grid row is visible only while the row is hovered (HxContextMenu), and the open menu inherits
+ * that: without hover it stays open but invisible. Keep it visible while it is open or focused, and always on devices
+ * that cannot hover. The extra tbody outweighs the scoped rule of the component.
+ */
+.hx-grid tbody tr .hx-context-menu:has(.dropdown-menu.show),
+.hx-grid tbody tr:focus-within .hx-context-menu {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .hx-grid tbody tr .hx-context-menu {
+        opacity: 1;
+    }
+}
