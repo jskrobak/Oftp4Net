@@ -1,0 +1,32 @@
+@using System.Linq.Expressions
+
+@* A setting of a sub-station that is taken over from its partner unless the sub-station overrides it. *@
+<HxSelect TItem="bool"
+          TValue="bool?"
+          Label="@Label"
+          Hint="@Hint"
+          Data="Choices"
+          Value="Value"
+          ValueChanged="ValueChanged"
+          ValueExpression="ValueExpression"
+          TextSelector="@(b => b ? "yes" : "no")"
+          ValueSelector="@(b => (bool?)b)"
+          Nullable="true"
+          NullText="@($"as the partner ({(Inherited ? "yes" : "no")})")" />
+
+@code {
+    private static readonly bool[] Choices = [true, false];
+
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+
+    [Parameter] public string? Hint { get; set; }
+
+    [Parameter] public bool? Value { get; set; }
+
+    [Parameter] public EventCallback<bool?> ValueChanged { get; set; }
+
+    [Parameter] public Expression<Func<bool?>>? ValueExpression { get; set; }
+
+    /// <summary>The value of the partner, used when the sub-station does not override it.</summary>
+    [Parameter] public bool Inherited { get; set; }
+}

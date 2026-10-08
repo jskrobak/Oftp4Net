@@ -9,6 +9,7 @@ using Oftp4Net.DataLayer.Filters;
 using Oftp4Net.Domain;
 using Oftp4Net.Services;
 using Oftp4Net.Services.Import;
+using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.Pdx;
 
 namespace Oftp4Net.Server.Components.Pages;
@@ -22,9 +23,10 @@ public partial class Partners : ComponentBase
     [Inject] protected GlobalSettingsService GlobalSettingsService { get; set; } = null!;
     
     private Partner currentPartner = new();
-    private HashSet<Partner> selectedItems = [];
+    private PartnerRow? selectedRow;
+    private HashSet<PartnerRow> selectedItems = [];
     private PartnerFilter filterModel = new();
-    private HxGrid<Partner> gridComponent = null!;
+    private HxGrid<PartnerRow> gridComponent = null!;
     private HxModal partnerEditModal = null!;
     
     private List<Certificate> availableCertificates = [];
@@ -101,7 +103,6 @@ public partial class Partners : ComponentBase
 
     private static bool HasSetupDetails(Partner partner) =>
         partner.SetupAppliedDate is not null || !string.IsNullOrEmpty(partner.CompanyName) ||
-        partner.SubStations is { Count: > 0 } ||
         partner.InboundDsnPatterns is { Count: > 0 } || partner.OutboundDsnPatterns is { Count: > 0 };
 
     private static string CompanyText(Partner partner) => string.Join(Environment.NewLine, new[]
@@ -153,14 +154,33 @@ public partial class Partners : ComponentBase
         set => currentPartner.Tls = value.Aggregate((SslProtocols)0, (current, item) => current | (SslProtocols)item);
     }
     
-    private async Task<GridDataProviderResult<Partner>> GetGridData(GridDataProviderRequest<Partner> request)
+    /// <summary>
+    /// Partners with their sub-stations right under them. The sort keys are the partner's, and the sort is stable,
+    /// so that a sub-station stays under its partner.
+    /// </summary>
+    private async Task<GridDataProviderResult<PartnerRow>> GetGridData(GridDataProviderRequest<PartnerRow> request)
     {
-        var response = await DataService.GetPartnersDataFragmentAsync(filterModel, request, request.CancellationToken);
-        return new GridDataProviderResult<Partner>()
-        {
-            Data = response.Data,
-            TotalCount = response.TotalCount
-        };
+        var partners = await DataService.GetAllPartnersAsync();
+        var rows = partners
+            .Where(MatchesFilter)
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(p => (p.SubStations ?? [])
+                .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(s => new PartnerRow(p, s))
+                .Prepend(new PartnerRow(p, null)));
+        return request.ApplyTo(rows);
+    }
+
+    /// <summary>A partner is listed when its name or the name or SFID of one of its sub-stations matches.</summary>
+    private bool MatchesFilter(Partner partner)
+    {
+        if (string.IsNullOrEmpty(filterModel.Name))
+            return true;
+
+        return Contains(partner.Name) ||
+               (partner.SubStations ?? []).Any(s => Contains(s.Name) || Contains(s.SFID));
+
+        bool Contains(string? text) => text?.Contains(filterModel.Name, StringComparison.OrdinalIgnoreCase) == true;
     }
     
     private async Task HandleDeleteClick(Partner partner)
@@ -179,10 +199,13 @@ public partial class Partners : ComponentBase
     private async Task HandleSelectedDataItemChanged()
     {
         // Clicking a selected row deselects it and sets the item to null.
-        if (currentPartner is null)
+        if (selectedRow is null)
             return;
 
-        await partnerEditModal.ShowAsync();
+        if (selectedRow.SubStation is { } sub)
+            await HandleEditSubStationClick(selectedRow.Partner, sub);
+        else
+            await HandleEditClick(selectedRow.Partner);
     }
 
 
@@ -199,8 +222,18 @@ public partial class Partners : ComponentBase
 
         try
         {
-            foreach (var item in selectedItems.ToList())
-                await DataService.DeletePartnerAsync(item);
+            var deleted = selectedItems.Where(r => r.SubStation is null).Select(r => r.Partner).ToHashSet();
+            foreach (var partner in deleted)
+                await DataService.DeletePartnerAsync(partner);
+
+            // Sub-stations of partners that stay.
+            foreach (var group in selectedItems.Where(r => r.SubStation is not null && !deleted.Contains(r.Partner)).GroupBy(r => r.Partner))
+            {
+                foreach (var row in group)
+                    SubStationEditor.Remove(group.Key, row.SubStation!.SFID);
+                await DataService.SavePartnerAsync(group.Key);
+            }
+
             await ListenerService.RefreshTrustedCertificatesAsync();
         }
         catch (Exception ex)
@@ -432,4 +465,71 @@ public partial class Partners : ComponentBase
         currentPartner = partner;
         await partnerEditModal.ShowAsync();
     }
+
+    #region Sub-stations
+
+    private HxModal subStationModal = null!;
+    private Partner? subStationPartner;
+
+    /// <summary>SFID of the sub-station being edited, <c>null</c> for a new one.</summary>
+    private string? subStationOriginalSfid;
+
+    /// <summary>A copy of the sub-station, so that closing the dialog without saving leaves the partner as it was.</summary>
+    private PartnerSubStation? editedSubStation;
+
+    private string? subStationError;
+
+    private async Task HandleAddSubStationClick(Partner partner)
+    {
+        subStationPartner = partner;
+        subStationOriginalSfid = null;
+        editedSubStation = new PartnerSubStation();
+        subStationError = null;
+        await subStationModal.ShowAsync();
+    }
+
+    private async Task HandleEditSubStationClick(Partner partner, PartnerSubStation subStation)
+    {
+        subStationPartner = partner;
+        subStationOriginalSfid = subStation.SFID;
+        editedSubStation = SubStationEditor.Copy(subStation);
+        subStationError = null;
+        await subStationModal.ShowAsync();
+    }
+
+    private async Task SaveSubStation()
+    {
+        if (subStationPartner is null || editedSubStation is null)
+            return;
+
+        subStationError = SubStationEditor.Validate(subStationPartner, subStationOriginalSfid, editedSubStation);
+        if (subStationError is not null)
+            return;
+
+        try
+        {
+            SubStationEditor.Save(subStationPartner, subStationOriginalSfid, editedSubStation);
+            await DataService.SavePartnerAsync(subStationPartner);
+        }
+        catch (Exception ex)
+        {
+            subStationError = $"Saving failed: {ex.Message}";
+            return;
+        }
+
+        await subStationModal.HideAsync();
+        await gridComponent.RefreshDataAsync();
+    }
+
+    private async Task HandleDeleteSubStationClick(Partner partner, PartnerSubStation subStation)
+    {
+        SubStationEditor.Remove(partner, subStation.SFID);
+        await DataService.SavePartnerAsync(partner);
+        await gridComponent.RefreshDataAsync();
+    }
+
+    #endregion
 }
+
+/// <summary>A row of the partner list: a partner, or one of its sub-stations listed under it.</summary>
+public sealed record PartnerRow(Partner Partner, PartnerSubStation? SubStation);

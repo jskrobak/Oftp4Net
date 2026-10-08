@@ -509,6 +509,14 @@ A partner can require files to be signed, encrypted or compressed (*Require … 
 without it is refused before it is transferred. Sub-stations of a partner (other SFIDs reached through its connection,
 see below) may override the settings of the partner.
 
+*Partners* lists the sub-stations indented under their partner, as OS4X does. *Add sub-station* in the menu of a
+partner and a click on a sub-station open its dialog: name, SFID, contacts and the security settings, each either
+*as the partner* or overridden. Host, codes, passwords, TLS and secure authentication belong to the connection and
+stay the partner's; certificates of a sub-station are assigned in the dialog of the partner. A sub-station cannot
+have the SFID of its partner or of another of its sub-stations. Certificates assigned to a sub-station follow a change
+of its SFID and are removed with it. A datasheet imported later updates the sub-stations it lists by their SFID and
+leaves the others alone.
+
 A signed end response carries the hash of the transferred content (EERPHSH) and a CMS signature (EERPSIG). A response
 we asked to be signed is only accepted when the signature is valid, made by the partner's certificate and covers the
 hash of the content we sent; otherwise the file stays in the state *SENT* with the problem in the transfer log.

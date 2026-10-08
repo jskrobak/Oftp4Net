@@ -9,10 +9,15 @@
 @using Oftp4Net.Services.Import
 @using Oftp4Net.Core.Protocol
 @using Oftp4Net.Services.Pdx
+@using Oftp4Net.Services.Oftp
 <style>
     .scrollable-table-container {
         overflow: auto;
         height: calc(100vh - 160px);
+    }
+
+    .sub-station-row td {
+        font-size: 0.875em;
     }
 </style>
 <HxModal @ref="partnerEditModal" ShowCloseButton="true">
@@ -251,18 +256,6 @@
                                 <dt class="col-sm-4">Previous certificate</dt>
                                 <dd class="col-sm-8">@previous.Name (valid to @previous.ValidTo.ToString("d"))</dd>
                             }
-                            @foreach (var sub in currentPartner.SubStations ?? [])
-                            {
-                                <dt class="col-sm-4">Sub-station</dt>
-                                <dd class="col-sm-8">
-                                    @sub.Name (@sub.SFID)
-                                    <div class="text-body-secondary">@SubStationText(sub)</div>
-                                    @foreach (var contact in sub.Contacts)
-                                    {
-                                        <PartnerContactView Contact="contact" />
-                                    }
-                                </dd>
-                            }
                             @foreach (var dsn in (currentPartner.InboundDsnPatterns ?? []).Select(d => ("receives", d))
                                           .Concat((currentPartner.OutboundDsnPatterns ?? []).Select(d => ("sends", d))))
                             {
@@ -276,6 +269,86 @@
 
                 </EditForm>
             }
+    </BodyTemplate>
+</HxModal>
+
+<HxModal @ref="subStationModal" ShowCloseButton="true">
+    <HeaderTemplate>
+        @(subStationOriginalSfid is null ? "New sub-station" : "Edit sub-station")
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (subStationPartner is not null && editedSubStation is not null)
+        {
+            <EditForm Model="@editedSubStation" OnValidSubmit="@(async () => { await SaveSubStation(); })">
+                <div class="form-text mb-3">
+                    Reached through the connection of the partner <strong>@subStationPartner.Name</strong> (@subStationPartner.SSID):
+                    host, codes, passwords, TLS and secure authentication are the partner's. Files go to the SFID of the sub-station.
+                </div>
+
+                <HxInputText Label="Name" @bind-Value="@editedSubStation.Name" />
+                <HxInputText Label="SFID"
+                             Hint="SFIDDEST of the files we send to the sub-station, SFIDORIG of the files it sends."
+                             MaxLength="SubStationEditor.MaxSfidLength"
+                             @bind-Value="@editedSubStation.SFID" />
+
+                <hr />
+                <h6>Security</h6>
+                <div class="form-text mb-2">What is not set here is taken over from the partner.</div>
+
+                <InheritedSetting Label="Enable file compression" Inherited="subStationPartner.CompressFiles"
+                                  @bind-Value="@editedSubStation.CompressFiles" />
+                <InheritedSetting Label="Enable file signing" Inherited="subStationPartner.SignFiles"
+                                  @bind-Value="@editedSubStation.SignFiles" />
+                <InheritedSetting Label="Enable file encryption" Inherited="subStationPartner.EncryptFiles"
+                                  @bind-Value="@editedSubStation.EncryptFiles" />
+                <InheritedSetting Label="Ask for a signed EERP or NERP" Inherited="subStationPartner.RequestSignedEndResponse"
+                                  @bind-Value="@editedSubStation.RequestSignedEndResponse" />
+                <InheritedSetting Label="Require signed files" Inherited="subStationPartner.RequireSignedFiles"
+                                  @bind-Value="@editedSubStation.RequireSignedFiles" />
+                <InheritedSetting Label="Require encrypted files" Inherited="subStationPartner.RequireEncryptedFiles"
+                                  @bind-Value="@editedSubStation.RequireEncryptedFiles" />
+                <InheritedSetting Label="Require compressed files" Inherited="subStationPartner.RequireCompressedFiles"
+                                  @bind-Value="@editedSubStation.RequireCompressedFiles" />
+
+                <HxSelect TItem="CipherSuite"
+                          TValue="string"
+                          Label="Cipher suite"
+                          Data="CipherSuite.Supported"
+                          @bind-Value="@editedSubStation.FileCipherSuite"
+                          TextSelector="@(s => $"{s.Code} - {s.Name}")"
+                          ValueSelector="@(s => s.Code)"
+                          Nullable="true"
+                          NullText="@($"as the partner ({subStationPartner.FileCipherSuite})")" />
+
+                <div class="form-text mb-3">Certificates of the sub-station are assigned in the dialog of the partner (<em>Certificates of the partner per purpose</em>).</div>
+
+                @if (editedSubStation.InboundDsnPatterns.Count > 0 || editedSubStation.OutboundDsnPatterns.Count > 0)
+                {
+                    <hr />
+                    <h6>From the OFTP2 Communication Setup</h6>
+                    <dl class="row small mb-2 text-break">
+                        @foreach (var dsn in editedSubStation.InboundDsnPatterns.Select(d => ("receives", d))
+                                      .Concat(editedSubStation.OutboundDsnPatterns.Select(d => ("sends", d))))
+                        {
+                            <dt class="col-sm-4">Sub-station @dsn.Item1</dt>
+                            <dd class="col-sm-8"><code>@dsn.Item2.Pattern</code> (@dsn.Item2.FileFormat) @dsn.Item2.Description</dd>
+                        }
+                    </dl>
+                }
+
+                <hr />
+                <h6>Contacts</h6>
+                <div class="form-text mb-2">E-mails and phones separated by commas. Replaced by the contacts of the partner's datasheet when one is imported.</div>
+                <PartnerContactsEditor Contacts="editedSubStation.Contacts" />
+
+                @if (subStationError is not null)
+                {
+                    <HxAlert Color="ThemeColor.Danger" CssClass="py-2 mt-3 small">@subStationError</HxAlert>
+                }
+
+                <HxSubmit Color="ThemeColor.Primary" CssClass="mt-3">Save</HxSubmit>
+            </EditForm>
+        }
     </BodyTemplate>
 </HxModal>
 
@@ -562,62 +635,90 @@
                 TableContainerCssClass="scrollable-table-container"
                 HeaderRowCssClass="sticky-top"
                 FooterRowCssClass="sticky-bottom"
-                TItem="Partner"
+                TItem="PartnerRow"
                 DataProvider="GetGridData"
-                @bind-SelectedDataItem="currentPartner"
+                ItemRowCssClassSelector="@(r => r.SubStation is null ? null : "sub-station-row")"
+                @bind-SelectedDataItem="selectedRow"
                 @bind-SelectedDataItem:after="HandleSelectedDataItemChanged"
                 Responsive="true"
                 PreserveSelection="false">
             <Columns>
-                
+                @* Sub-stations are listed under their partner: every column sorts by the partner. *@
                 <HxGridColumn HeaderText="Name"
-                              ItemTextSelector="@(d => d.Name)"
-                              SortKeySelector="d => d.Name"
-                              IsDefaultSortColumn="true"/>
+                              SortKeySelector="r => r.Partner.Name"
+                              IsDefaultSortColumn="true">
+                    <ItemTemplate Context="row">
+                        @if (row.SubStation is { } sub)
+                        {
+                            <span class="ps-3 text-body-secondary"><HxIcon Icon="BootstrapIcon.ArrowReturnRight" /></span>
+                            @sub.Name
+                        }
+                        else
+                        {
+                            @row.Partner.Name
+                        }
+                    </ItemTemplate>
+                </HxGridColumn>
                 <HxGridColumn HeaderText="Description"
-                              ItemTextSelector="@(d => d.Description)"
-                              SortKeySelector="d => d.Description"/>
+                              ItemTextSelector="@(r => r.SubStation is null ? r.Partner.Description : "sub-station")"
+                              SortKeySelector="r => r.Partner.Description"/>
                 <HxGridColumn HeaderText="SSID"
-                              ItemTextSelector="@(d => d.SSID)"
-                              SortKeySelector="d => d.SSID"/>
+                              ItemTextSelector="@(r => r.SubStation is null ? r.Partner.SSID : "")"
+                              SortKeySelector="r => r.Partner.SSID"/>
                 <HxGridColumn HeaderText="SFID"
-                              ItemTextSelector="@(d => d.SFID)"
-                              SortKeySelector="d => d.SFID"/>
+                              ItemTextSelector="@(r => r.SubStation?.SFID ?? r.Partner.SFID)"
+                              SortKeySelector="r => r.Partner.SFID"/>
                 <HxGridColumn HeaderText="Host"
-                              ItemTextSelector="@(d => d.Host)"
-                              SortKeySelector="d => d.Host"/>
+                              ItemTextSelector="@(r => r.SubStation is null ? r.Partner.Host : "")"
+                              SortKeySelector="r => r.Partner.Host"/>
                 <HxGridColumn HeaderText="Release"
-                              ItemTextSelector="@(d => ProtocolLevels.Name(d.ProtocolLevel))"
-                              SortKeySelector="d => d.ProtocolLevel"/>
-                @* Not sortable: an enum sort key cannot be translated to SQL. *@
+                              ItemTextSelector="@(r => r.SubStation is null ? ProtocolLevels.Name(r.Partner.ProtocolLevel) : "")"
+                              SortKeySelector="r => r.Partner.ProtocolLevel"/>
                 <HxGridColumn HeaderText="Encoding"
-                              ItemTextSelector="@(d => EncodingDescription(d))"/>
+                              ItemTextSelector="@(r => r.SubStation is null ? EncodingDescription(r.Partner) : "")"/>
                 <HxGridColumn HeaderText="Security"
-                              ItemTextSelector="@(d => SecurityDescription(d))"/>
-                
-                <HxContextMenuGridColumn Context="currentPartner">
+                              ItemTextSelector="@(r => r.SubStation is { } sub ? SubStationText(sub) : SecurityDescription(r.Partner))"/>
+
+                <HxContextMenuGridColumn Context="row">
                     <HxContextMenu>
-                        <HxContextMenuItem Text="Edit"
-                                           Icon="BootstrapIcon.Pen"
-                                           OnClick="async () => await HandleEditClick(currentPartner)" />
+                        @if (row.SubStation is { } sub)
+                        {
+                            <HxContextMenuItem Text="Edit"
+                                               Icon="BootstrapIcon.Pen"
+                                               OnClick="async () => await HandleEditSubStationClick(row.Partner, sub)" />
 
-                        <HxContextMenuItem Text="Send our datasheet"
-                                           Icon="BootstrapIcon.FiletypeXml"
-                                           OnClick="async () => await HandleSendDatasheetClick(currentPartner)" />
+                            <HxContextMenuItem Text="Delete"
+                                               Icon="BootstrapIcon.Trash"
+                                               OnClick="async () => await HandleDeleteSubStationClick(row.Partner, sub)"
+                                               ConfirmationQuestion="@($"Delete the sub-station {sub.Name} ({sub.SFID}) of {row.Partner.Name}?")"/>
+                        }
+                        else
+                        {
+                            <HxContextMenuItem Text="Edit"
+                                               Icon="BootstrapIcon.Pen"
+                                               OnClick="async () => await HandleEditClick(row.Partner)" />
 
-                        <HxContextMenuItem Text="Send our certificate"
-                                           Icon="BootstrapIcon.Award"
-                                           OnClick="async () => await HandleSendCertificateClick(currentPartner)" />
+                            <HxContextMenuItem Text="Add sub-station"
+                                               Icon="BootstrapIcon.Diagram3"
+                                               OnClick="async () => await HandleAddSubStationClick(row.Partner)" />
 
-                        <HxContextMenuItem Text="Test connection"
-                                           Icon="BootstrapIcon.Plug"
-                                           OnClick="async () => await HandleTestConnectionClick(currentPartner)" />
+                            <HxContextMenuItem Text="Send our datasheet"
+                                               Icon="BootstrapIcon.FiletypeXml"
+                                               OnClick="async () => await HandleSendDatasheetClick(row.Partner)" />
 
-                        <HxContextMenuItem Text="Delete"
-                                           Icon="BootstrapIcon.Trash"
-                                           OnClick="async () => await HandleDeleteClick(currentPartner)"
-                                           ConfirmationQuestion="@($"Are you sure you really want to delete selected partners? ({currentPartner.Id})")"/>
+                            <HxContextMenuItem Text="Send our certificate"
+                                               Icon="BootstrapIcon.Award"
+                                               OnClick="async () => await HandleSendCertificateClick(row.Partner)" />
 
+                            <HxContextMenuItem Text="Test connection"
+                                               Icon="BootstrapIcon.Plug"
+                                               OnClick="async () => await HandleTestConnectionClick(row.Partner)" />
+
+                            <HxContextMenuItem Text="Delete"
+                                               Icon="BootstrapIcon.Trash"
+                                               OnClick="async () => await HandleDeleteClick(row.Partner)"
+                                               ConfirmationQuestion="@($"Are you sure you really want to delete selected partners? ({row.Partner.Id})")"/>
+                        }
                     </HxContextMenu>
                 </HxContextMenuGridColumn>
             </Columns>
