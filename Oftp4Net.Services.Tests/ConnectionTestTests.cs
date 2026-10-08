@@ -55,6 +55,33 @@ public class ConnectionTestTests
     }
 
     [Fact]
+    public void TlsFailureWithModernVersionsPointsAtAnOlderOne()
+    {
+        var partner = new Partner { Name = "Hubmaster", Host = "oftp.hubmaster.example", Port = 6619, Tls = SslProtocols.Tls12 | SslProtocols.Tls13 };
+
+        var (message, _) = ConnectionTestService.Describe(
+            new AuthenticationException("Authentication failed", new Exception("error:0A000410:SSL routines::sslv3 alert handshake failure")),
+            new OftpConnectDiagnostics(), partner);
+
+        Assert.Contains("We offered TLS 1.2, TLS 1.3.", message);
+        Assert.Contains("TLS 1.0", message);
+    }
+
+    [Fact]
+    public void TlsFailureWithAnOldVersionOfferedDoesNotSuggestIt()
+    {
+#pragma warning disable SYSLIB0039
+        var partner = new Partner { Name = "Hubmaster", Host = "oftp.hubmaster.example", Port = 6619, Tls = SslProtocols.Tls | SslProtocols.Tls12 };
+#pragma warning restore SYSLIB0039
+
+        var (message, _) = ConnectionTestService.Describe(
+            new AuthenticationException("Authentication failed", new Exception("handshake failure")), new OftpConnectDiagnostics(), partner);
+
+        Assert.Contains("We offered TLS 1.0, TLS 1.2.", message);
+        Assert.DoesNotContain("some software", message);
+    }
+
+    [Fact]
     public void NoConnectionNamesTheAddress()
     {
         var (message, _) = ConnectionTestService.Describe(new SocketException((int)SocketError.ConnectionRefused), new OftpConnectDiagnostics(), Partner);

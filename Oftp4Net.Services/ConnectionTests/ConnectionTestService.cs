@@ -290,7 +290,11 @@ public sealed class ConnectionTestService(
                 return ($"The certificate of {partner.Name} is refused: {problem}", null);
             case AuthenticationException tls:
                 // Our side accepted the certificate, so the partner refused ours or the protocols do not match.
-                return ($"TLS failed: {Innermost(tls)} The partner may refuse our client certificate or the TLS version.", null);
+                var offered = partner.Tls == SslProtocols.None ? SslProtocols.Tls12 | SslProtocols.Tls13 : partner.Tls;
+                return ((offered & OftpDefaults.ObsoleteSslProtocols) == 0
+                    ? $"TLS failed: {Innermost(tls)} We offered {OftpDefaults.Names(offered)}. The partner may refuse our client " +
+                      "certificate, or know only an older TLS version: some software speaks TLS 1.0 only, which can be chosen in the TLS versions of the partner."
+                    : $"TLS failed: {Innermost(tls)} We offered {OftpDefaults.Names(offered)}. The partner may refuse our client certificate or the TLS version.", null);
             case SocketException socket:
                 return ($"No connection to {partner.Host}:{partner.Port}: {socket.Message}", null);
             case TimeoutException timeout:
@@ -338,7 +342,7 @@ public sealed class ConnectionTestService(
         (session.RestartAgreed ? ", restart" : "");
 
     private static string? Tls(OftpConnectDiagnostics diagnostics) =>
-        diagnostics.TlsProtocol is { } protocol ? $"{protocol}, {diagnostics.CipherSuite}" : null;
+        diagnostics.TlsProtocol is { } protocol ? $"{OftpDefaults.Name(protocol)}, {diagnostics.CipherSuite}" : null;
 
     private static string? Certificate(OftpConnectDiagnostics diagnostics) =>
         diagnostics.RemoteCertificate is { } certificate

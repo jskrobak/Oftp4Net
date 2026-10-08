@@ -57,12 +57,13 @@
               Nullable="true"
               NullText="-system trust store-" />
 
-    <HxMultiSelect Label="Tls"
+    <HxMultiSelect Label="TLS versions"
+                   Hint="TLS 1.0 and 1.1 are obsolete; choose them only for a partner whose software knows nothing newer."
                    TItem="SslProtocols"
                    TValue="int"
                    Data="OftpDefaults.AllowedSslProtocols"
                    @bind-Value="SelectedTlsVersions"
-                   TextSelector="@(p => p.ToString())"
+                   TextSelector="@(p => OftpDefaults.Name(p))"
                    ValueSelector="@(p => (int)p)"
                    NullDataText="Loading .."
                    EmptyText="-select SSL versions-" />

@@ -31,9 +31,12 @@ EXPOSE 3305
 COPY --from=build /app/publish .
 # Persistent data (received files, outbox, data protection keys, logs), writable by the non-root app user.
 COPY --from=build --chown=$APP_UID:$APP_UID /app/data /data
+# Lets partners that know only TLS 1.0 be called; see the file.
+COPY Oftp4Net.Server/openssl.cnf /etc/ssl/oftp4net.cnf
 ENV DataDirectory=/data \
     LogDirectory=/data/logs \
-    DataProtection__KeysDirectory=/data/keys
+    DataProtection__KeysDirectory=/data/keys \
+    OPENSSL_CONF=/etc/ssl/oftp4net.cnf
 VOLUME ["/data"]
 USER $APP_UID
 # Liveness only (the process answers), so that a database outage does not restart the container. The image has

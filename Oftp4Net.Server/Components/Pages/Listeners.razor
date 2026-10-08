@@ -57,7 +57,8 @@
                                        TValue="int"
                                        Data="OftpDefaults.AllowedSslProtocols"
                                        @bind-Value="SelectedTlsVersions"
-                                       TextSelector="@(p => p.ToString())"
+                                       TextSelector="@(p => OftpDefaults.Name(p))"
+                                       Hint="TLS 1.0 and 1.1 are obsolete; a listener that allows them allows them to every partner calling it."
                                        ValueSelector="@(p => (int)p)"
                                        EmptyText="-select TLS versions-" />
 

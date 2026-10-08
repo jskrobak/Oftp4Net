@@ -931,6 +931,14 @@ certificate is replaced, while another holder of an Odette certificate has anoth
 partner's certificate by its Odette ID* (on by default) turns this off; connection tests say when a certificate was
 accepted by its ID.
 
+Connections use TLS 1.2 and 1.3 unless the TLS versions of a partner or a listener say otherwise. TLS 1.0 and 1.1
+are obsolete and can be chosen for partners whose software knows nothing newer: HUB-Master of NUMLOG
+(`oftp.hubmaster.net`) speaks TLS 1.0 only, wants a client certificate and has a CA signed with SHA-1. Ubuntu, on
+which the Docker image runs, forbids both even when an application asks for them, so the image lowers that floor in
+its OpenSSL configuration (`OPENSSL_CONF`, [`openssl.cnf`](Oftp4Net.Server/openssl.cnf)); a connection still uses
+only the versions chosen for it. A listener that allows an obsolete version allows it to every partner calling it.
+A connection test that fails in TLS names the versions offered and points at an older one when only newer ones were.
+
 *Accept an invalid TLS certificate* in the partner dialog accepts the partner's certificate even when it is expired,
 not trusted or issued for another name. The connection stays encrypted, but TLS no longer proves who answers, so it is
 meant for a partner whose certificate cannot be fixed; connection tests still report what is wrong with it.
