@@ -1,0 +1,303 @@
+@using System.Security.Authentication
+@using Oftp4Net.Core
+@using Oftp4Net.Core.Protocol
+@using Oftp4Net.Domain
+@using Oftp4Net.Services
+@using Oftp4Net.Services.Encodings
+@using Oftp4Net.Services.Pdx
+@using Oftp4Net.Services.Security
+
+@* The settings of a partner (Partners -> Edit, Connection tests -> the name of a partner). *@
+<EditForm Model="@Partner" OnValidSubmit="SaveAsync">
+    <DataAnnotationsValidator />
+
+    <HxInputText Label="Name" @bind-Value="@Partner.Name" />
+    <HxInputText Label="Description" @bind-Value="@Partner.Description" />
+    <HxInputText Label="SSID" @bind-Value="@Partner.SSID" />
+    <HxInputText Label="SFID" @bind-Value="@Partner.SFID" />
+    <HxInputText Label="Password" Hint="Password the partner sends in its SSID. Leave empty to not check it." Type="InputType.Password" @bind-Value="@Partner.Password" />
+    <HxInputText Label="Our password" Hint="Password we send to this partner instead of the password of our identity. Leave empty to use the identity's." Type="InputType.Password" @bind-Value="@Partner.OurPassword" />
+    <HxInputText Label="Host" @bind-Value="@Partner.Host" />
+    <HxInputNumber Decimals="0" Type="InputType.Number" Label="Port" @bind-Value="@Partner.Port" />
+
+    <HxSelect TItem="Identity"
+              TValue="int?"
+              Label="Inbound identity"
+              Hint="Our code presented to the partner when it calls us. Leave empty to use the identity of the listener."
+              Data="Identities"
+              @bind-Value="@Partner.InboundIdentityId"
+              TextSelector="@(i => $"{i.Name} ({i.SSID})")"
+              ValueSelector="@(i => i.Id)"
+              Nullable="true"
+              NullText="-identity of the listener-" />
+
+    <HxSelect TItem="int"
+              TValue="int"
+              Label="ODETTE-FTP release"
+              Hint="Highest release offered in SSID. The session runs at the lower of the two; file level security and secure authentication need 2.0."
+              Data="ProtocolLevels.All"
+              @bind-Value="@Partner.ProtocolLevel"
+              TextSelector="@(l => $"{l} - ODETTE-FTP {ProtocolLevels.Name(l)}")"
+              ValueSelector="@(l => l)"
+              Nullable="false" />
+
+    <HxCheckbox Label="Use TLS" @bind-Value="@Partner.UseTls"></HxCheckbox>
+    <HxCheckbox Label="Accept an invalid TLS certificate"
+                Hint="Calls the partner even when its certificate expired, is not trusted or is issued for another name, as OS4X did. The connection stays encrypted, but TLS no longer proves who answers; connection tests still report the problem."
+                @bind-Value="@Partner.AcceptInvalidTlsCertificate" />
+
+    <HxSelect TItem="Certificate"
+              TValue="int?"
+              Label="Trusted certificate"
+              Hint="Partner's server certificate or its CA. Leave empty to use the system trust store."
+              Data="Certificates"
+              @bind-Value="@Partner.TrustedCertificateId"
+              TextSelector="@(c => $"{c.Name} (valid to {c.ValidTo:d})")"
+              ValueSelector="@(c => c.Id)"
+              Nullable="true"
+              NullText="-system trust store-" />
+
+    <HxMultiSelect Label="Tls"
+                   TItem="SslProtocols"
+                   TValue="int"
+                   Data="OftpDefaults.AllowedSslProtocols"
+                   @bind-Value="SelectedTlsVersions"
+                   TextSelector="@(p => p.ToString())"
+                   ValueSelector="@(p => (int)p)"
+                   NullDataText="Loading .."
+                   EmptyText="-select SSL versions-" />
+
+
+    <HxSelect TItem="string"
+              TValue="string"
+              Label="Version of our datasheet (PDX)"
+              Hint="1.1 for software that does not know version 1.2 of the OFTP2 Communication Setup yet (e.g. older OS4X). Taken over from the partner's datasheet when it is imported."
+              Data="PdxParser.Versions"
+              @bind-Value="@Partner.PdxVersion"
+              Nullable="false" />
+
+    <HxCheckbox Label="Enable buffer compression"
+                Hint="Runs of equal octets are compressed in the data exchange buffers when the partner offers it too."
+                @bind-Value="@Partner.BufferCompression" />
+
+    <HxCheckbox Label="Enable restart of interrupted transfers"
+                Hint="An interrupted file continues at the last complete 1K block instead of being sent again. Not used for signed, compressed or encrypted files."
+                @bind-Value="@Partner.Restart" />
+
+    <HxSelect TItem="FileCharacterEncoding"
+              TValue="FileCharacterEncoding"
+              Label="Encoding of outgoing files"
+              Hint="Content of files sent to the partner is converted to this encoding."
+              Data="Enum.GetValues<FileCharacterEncoding>()"
+              @bind-Value="@Partner.OutgoingEncoding"
+              TextSelector="@(e => e.ToString())"
+              ValueSelector="@(e => e)"
+              Nullable="false" />
+
+    <HxCheckbox Label="Convert incoming EBCDIC to ANSI"
+                Hint="Content of files received from the partner is converted from EBCDIC to ANSI."
+                @bind-Value="@Partner.ConvertIncomingEbcdicToAnsi" />
+
+    @if (ConversionConfigured)
+    {
+        <HxSelect TItem="CodePageInfo"
+                  TValue="int"
+                  Label="ANSI code page"
+                  Hint="Encoding files are stored in on this server."
+                  Data="CharacterEncodings.AnsiCodePages"
+                  @bind-Value="@Partner.AnsiCodePage"
+                  TextSelector="@(c => c.Name)"
+                  ValueSelector="@(c => c.CodePage)"
+                  SortKeySelector="@(c => c.CodePage)"
+                  Nullable="false" />
+
+        <HxSelect TItem="CodePageInfo"
+                  TValue="int"
+                  Label="EBCDIC code page"
+                  Hint="EBCDIC variant used by the partner."
+                  Data="CharacterEncodings.EbcdicCodePages"
+                  @bind-Value="@Partner.EbcdicCodePage"
+                  TextSelector="@(c => c.Name)"
+                  ValueSelector="@(c => c.CodePage)"
+                  SortKeySelector="@(c => c.CodePage)"
+                  Nullable="false" />
+    }
+
+    <hr />
+    <h6>Security</h6>
+
+    <HxCheckbox Label="Enable file compression"
+                Hint="Content of sent files is compressed with zlib in a CMS package."
+                @bind-Value="@Partner.CompressFiles" />
+
+    <HxCheckbox Label="Enable file signing"
+                Hint="Content of sent files is signed with the file security certificate from the settings."
+                @bind-Value="@Partner.SignFiles" />
+
+    <HxCheckbox Label="Enable file encryption"
+                Hint="Content of sent files is encrypted for the partner's certificate."
+                @bind-Value="@Partner.EncryptFiles" />
+
+    <HxCheckbox Label="Enable secure authentication"
+                Hint="After the SSID exchange both sides prove they hold the private key of the certificate the other one knows. The partner has to require it too."
+                @bind-Value="@Partner.SecureAuthentication" />
+
+    <HxCheckbox Label="Ask partner for a signed EERP or NERP"
+                Hint="The partner is asked to sign the End to End Response of our files."
+                @bind-Value="@Partner.RequestSignedEndResponse" />
+
+    <HxCheckbox Label="Require signed files from the partner"
+                Hint="Files received from the partner have to be signed."
+                @bind-Value="@Partner.RequireSignedFiles" />
+
+    <HxCheckbox Label="Require encrypted files from the partner"
+                Hint="Files received from the partner have to be encrypted for our file security certificate."
+                @bind-Value="@Partner.RequireEncryptedFiles" />
+
+    <HxCheckbox Label="Require compressed files from the partner"
+                Hint="Files received from the partner have to be compressed."
+                @bind-Value="@Partner.RequireCompressedFiles" />
+
+    @if (FileSecurityConfigured)
+    {
+        <HxSelect TItem="CipherSuite"
+                  TValue="string"
+                  Label="Cipher suite"
+                  Hint="Used for signatures, encryption and hashes. Suites 01 and 02 are supported by every OFTP2 node."
+                  Data="CipherSuite.Supported"
+                  @bind-Value="@Partner.FileCipherSuite"
+                  TextSelector="@(s => $"{s.Code} - {s.Name}")"
+                  ValueSelector="@(s => s.Code)"
+                  Nullable="false" />
+
+        <HxSelect TItem="Certificate"
+                  TValue="int?"
+                  Label="Partner certificate"
+                  Hint="The partner's certificate: files and authentication challenges are encrypted for it and the partner's signatures are verified against it."
+                  Data="Certificates"
+                  @bind-Value="@Partner.SecurityCertificateId"
+                  TextSelector="@(c => $"{c.Name} (valid to {c.ValidTo:d})")"
+                  ValueSelector="@(c => c.Id)"
+                  Nullable="true"
+                  NullText="-none-" />
+
+        <CertificateAssignments Assignments="Partner.Certificates"
+                                Certificates="Certificates"
+                                Stations="Partner.SubStations.Select(s => s.SFID).ToList()"
+                                Label="Certificates of the partner per purpose"
+                                Hint="For a partner that uses a different certificate for signing, encryption, end responses or authentication, or a different one per sub-station. What is not listed here uses the certificate above." />
+    }
+
+    @if (OpenSetups.Where(d => d.PartnerId == Partner.Id && Partner.Id != 0).ToList() is { Count: > 0 } partnerSetups)
+    {
+        <HxAlert Color="ThemeColor.Info" CssClass="py-2 small">
+            @foreach (var setup in partnerSetups)
+            {
+                <div>
+                    Datasheet of @setup.Created.ToString("g"):
+                    @(setup.Status switch
+                    {
+                        PartnerSetupStatus.PendingApproval => "waits for approval",
+                        PartnerSetupStatus.Scheduled => $"is applied at {setup.ValidFrom:g}",
+                        _ => "is applied after its EERP",
+                    })
+                    – <a href="PartnerSetups">Partner setups</a>
+                </div>
+            }
+        </HxAlert>
+    }
+
+    <hr />
+    <h6>Contacts</h6>
+    <div class="form-text mb-2">E-mails and phones separated by commas. Replaced by the contacts of the partner's datasheet when one is imported.</div>
+    <PartnerContactsEditor Contacts="Partner.Contacts" />
+
+    @if (HasSetupDetails(Partner))
+    {
+        <hr />
+        <h6>From the OFTP2 Communication Setup</h6>
+        <dl class="row small mb-2 text-break">
+            @if (Partner.SetupAppliedDate is { } applied)
+            {
+                <dt class="col-sm-4">Datasheet</dt>
+                <dd class="col-sm-8">@Partner.SetupDocumentId, created @Partner.SetupDocumentDate?.ToString("g"), applied @applied.ToString("g")</dd>
+            }
+            @if (!string.IsNullOrEmpty(Partner.CompanyName))
+            {
+                <dt class="col-sm-4">Company</dt>
+                <dd class="col-sm-8" style="white-space: pre-line;">@CompanyText(Partner)</dd>
+            }
+            @if (!string.IsNullOrEmpty(Partner.InfoDocumentUrl))
+            {
+                <dt class="col-sm-4">Info document</dt>
+                <dd class="col-sm-8"><a href="@Partner.InfoDocumentUrl" target="_blank" rel="noopener">@Partner.InfoDocumentUrl</a></dd>
+            }
+            @if (Certificates.FirstOrDefault(c => c.Id == Partner.PreviousSecurityCertificateId) is { } previous)
+            {
+                <dt class="col-sm-4">Previous certificate</dt>
+                <dd class="col-sm-8">@previous.Name (valid to @previous.ValidTo.ToString("d"))</dd>
+            }
+            @foreach (var dsn in (Partner.InboundDsnPatterns ?? []).Select(d => ("receives", d))
+                          .Concat((Partner.OutboundDsnPatterns ?? []).Select(d => ("sends", d))))
+            {
+                <dt class="col-sm-4">Partner @dsn.Item1</dt>
+                <dd class="col-sm-8"><code>@dsn.Item2.Pattern</code> (@dsn.Item2.FileFormat) @dsn.Item2.Description</dd>
+            }
+        </dl>
+    }
+
+    <HxSubmit Color="ThemeColor.Primary">Save</HxSubmit>
+
+</EditForm>
+
+@code {
+    [Inject] protected IDataService DataService { get; set; } = null!;
+    [Inject] protected ListenerService ListenerService { get; set; } = null!;
+
+    [Parameter, EditorRequired] public Partner Partner { get; set; } = null!;
+
+    /// <summary>Certificates to choose the trusted and the partner certificate from.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<Certificate> Certificates { get; set; } = [];
+
+    [Parameter, EditorRequired] public IReadOnlyList<Identity> Identities { get; set; } = [];
+
+    /// <summary>Datasheets waiting for approval or for their time, to point at those of the partner.</summary>
+    [Parameter] public IReadOnlyList<PartnerSetupDocument> OpenSetups { get; set; } = [];
+
+    /// <summary>Raised after the partner was saved.</summary>
+    [Parameter] public EventCallback<Partner> OnSaved { get; set; }
+
+    /// <summary>Code pages are only relevant when the content is converted in at least one direction.</summary>
+    private bool ConversionConfigured =>
+        Partner.OutgoingEncoding == FileCharacterEncoding.EBCDIC || Partner.ConvertIncomingEbcdicToAnsi;
+
+    /// <summary>The cipher suite and the certificate are only relevant when something is secured.</summary>
+    private bool FileSecurityConfigured =>
+        Partner.SignFiles || Partner.EncryptFiles || Partner.RequestSignedEndResponse || Partner.SecureAuthentication;
+
+    private List<int> SelectedTlsVersions
+    {
+        get => Enum.GetValues<SslProtocols>().Where(p => p != SslProtocols.None && Partner.Tls.HasFlag(p)).Select(p => (int)p).ToList();
+        set => Partner.Tls = value.Aggregate((SslProtocols)0, (current, item) => current | (SslProtocols)item);
+    }
+
+    private static bool HasSetupDetails(Partner partner) =>
+        partner.SetupAppliedDate is not null || !string.IsNullOrEmpty(partner.CompanyName) ||
+        partner.InboundDsnPatterns is { Count: > 0 } || partner.OutboundDsnPatterns is { Count: > 0 };
+
+    private static string CompanyText(Partner partner) => string.Join(Environment.NewLine, new[]
+    {
+        partner.CompanyName,
+        partner.Address,
+        string.Join(" ", new[] { partner.ZipCode, partner.City }.Where(s => !string.IsNullOrEmpty(s))),
+        partner.Country,
+        string.IsNullOrEmpty(partner.Duns) ? null : $"DUNS {partner.Duns}",
+    }.Where(s => !string.IsNullOrEmpty(s)));
+
+    private async Task SaveAsync()
+    {
+        await DataService.SavePartnerAsync(Partner);
+        await ListenerService.RefreshTrustedCertificatesAsync();
+        await OnSaved.InvokeAsync(Partner);
+    }
+}

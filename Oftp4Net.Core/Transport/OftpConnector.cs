@@ -18,6 +18,12 @@ public sealed class OftpConnectDiagnostics
     /// <summary>Why the certificate of the other side was refused.</summary>
     public string? CertificateProblem { get; internal set; }
 
+    /// <summary>
+    /// The certificate is issued for another name than the host that was called and was accepted by the Odette ID
+    /// it carries (<see cref="OftpTlsOptions.OdetteId"/>).
+    /// </summary>
+    public bool AcceptedByOdetteId { get; internal set; }
+
     public SslProtocols? TlsProtocol { get; internal set; }
     public TlsCipherSuite? CipherSuite { get; internal set; }
 }
@@ -50,13 +56,16 @@ public static class OftpConnector
                         RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
                         {
                             var valid = OftpCertificateValidator.Validate(certificate, errors, tls.TrustedCertificates,
-                                certificateRequired: true, tls.Revocation, tls.VerificationOnlyCertificates, out var problem);
+                                certificateRequired: true, tls.Revocation, tls.VerificationOnlyCertificates, tls.OdetteId, out var problem);
                             if (diagnostics is not null)
                             {
                                 diagnostics.RemoteCertificate = certificate is null
                                     ? null
                                     : X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
                                 diagnostics.CertificateProblem = problem;
+                                diagnostics.AcceptedByOdetteId = valid && certificate is not null &&
+                                    (errors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0 &&
+                                    !OftpCertificateValidator.IsPinned(certificate, tls.TrustedCertificates);
                             }
 
                             return valid || tls.AcceptInvalidCertificate && certificate is not null;

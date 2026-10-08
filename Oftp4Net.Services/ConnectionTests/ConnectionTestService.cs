@@ -56,7 +56,9 @@ public sealed record ConnectionTestResult(
     string? Negotiated = null,
     string? Tls = null,
     string? RemoteCertificate = null,
-    string? Details = null)
+    string? Details = null,
+    string? CertificateProblem = null,
+    [property: JsonIgnore] byte[]? RemoteCertificateData = null)
 {
     public bool Success => Stage == ConnectionTestStage.Completed;
 }
@@ -180,18 +182,18 @@ public sealed class ConnectionTestService(
         var partner = await scope.ServiceProvider.GetRequiredService<IPartnerRepository>().GetObjectAsync(partnerId, cancellationToken);
         var identity = await scope.ServiceProvider.GetRequiredService<IIdentityRepository>().GetObjectAsync(identityId, cancellationToken);
         var endPoint = $"{partner.Host}:{partner.Port}";
+        var diagnostics = new OftpConnectDiagnostics();
 
         ConnectionTestResult Result(ConnectionTestStage stage, string message, string? reasonCode = null, string? negotiated = null,
             string? tls = null, string? certificate = null, string? details = null) =>
             new(partner.Id, partner.Name, identity.SSID, endPoint, tested, stopwatch.Elapsed, stage, message, reasonCode,
-                negotiated, tls, certificate, details);
+                negotiated, tls, certificate, details, diagnostics.CertificateProblem, diagnostics.RemoteCertificate?.RawData);
 
         // Two sessions of ours with the same partner could collide, some partners allow only one per code.
         if (sendService.HasActiveSession(partner.Id))
             return Result(ConnectionTestStage.Skipped, "A session with the partner is running, test again when it ended.");
 
         var settings = await settingsService.GetGlobalSettingsAsync();
-        var diagnostics = new OftpConnectDiagnostics();
         var stage = ConnectionTestStage.Setup;
         OftpSession? session = null;
 
@@ -243,7 +245,9 @@ public sealed class ConnectionTestService(
             // A certificate accepted only because the partner is set to accept an invalid one is still a problem.
             var accepted = diagnostics.CertificateProblem is { } problem
                 ? $" The certificate of {partner.Name} is accepted although it is not valid: {problem}"
-                : "";
+                : diagnostics.AcceptedByOdetteId
+                    ? $" The certificate is not issued for {partner.Host}; it is accepted because it carries the Odette ID {partner.SSID}."
+                    : "";
             return Result(ConnectionTestStage.Completed, "The session started and was ended without transferring anything." + accepted,
                 negotiated: Negotiated(session), tls: Tls(diagnostics), certificate: Certificate(diagnostics));
         }

@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using Oftp4Net.Domain
 @using Oftp4Net.Services.ConnectionTests
+@using Oftp4Net.Core.Transport
 
 <HxCard>
     <HeaderTemplate>
@@ -13,6 +14,8 @@
             passwords and the secure authentication. Then it ends the session before the direction changes, so neither
             side offers a file or an End to End Response, and the send queue is not touched. The partners are tested one
             after another; a partner with a session of ours running is skipped. Every test is in the transfer log.
+            Click a partner to change it, or the shield of a refused certificate to settle it; the test runs again when
+            the change is saved.
         </p>
 
         <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
@@ -64,7 +67,8 @@
                         var result = Tests.Results.GetValueOrDefault(partner.Id);
                         <tr>
                             <td>
-                                <div class="fw-bold">@partner.Name</div>
+                                <button type="button" class="btn btn-link p-0 fw-bold text-start" title="Edit the partner"
+                                        @onclick="() => EditPartnerAsync(partner)">@partner.Name</button>
                                 <div class="small text-body-secondary">@partner.SSID</div>
                             </td>
                             <td class="small">
@@ -109,9 +113,15 @@
                                     <div class="text-body-secondary">@result.Duration.TotalSeconds.ToString("F1") s as @result.Identity</div>
                                 }
                             </td>
-                            <td>
+                            <td class="text-nowrap">
                                 <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.PlayFill"
                                           Tooltip="Test this partner" Enabled="CanStart" OnClick="() => Start([partner])" />
+                                @if (result is { RemoteCertificateData: not null, CertificateProblem: not null })
+                                {
+                                    <HxButton Size="ButtonSize.Small" Color="ThemeColor.Warning" Icon="BootstrapIcon.ShieldExclamation"
+                                              Tooltip="The partner's TLS certificate: call the name it is issued for, trust it or accept it"
+                                              Enabled="!Tests.IsRunning" OnClick="() => ShowCertificateAsync(partner, result)" />
+                                }
                             </td>
                         </tr>
                     }
@@ -120,3 +130,101 @@
         </div>
     </BodyTemplate>
 </HxCard>
+
+<HxModal @ref="partnerEditModal" ShowCloseButton="true" Size="ModalSize.Large" Scrollable="true">
+    <HeaderTemplate>Partner @editedPartner?.Name</HeaderTemplate>
+    <BodyTemplate>
+        @if (editedPartner is not null)
+        {
+            <PartnerForm Partner="editedPartner" Certificates="certificates" Identities="identities ?? []"
+                         OnSaved="HandlePartnerSavedAsync" />
+        }
+    </BodyTemplate>
+</HxModal>
+
+<HxModal @ref="certificateModal" Title="@($"TLS certificate of {certificatePartner?.Name}")" ShowCloseButton="true" Size="ModalSize.Large">
+    <BodyTemplate>
+        @if (presented is { } certificate && certificatePartner is { } partner)
+        {
+            <HxAlert Color="ThemeColor.Danger" CssClass="small">@presented.Problem</HxAlert>
+            <dl class="row small mb-3">
+                <dt class="col-sm-3">Called</dt>
+                <dd class="col-sm-9">@partner.Host:@partner.Port</dd>
+                <dt class="col-sm-3">Issued for</dt>
+                <dd class="col-sm-9 text-break">
+                    @(certificate.Names.Count > 0 ? string.Join(", ", certificate.Names) : "-")
+                    @if (presented.Problem == OftpCertificateProblems.NameMismatch)
+                    {
+                        <div class="text-body-secondary">
+                            When a certificate lists names of its own (subject alternative names), only those count; the
+                            common name (CN) of its subject is not used then.
+                        </div>
+                    }
+                </dd>
+                <dt class="col-sm-3">Odette ID</dt>
+                <dd class="col-sm-9 text-break">
+                    @(certificate.OdetteIds.Count > 0 ? string.Join(", ", certificate.OdetteIds) : "-")
+                    @if (certificate.OdetteIds.Count > 0 && presented.Problem == OftpCertificateProblems.NameMismatch &&
+                         !certificate.OdetteIds.Contains(partner.SSID.Trim(), StringComparer.OrdinalIgnoreCase))
+                    {
+                        <div class="text-body-secondary">
+                            The SSID of @partner.Name is @partner.SSID. A certificate carrying the SSID would be accepted by it
+                            (<em>Settings</em> → <em>Accept a partner's certificate by its Odette ID</em>).
+                        </div>
+                    }
+                </dd>
+                <dt class="col-sm-3">Subject</dt>
+                <dd class="col-sm-9 text-break">@certificate.Subject</dd>
+                <dt class="col-sm-3">Issued by</dt>
+                <dd class="col-sm-9 text-break">@certificate.Issuer</dd>
+                <dt class="col-sm-3">Valid</dt>
+                <dd class="col-sm-9 @(certificate.IsValidNow ? "" : "text-danger")">@certificate.ValidFrom.ToString("d") – @certificate.ValidTo.ToString("d")</dd>
+                <dt class="col-sm-3">SHA-256</dt>
+                <dd class="col-sm-9 text-break"><code>@certificate.Sha256Fingerprint</code></dd>
+                <dt class="col-sm-3">Trusted now</dt>
+                <dd class="col-sm-9 text-break">@TrustedText(partner)</dd>
+            </dl>
+
+            @if (OtherNames.Count > 0)
+            {
+                <h6>Call the name the certificate is issued for</h6>
+                <p class="small text-body-secondary">
+                    The certificate is issued for another name than the partner's host. Calling that name keeps all checks
+                    of the certificate; the name has to lead to the same server.
+                </p>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                    @foreach (var name in OtherNames)
+                    {
+                        @if (resolvingNames.Contains(name))
+                        {
+                            <HxButton Color="ThemeColor.Primary" Icon="BootstrapIcon.ArrowRepeat" Enabled="!saving"
+                                      OnClick="() => UseHostAsync(name)">Call @name</HxButton>
+                        }
+                        else
+                        {
+                            <span class="small text-body-secondary"><code>@name</code> does not resolve here, so it cannot be called.</span>
+                        }
+                    }
+                </div>
+            }
+
+            <h6>Trust this certificate</h6>
+            <p class="small text-body-secondary">
+                The certificate becomes the trusted certificate of @partner.Name and is accepted by itself, whatever
+                address was called and whoever issued it, as long as it is valid. When the partner replaces it, the new one
+                has to be trusted again. Accepting an invalid certificate is turned off. Compare the SHA-256 fingerprint with
+                the one the partner gives you.
+            </p>
+            <HxButton Color="@(resolvingNames.Count > 0 ? ThemeColor.Secondary : ThemeColor.Primary)" Icon="BootstrapIcon.ShieldCheck" CssClass="mb-3"
+                      Enabled="@(!saving && certificate.IsValidNow)" OnClick="TrustAsync">Trust this certificate</HxButton>
+
+            <h6>Accept an invalid certificate</h6>
+            <p class="small text-body-secondary">
+                @partner.Name is called although its certificate is not valid, as OS4X did. The connection stays encrypted,
+                but TLS no longer proves who answers; connection tests still report the problem.
+            </p>
+            <HxButton Color="ThemeColor.Danger" Outline="true" Icon="BootstrapIcon.ShieldSlash"
+                      Enabled="@(!saving && !partner.AcceptInvalidTlsCertificate)" OnClick="AcceptInvalidAsync">Accept an invalid certificate</HxButton>
+        }
+    </BodyTemplate>
+</HxModal>

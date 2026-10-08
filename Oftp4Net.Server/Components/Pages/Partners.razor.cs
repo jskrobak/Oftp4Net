@@ -70,15 +70,6 @@ public partial class Partners : ComponentBase
     private async Task<string?> GetUserAsync() =>
         AuthenticationState is null ? null : (await AuthenticationState).User.Identity?.Name;
     
-    /// <summary>Code pages are only relevant when the content is converted in at least one direction.</summary>
-    private bool ConversionConfigured =>
-        currentPartner.OutgoingEncoding == FileCharacterEncoding.EBCDIC || currentPartner.ConvertIncomingEbcdicToAnsi;
-
-    /// <summary>The cipher suite and the certificate are only relevant when something is secured.</summary>
-    private bool FileSecurityConfigured =>
-        currentPartner.SignFiles || currentPartner.EncryptFiles || currentPartner.RequestSignedEndResponse ||
-        currentPartner.SecureAuthentication;
-
     private static string SecurityDescription(Partner partner)
     {
         var applied = new[]
@@ -100,19 +91,6 @@ public partial class Partners : ComponentBase
 
         return applied.Count == 0 ? "-" : string.Join(", ", applied);
     }
-
-    private static bool HasSetupDetails(Partner partner) =>
-        partner.SetupAppliedDate is not null || !string.IsNullOrEmpty(partner.CompanyName) ||
-        partner.InboundDsnPatterns is { Count: > 0 } || partner.OutboundDsnPatterns is { Count: > 0 };
-
-    private static string CompanyText(Partner partner) => string.Join(Environment.NewLine, new[]
-    {
-        partner.CompanyName,
-        partner.Address,
-        string.Join(" ", new[] { partner.ZipCode, partner.City }.Where(s => !string.IsNullOrEmpty(s))),
-        partner.Country,
-        string.IsNullOrEmpty(partner.Duns) ? null : $"DUNS {partner.Duns}",
-    }.Where(s => !string.IsNullOrEmpty(s)));
 
     private static string SubStationText(PartnerSubStation sub)
     {
@@ -143,17 +121,6 @@ public partial class Partners : ComponentBase
             ? $"sent as {partner.OutgoingEncoding}, received EBCDIC → ANSI"
             : $"sent as {partner.OutgoingEncoding}";
 
-    private List<SslProtocols> GetTlsVersions()
-    {
-        return Enum.GetValues<SslProtocols>().ToList();
-    }
-                            
-    private List<int> SelectedTlsVersions
-    {
-        get => GetTlsVersions().Where(p => p != SslProtocols.None && currentPartner.Tls.HasFlag(p)).Select(p => (int)p).ToList();
-        set => currentPartner.Tls = value.Aggregate((SslProtocols)0, (current, item) => current | (SslProtocols)item);
-    }
-    
     /// <summary>
     /// Partners with their sub-stations right under them. The sort keys are the partner's, and the sort is stable,
     /// so that a sub-station stays under its partner.
@@ -451,14 +418,11 @@ public partial class Partners : ComponentBase
 
     #endregion
 
-    private async Task SavePartner()
+    private async Task HandlePartnerSaved()
     {
-        await DataService.SavePartnerAsync(currentPartner);
-        await ListenerService.RefreshTrustedCertificatesAsync();
-        
         await gridComponent.RefreshDataAsync();
         await partnerEditModal.HideAsync();
-    }   
+    }
 
     private async Task HandleEditClick(Partner partner)
     {

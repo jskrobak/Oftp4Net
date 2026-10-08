@@ -358,6 +358,11 @@
                         <HxCheckbox Label="Download and use the trust list" @bind-Value="@settings.TslEnabled" />
                     </div>
                     <div class="col-12">
+                        <HxCheckbox Label="Accept a partner's certificate by its Odette ID"
+                                    Hint="A TLS certificate issued for another name than the partner's host is accepted when its chain is trusted and it carries the partner's SSID (serial number of the subject or oftp:// URI), as certificates of the Odette CA do. It stays valid when the partner replaces the certificate."
+                                    @bind-Value="@settings.AcceptOdetteIdForHostName" />
+                    </div>
+                    <div class="col-12">
                         <HxCheckbox Label="Check certificate revocation (CRL)"
                                     Hint="Certificates accepted through a chain are checked against the revocation lists of their issuers; a certificate pinned for a partner is trusted by itself."
                                     @bind-Value="@settings.CheckCertificateRevocation" />

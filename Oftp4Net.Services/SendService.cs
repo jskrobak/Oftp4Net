@@ -287,6 +287,7 @@ public class SendService(ILogger<SendService> logger,
             TrustedCertificates = trusted,
             VerificationOnlyCertificates = tslVerificationRoots,
             AcceptInvalidCertificate = partner.AcceptInvalidTlsCertificate,
+            OdetteId = settings.AcceptOdetteIdForHostName ? partner.SSID : null,
             LocalCertificate = clientCertificate,
             Revocation = settings.RevocationPolicy,
         };

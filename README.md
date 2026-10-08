@@ -828,6 +828,19 @@ runs under the identity chosen on the page: a partner that knows us by another o
 skipped, since some partners accept only one session per code. Every test is written to the transfer log
 (*Outgoing*, `ConnectionTested`) and can be run from scripts with `POST /api/v1/partners/{partner}/connection-test`.
 
+What a test finds is fixed on the same page: a click on the name of a partner opens its settings, and the partner is
+tested again when they are saved. A certificate of the partner that was refused, or accepted only because the partner
+accepts an invalid one, has a shield next to the result. It shows the certificate (the names it is issued for,
+issuer, validity, SHA-256 fingerprint) and what it is checked against now, and offers:
+
+- *Call* the name the certificate is issued for, when the name is all that is wrong (e.g. the partner was imported
+  with its IP address): all checks of the certificate stay;
+- *Trust this certificate*: it becomes the trusted certificate of the partner and is accepted by itself, whatever
+  address was called and whoever issued it, as long as it is valid; accepting an invalid certificate is turned off;
+- *Accept an invalid certificate*, as OS4X did: TLS then no longer proves who answers.
+
+The partner is tested again after each of them.
+
 ## Partner Details Exchange (PDX)
 
 The Odette OFTP2 Communication Setup (Odette OP08 part 3, schema version 1.2) is a datasheet with everything needed
@@ -907,6 +920,16 @@ A partner's TLS certificate is accepted when it is valid for the operating syste
 trust list, to the *trusted certificate* of the partner (its own certificate pinned, or its CA) or to a certificate
 *trusted for TLS of all partners* (*Certificates* → edit), or when it is that certificate itself. The last ones serve
 CAs and certificates that several partners use, like the trusted certificates of OS4X.
+
+The certificate also has to be issued for the host that is called. When it lists names of its own (subject
+alternative names), only those count and the common name of its subject is not used. Some partners present a
+certificate for an internal name only: Porsche calls itself `oftp2-3.fw.porsche.de` in the common name, but the only
+DNS name of the certificate is `oftp2-dip.emea.porsche.biz`, which does not resolve outside. Such a certificate is
+accepted when its chain is trusted and it carries the SSID of the partner as its Odette ID, in the serial number of
+the subject or as `oftp://` URI, as certificates of the Odette CA do: the ID names the OFTP node and stays when the
+certificate is replaced, while another holder of an Odette certificate has another ID. *Settings* → *Accept a
+partner's certificate by its Odette ID* (on by default) turns this off; connection tests say when a certificate was
+accepted by its ID.
 
 *Accept an invalid TLS certificate* in the partner dialog accepts the partner's certificate even when it is expired,
 not trusted or issued for another name. The connection stays encrypted, but TLS no longer proves who answers, so it is

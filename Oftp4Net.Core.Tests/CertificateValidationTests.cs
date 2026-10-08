@@ -28,13 +28,16 @@ public class CertificateValidationTests
         return issued.CopyWithPrivateKey(key);
     }
 
-    private static X509Certificate2 CreateEndEntity(string subject, X509Certificate2 issuer)
+    private static X509Certificate2 CreateEndEntity(string subject, X509Certificate2 issuer,
+        X509Extension? subjectAlternativeName = null)
     {
         using var key = RSA.Create(2048);
         var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
         request.CertificateExtensions.Add(new X509KeyUsageExtension(
             X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, true));
+        if (subjectAlternativeName is not null)
+            request.CertificateExtensions.Add(subjectAlternativeName);
 
         return request.Create(issuer, DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1),
             Guid.NewGuid().ToByteArray());
@@ -85,5 +88,87 @@ public class CertificateValidationTests
 
         // A partner's own authority is trusted as it is; the restriction applies to the trust list only.
         Assert.True(Validate(partner, [authority], []));
+    }
+
+    private const string OdetteId = "O0013000018PORSCHE-DIP";
+
+    /// <summary>
+    /// As the certificate of Porsche: issued by an Odette authority for the Odette ID, with a common name of the public
+    /// host but an alternative name of an internal one, so that the host does not match.
+    /// </summary>
+    private static X509Certificate2 CreateOdetteCertificate(X509Certificate2 issuer, string odetteId = OdetteId,
+        bool idInSubject = true, bool idInUri = true)
+    {
+        var names = new SubjectAlternativeNameBuilder();
+        names.AddEmailAddress("edi-operating@porsche.de");
+        names.AddDnsName("oftp2-dip.emea.porsche.biz");
+        if (idInUri)
+            names.AddUri(new Uri($"oftp://{odetteId}"));
+        var subject = (idInSubject ? $"SERIALNUMBER={odetteId}, " : "") + "CN=oftp2-3.fw.porsche.de, O=Dr. Ing. h.c. F. Porsche AG, C=DE";
+        return CreateEndEntity(subject, issuer, names.Build());
+    }
+
+    private static bool ValidateName(X509Certificate2 leaf, X509Certificate2Collection trusted, string? odetteId,
+        out string? problem, SslPolicyErrors errors = SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch) =>
+        OftpCertificateValidator.Validate(leaf, errors, trusted, certificateRequired: true,
+            new CertificateRevocationPolicy { Check = false }, null, odetteId, out problem);
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void CertificateForAnotherNameIsAcceptedByTheOdetteIdOfThePartner(bool idInSubject, bool idInUri)
+    {
+        using var authority = CreateAuthority("CN=ODETTE Issuing Test");
+        using var partner = CreateOdetteCertificate(authority, idInSubject: idInSubject, idInUri: idInUri);
+
+        Assert.True(ValidateName(partner, [authority], "o0013000018porsche-dip ", out var problem));
+        Assert.Null(problem);
+    }
+
+    [Fact]
+    public void CertificateForAnotherNameIsRefusedWithoutTheOdetteIdOfThePartner()
+    {
+        using var authority = CreateAuthority("CN=ODETTE Issuing Test");
+        using var partner = CreateOdetteCertificate(authority);
+
+        // Another node of the Odette CA, or the check turned off.
+        Assert.False(ValidateName(partner, [authority], "O0013000018OTHER", out var problem));
+        Assert.Equal(OftpCertificateProblems.NameMismatch, problem);
+        Assert.False(ValidateName(partner, [authority], null, out problem));
+        Assert.Equal(OftpCertificateProblems.NameMismatch, problem);
+    }
+
+    [Fact]
+    public void OdetteIdDoesNotMakeAnUntrustedCertificateTrusted()
+    {
+        using var authority = CreateAuthority("CN=ODETTE Issuing Test");
+        using var stranger = CreateAuthority("CN=Someone Else");
+        using var partner = CreateOdetteCertificate(stranger);
+
+        Assert.False(ValidateName(partner, [authority], OdetteId, out var problem));
+        Assert.StartsWith("The certificate chain is not trusted", problem);
+    }
+
+    [Fact]
+    public void CertificateTrustedByTheSystemForAnotherNameIsAcceptedByTheOdetteId()
+    {
+        using var authority = CreateAuthority("CN=ODETTE Issuing Test");
+        using var partner = CreateOdetteCertificate(authority);
+
+        // The operating system trusts the chain and reports only the name.
+        Assert.True(ValidateName(partner, [], OdetteId, out _, SslPolicyErrors.RemoteCertificateNameMismatch));
+        Assert.False(ValidateName(partner, [], "O0013000018OTHER", out var problem, SslPolicyErrors.RemoteCertificateNameMismatch));
+        Assert.Equal(OftpCertificateProblems.NameMismatch, problem);
+    }
+
+    [Fact]
+    public void OdetteIdsAreReadFromTheSubjectAndTheAlternativeNames()
+    {
+        using var authority = CreateAuthority("CN=ODETTE Issuing Test");
+        using var partner = CreateOdetteCertificate(authority);
+
+        // System.Uri writes the host of the URI in lower case; IDs are compared ignoring case.
+        Assert.Equal([OdetteId, OdetteId], OdetteCertificate.Ids(partner), StringComparer.OrdinalIgnoreCase);
     }
 }

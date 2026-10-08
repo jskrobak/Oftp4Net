@@ -129,6 +129,15 @@ public class GlobalSettings
     [SettingsItem]
     public bool RequireRevocationInformation { get; set; }
 
+    /// <summary>
+    /// Accept the TLS certificate of a partner that is issued for another name than its host when the chain is
+    /// trusted and the certificate carries the SSID of the partner as its Odette ID, as certificates of the Odette CA
+    /// do. Some partners present a certificate for an internal name only (Porsche); the Odette ID identifies the
+    /// node and stays when the certificate is replaced.
+    /// </summary>
+    [SettingsItem]
+    public bool AcceptOdetteIdForHostName { get; set; } = true;
+
     /// <summary>Seconds to wait for a response from the partner.</summary>
     [SettingsItem]
     [Range(10, 3600)]
