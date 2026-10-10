@@ -185,6 +185,7 @@ builder.Services.AddScoped<PdxExporter>();
 builder.Services.AddScoped<CertificateSigningRequestService>();
 builder.Services.AddScoped<CertificateExchangeService>();
 builder.Services.AddScoped<PartnerTlsTrustService>();
+builder.Services.AddScoped<TestFileService>();
 builder.Services.AddSingleton<PartnerSetupScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PartnerSetupScheduler>());
 builder.Services.AddHttpClient(WebhookDispatcher.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));

@@ -841,6 +841,12 @@ issuer, validity, SHA-256 fingerprint) and what it is checked against now, and o
 
 The partner is tested again after each of them.
 
+**Test file.** *Send test file* in the menu of a partner or a sub-station on *Partners*, and the paper plane on
+*Connection tests*, send a short text file (virtual file name `TEST`, content "This is test from artipa.
+support@artipa.com", both can be changed) as the chosen identity. It goes through the send queue with the partner's
+settings and asks for an End to End Response like any other file; the dialog follows it until the partner answers.
+Agree the virtual file name with the partner first: many partners file what they do not expect as an error.
+
 ## Partner Details Exchange (PDX)
 
 The Odette OFTP2 Communication Setup (Odette OP08 part 3, schema version 1.2) is a datasheet with everything needed

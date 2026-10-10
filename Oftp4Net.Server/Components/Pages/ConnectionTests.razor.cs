@@ -50,6 +50,19 @@ public partial class ConnectionTests : ComponentBase, IDisposable
     private async Task<string?> GetUserAsync() =>
         AuthenticationState is null ? null : (await AuthenticationState).User.Identity?.Name;
 
+    #region Sending a test file
+
+    private HxModal testFileModal = null!;
+    private Partner? testFilePartner;
+
+    private async Task SendTestFileAsync(Partner partner)
+    {
+        testFilePartner = partner;
+        await testFileModal.ShowAsync();
+    }
+
+    #endregion
+
     #region Changing a partner and testing again
 
     private HxModal partnerEditModal = null!;

@@ -1,0 +1,173 @@
+@using Oftp4Net.Domain
+@using Oftp4Net.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@implements IDisposable
+
+@* Sends a short test file to a partner or one of its sub-stations and follows it to its End to End Response. *@
+<p class="small text-body-secondary">
+    The file goes through the send queue with the partner's settings (security, encoding) and asks for an End to End
+    Response as any other file. Agree the virtual file name with the partner: many partners file what they do not
+    expect as an error.
+</p>
+
+<div class="mb-3">
+    <label class="form-label">To</label>
+    <div>@Partner.Name (@Partner.SSID)@(Station is null ? "" : $", sub-station {Station.Name} ({Station.SFID})")</div>
+</div>
+<div class="mb-3">
+    <label class="form-label">Send as identity</label>
+    <select class="form-select" value="@request.IdentityId" @onchange="e => request.IdentityId = int.Parse((string)e.Value!)">
+        @foreach (var identity in Identities)
+        {
+            <option value="@identity.Id">@identity.Name (@identity.SSID)</option>
+        }
+    </select>
+</div>
+<div class="mb-3">
+    <label class="form-label">Virtual file name</label>
+    <input class="form-control" maxlength="26" @bind="request.VirtualFileName" @bind:after="() => request.VirtualFileName = request.VirtualFileName.ToUpperInvariant()" />
+</div>
+<div class="mb-3">
+    <label class="form-label">Content</label>
+    <textarea class="form-control" rows="3" @bind="request.Content"></textarea>
+</div>
+@if (problem is not null)
+{
+    <HxAlert Color="ThemeColor.Danger" CssClass="py-2 small">@problem</HxAlert>
+}
+<HxButton Color="ThemeColor.Primary" Icon="BootstrapIcon.Send" Spinner="sending" Enabled="!sending && request.IdentityId != 0"
+          OnClick="SendAsync">Send test file</HxButton>
+
+@if (item is not null)
+{
+    <hr />
+    <div class="d-flex align-items-center gap-2">
+        <HxBadge Color="@StatusColor(item.Status)">@item.Status</HxBadge>
+        <span class="small">Queue item @item.Id – @StatusText(item)</span>
+        @if (following)
+        {
+            <HxSpinner Size="SpinnerSize.Small" Color="ThemeColor.Secondary" />
+        }
+    </div>
+    @if (!string.IsNullOrEmpty(item.LastError))
+    {
+        <div class="small text-danger mt-1">@item.LastError</div>
+    }
+    <div class="small mt-1"><a href="SendQueue">Send queue</a> · <a href="Logs/outgoing">Logs</a></div>
+}
+
+@code {
+    [Inject] protected TestFileService TestFiles { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    [Parameter, EditorRequired] public Partner Partner { get; set; } = null!;
+
+    /// <summary>A sub-station of the partner to send to; <c>null</c> for the partner itself.</summary>
+    [Parameter] public PartnerSubStation? Station { get; set; }
+
+    [Parameter, EditorRequired] public IReadOnlyList<Identity> Identities { get; set; } = [];
+
+    private TestFileRequest request = new();
+    private SendQueueItem? item;
+    private string? problem;
+    private bool sending;
+    private bool following;
+    private CancellationTokenSource? follow;
+
+    private (int, string?)? shownFor;
+
+    protected override void OnParametersSet()
+    {
+        // A new form only for another partner or station: the parent renders again while a file is being followed.
+        if (shownFor == (Partner.Id, Station?.SFID))
+            return;
+        shownFor = (Partner.Id, Station?.SFID);
+
+        // The identity the partner knows us by, otherwise the first one.
+        request = new TestFileRequest
+        {
+            PartnerId = Partner.Id,
+            DestinationSfid = Station?.SFID,
+            IdentityId = Identities.FirstOrDefault(i => i.Id == Partner.InboundIdentityId)?.Id ?? Identities.FirstOrDefault()?.Id ?? 0,
+        };
+        item = null;
+        problem = null;
+        follow?.Cancel();
+    }
+
+    private async Task SendAsync()
+    {
+        problem = TestFileService.Validate(request);
+        if (problem is not null)
+            return;
+
+        sending = true;
+        try
+        {
+            var user = AuthenticationState is null ? null : (await AuthenticationState).User.Identity?.Name;
+            item = await TestFiles.QueueAsync(request, user);
+        }
+        catch (Exception ex)
+        {
+            problem = $"The test file could not be queued: {ex.Message}";
+            return;
+        }
+        finally
+        {
+            sending = false;
+        }
+
+        _ = FollowAsync(item.Id);
+    }
+
+    /// <summary>Shows the state of the file until the partner answers, for at most ten minutes.</summary>
+    private async Task FollowAsync(int id)
+    {
+        follow?.Cancel();
+        var cts = follow = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        following = true;
+        try
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3), cts.Token);
+                if (await TestFiles.GetAsync(id, cts.Token) is { } current)
+                {
+                    item = current;
+                    await InvokeAsync(StateHasChanged);
+                    if (current.Status is SendStatus.DELIVERED or SendStatus.NOT_DELIVERED or SendStatus.FAILED)
+                        break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            following = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static ThemeColor StatusColor(SendStatus status) => status switch
+    {
+        SendStatus.DELIVERED => ThemeColor.Success,
+        SendStatus.SENT => ThemeColor.Info,
+        SendStatus.NEW => ThemeColor.Secondary,
+        SendStatus.ERROR => ThemeColor.Warning,
+        _ => ThemeColor.Danger,
+    };
+
+    private static string StatusText(SendQueueItem item) => item.Status switch
+    {
+        SendStatus.NEW => "waiting for the send service",
+        SendStatus.ERROR => $"failed, retried at {item.NextRetry:g} (attempt {item.RetryCount})",
+        SendStatus.SENT => $"transferred {item.SentDate:g}, waiting for the End to End Response",
+        SendStatus.DELIVERED => $"delivered, End to End Response {item.DeliveredDate:g}",
+        SendStatus.NOT_DELIVERED => "the partner answered with a Negative End Response",
+        _ => "failed for good",
+    };
+
+    public void Dispose() => follow?.Cancel();
+}

@@ -259,6 +259,16 @@
     </BodyTemplate>
 </HxModal>
 
+<HxModal @ref="testFileModal" ShowCloseButton="true" Size="ModalSize.Large">
+    <HeaderTemplate>Send a test file to @testFilePartner?.Name</HeaderTemplate>
+    <BodyTemplate>
+        @if (testFilePartner is not null && testFileIdentities is not null)
+        {
+            <TestFileForm Partner="testFilePartner" Station="testFileStation" Identities="testFileIdentities" />
+        }
+    </BodyTemplate>
+</HxModal>
+
 <HxModal @ref="connectionTestModal" ShowCloseButton="true" Size="ModalSize.Large">
     <HeaderTemplate>
         Test the connection to @connectionTestPartner?.Name
@@ -448,6 +458,10 @@
                                                Icon="BootstrapIcon.Pen"
                                                OnClick="async () => await HandleEditSubStationClick(row.Partner, sub)" />
 
+                            <HxContextMenuItem Text="Send test file"
+                                               Icon="BootstrapIcon.Send"
+                                               OnClick="async () => await HandleSendTestFileClick(row.Partner, sub)" />
+
                             <HxContextMenuItem Text="Delete"
                                                Icon="BootstrapIcon.Trash"
                                                OnClick="async () => await HandleDeleteSubStationClick(row.Partner, sub)"
@@ -474,6 +488,10 @@
                             <HxContextMenuItem Text="Test connection"
                                                Icon="BootstrapIcon.Plug"
                                                OnClick="async () => await HandleTestConnectionClick(row.Partner)" />
+
+                            <HxContextMenuItem Text="Send test file"
+                                               Icon="BootstrapIcon.Send"
+                                               OnClick="async () => await HandleSendTestFileClick(row.Partner, null)" />
 
                             <HxContextMenuItem Text="Delete"
                                                Icon="BootstrapIcon.Trash"

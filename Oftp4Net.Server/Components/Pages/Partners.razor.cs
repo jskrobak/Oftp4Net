@@ -246,6 +246,23 @@ public partial class Partners : ComponentBase
 
     #endregion
 
+    #region Sending a test file
+
+    private HxModal testFileModal = null!;
+    private Partner? testFilePartner;
+    private PartnerSubStation? testFileStation;
+    private List<Identity>? testFileIdentities;
+
+    private async Task HandleSendTestFileClick(Partner partner, PartnerSubStation? station)
+    {
+        testFileIdentities = await DataService.GetAllIdentitiesAsync();
+        testFilePartner = partner;
+        testFileStation = station;
+        await testFileModal.ShowAsync();
+    }
+
+    #endregion
+
     #region Testing the connection to one partner
 
     private HxModal connectionTestModal = null!;
