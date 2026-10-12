@@ -146,7 +146,10 @@ public class SendService(ILogger<SendService> logger,
                     continue;
 
                 var partner = await partners.GetObjectAsync(group.Key.Value, stoppingToken);
-                var identity = await identities.FindBySfidAsync(group.Key.Destination, stoppingToken);
+                // A partner that knows us by its own inbound identity rejects any other code in our SSID.
+                var identity = partner.InboundIdentityId is { } inboundId
+                    ? await identities.GetObjectAsync(inboundId, stoppingToken)
+                    : await identities.FindBySfidAsync(group.Key.Destination, stoppingToken);
                 if (identity is not null)
                     sessions.Add((partner, identity));
             }
