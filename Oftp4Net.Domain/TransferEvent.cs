@@ -15,6 +15,9 @@ public enum TransferEventCategory
 
     /// <summary>Runs of event hook scripts.</summary>
     Hook,
+
+    /// <summary>Scheduled certificate changes of partners.</summary>
+    Certificate,
 }
 
 public enum TransferEventLevel
@@ -53,6 +56,11 @@ public enum TransferEventType
 
     /// <summary>A connection test: a session ended right after its start, without transferring anything.</summary>
     ConnectionTested,
+
+    CertificateChangeScheduled,
+    CertificateChangeCancelled,
+    CertificateChangeApplied,
+    CertificateChangeFailed,
 }
 
 /// <summary>

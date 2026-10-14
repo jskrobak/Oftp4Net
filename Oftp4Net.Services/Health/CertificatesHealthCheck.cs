@@ -9,14 +9,16 @@ namespace Oftp4Net.Services.Health;
 /// <summary>
 /// No certificate in use expired or expires within <see cref="WarningDays"/> days: ours (TLS client, listeners,
 /// file security, per station and purpose) and those of the partners. Certificates stored but not used, and those
-/// kept only for a roll-over, are left out.
+/// kept only for a roll-over, are left out, and so is a certificate of a partner that a scheduled certificate change
+/// replaces before it expires.
 /// </summary>
 public sealed class CertificatesHealthCheck(IServiceScopeFactory serviceScopeFactory,
     GlobalSettingsService settingsService, ITimeService timeService) : IHealthCheck
 {
     public const int WarningDays = 30;
 
-    public sealed record CertificateUse(Certificate Certificate, string Usage);
+    /// <param name="ReplacedAt">When a scheduled certificate change replaces the certificate in this use.</param>
+    public sealed record CertificateUse(Certificate Certificate, string Usage, DateTime? ReplacedAt = null);
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
@@ -28,25 +30,34 @@ public sealed class CertificatesHealthCheck(IServiceScopeFactory serviceScopeFac
         var listeners = await scope.ServiceProvider.GetRequiredService<IListenerRepository>().GetEnabledWithRefsAsync(cancellationToken);
         var partners = await scope.ServiceProvider.GetRequiredService<IPartnerRepository>().GetAllAsync(cancellationToken);
         var identities = await scope.ServiceProvider.GetRequiredService<IIdentityRepository>().GetAllAsync(cancellationToken);
+        var changes = await scope.ServiceProvider.GetRequiredService<ICertificateChangeRepository>().GetScheduledAsync(cancellationToken);
 
-        var uses = new List<(int? Id, string Usage)>
+        var uses = new List<(int? Id, string Usage, DateTime? ReplacedAt)>
         {
-            (settings.OftpClientCertificateId, "TLS client certificate"),
-            (settings.FileSecurityCertificateId, "file security certificate"),
+            (settings.OftpClientCertificateId, "TLS client certificate", null),
+            (settings.FileSecurityCertificateId, "file security certificate", null),
         };
-        uses.AddRange(listeners.Where(l => l.UseTls).Select(l => (l.CertificateId, $"server certificate of listener {l.Name}")));
+        uses.AddRange(listeners.Where(l => l.UseTls).Select(l => (l.CertificateId, $"server certificate of listener {l.Name}", (DateTime?)null)));
         foreach (var partner in partners)
         {
-            uses.Add((partner.TrustedCertificateId, $"TLS certificate trusted for partner {partner.Name}"));
-            uses.Add((partner.SecurityCertificateId, $"file security certificate of partner {partner.Name}"));
-            uses.AddRange(partner.Certificates.Select(a => ((int?)a.CertificateId, $"{a.Usage} certificate of partner {partner.Name}{Station(a)}")));
+            DateTime? Replaced(params PartnerCertificateUsage[] usages) => changes
+                .Where(c => c.PartnerId == partner.Id && usages.Contains(c.Usage))
+                .Min(c => (DateTime?)c.ActivateAt);
+
+            var securityReplaced = Replaced(PartnerCertificateUsage.Security, PartnerCertificateUsage.SecurityAndTls);
+            uses.Add((partner.TrustedCertificateId, $"TLS certificate trusted for partner {partner.Name}",
+                Replaced(PartnerCertificateUsage.Tls, PartnerCertificateUsage.SecurityAndTls)));
+            uses.Add((partner.SecurityCertificateId, $"file security certificate of partner {partner.Name}", securityReplaced));
+            // A change of the file security certificate replaces the per-station certificates that are the same one.
+            uses.AddRange(partner.Certificates.Select(a => ((int?)a.CertificateId, $"{a.Usage} certificate of partner {partner.Name}{Station(a)}",
+                a.CertificateId == partner.SecurityCertificateId ? securityReplaced : null)));
         }
         foreach (var identity in identities)
-            uses.AddRange(identity.Certificates.Select(a => ((int?)a.CertificateId, $"{a.Usage} certificate of identity {identity.Name}{Station(a)}")));
+            uses.AddRange(identity.Certificates.Select(a => ((int?)a.CertificateId, $"{a.Usage} certificate of identity {identity.Name}{Station(a)}", (DateTime?)null)));
 
         return Evaluate(
             uses.Where(u => u.Id is { } id && certificates.ContainsKey(id))
-                .Select(u => new CertificateUse(certificates[u.Id!.Value], u.Usage))
+                .Select(u => new CertificateUse(certificates[u.Id!.Value], u.Usage, u.ReplacedAt))
                 .ToList(),
             timeService.GetCurrentTime());
     }
@@ -58,7 +69,10 @@ public sealed class CertificatesHealthCheck(IServiceScopeFactory serviceScopeFac
     {
         var certificates = uses
             .GroupBy(u => u.Certificate.Id)
-            .Select(g => (Certificate: g.First().Certificate, Usages: string.Join(", ", g.Select(u => u.Usage).Distinct())))
+            .Select(g => (Certificate: g.First().Certificate,
+                Usages: string.Join(", ", g.Select(u => u.Usage).Distinct()),
+                // Replaced in time only when every use of it is.
+                ReplacedAt: g.All(u => u.ReplacedAt is not null) ? g.Max(u => u.ReplacedAt) : null))
             .OrderBy(c => c.Certificate.ValidTo)
             .ToList();
 
@@ -70,6 +84,7 @@ public sealed class CertificatesHealthCheck(IServiceScopeFactory serviceScopeFac
 
         var problems = certificates
             .Where(c => c.Certificate.ValidTo < now.AddDays(WarningDays))
+            .Where(c => c.ReplacedAt is null || c.ReplacedAt > c.Certificate.ValidTo)
             .Select(c => c.Certificate.ValidTo < now
                 ? $"Certificate {c.Certificate.Name} ({c.Usages}) expired on {c.Certificate.ValidTo:d}."
                 : $"Certificate {c.Certificate.Name} ({c.Usages}) expires on {c.Certificate.ValidTo:d}.")

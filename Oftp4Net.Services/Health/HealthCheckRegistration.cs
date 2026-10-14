@@ -32,6 +32,7 @@ public static class HealthCheckRegistration
             .AddCheck<TrustListHealthCheck>("trust-list", HealthStatus.Degraded, [HealthTags.Operational], Timeout)
             .AddCheck<RevocationListsHealthCheck>("revocation-lists", HealthStatus.Degraded, [HealthTags.Operational], Timeout)
             .AddCheck<CertificatesHealthCheck>("certificates", HealthStatus.Degraded, [HealthTags.Operational], Timeout)
+            .AddCheck<CertificateChangesHealthCheck>("certificate-changes", HealthStatus.Degraded, [HealthTags.Operational], Timeout)
             .AddCheck<SendQueueHealthCheck>("send-queue", HealthStatus.Degraded, [HealthTags.Operational], Timeout)
             .AddCheck<InternalQueuesHealthCheck>("internal-queues", HealthStatus.Degraded, [HealthTags.Operational], Timeout)
             .AddCheck<RetentionHealthCheck>("retention", HealthStatus.Degraded, [HealthTags.Operational], Timeout);

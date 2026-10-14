@@ -107,10 +107,17 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IRepository<SettingsItem, string>>(sp => sp.GetRequiredService<ISettingsItemRepository>());
         services.TryAddTransient<IEntityKeyAccessor<SettingsItem, string>, DbEntityKeyAccessor<SettingsItem, string>>();
         services.TryAddSingleton<IRepositoryQueryProvider<SettingsItem, string>, SettingsItemDbRepositoryQueryProvider>();
+
+        //CertificateChange
+        services.TryAddScoped<ICertificateChangeRepository, CertificateChangeRepository>();
+        services.TryAddScoped<IRepository<CertificateChange, int>>(sp => sp.GetRequiredService<ICertificateChangeRepository>());
+        services.TryAddTransient<IEntityKeyAccessor<CertificateChange, int>, DbEntityKeyAccessor<CertificateChange, int>>();
+        services.TryAddSingleton<IRepositoryQueryProvider<CertificateChange, int>, CertificateChangeDbRepositoryQueryProvider>();
         
         services.AddSingleton<IEntityValidator<object>, ValidatableObjectEntityValidator>();
 
-        services.AddSingleton<ITimeService, ApplicationTimeService>();
+        services.AddSingleton<ApplicationTimeService>();
+        services.AddSingleton<ITimeService>(sp => sp.GetRequiredService<ApplicationTimeService>());
         services.AddSingleton<ICacheService, MemoryCacheService>();
         services.AddSingleton(new MemoryCacheServiceOptions { UseCacheDependenciesSupport = false });
 

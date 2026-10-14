@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using Oftp4Net.Domain;
 using Oftp4Net.DataLayer.Repositories;
 using BitzArt.Blazor.Cookies;
 using Havit.Blazor.Components.Web;
@@ -140,6 +141,11 @@ builder.Services.AddAuthorization(options =>
 {
     // Everything except the login page and static files requires a signed in user.
     options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
+    // API tokens with a scope: sending files, fetching received ones, certificate changes.
+    foreach (var scope in ApiTokenScopesExtensions.All)
+        options.AddPolicy(ApiTokenAuthenticationHandler.PolicyFor(scope), policy => policy
+            .AddAuthenticationSchemes(ApiTokenAuthenticationHandler.SchemeName)
+            .RequireClaim(ApiTokenAuthenticationHandler.ScopeClaim, scope.ToString()));
 });
 builder.Services.AddCascadingAuthenticationState();
 
@@ -184,10 +190,13 @@ builder.Services.AddScoped<PartnerSetupService>();
 builder.Services.AddScoped<PdxExporter>();
 builder.Services.AddScoped<CertificateSigningRequestService>();
 builder.Services.AddScoped<CertificateExchangeService>();
+builder.Services.AddScoped<CertificateChangeService>();
 builder.Services.AddScoped<PartnerTlsTrustService>();
 builder.Services.AddScoped<TestFileService>();
 builder.Services.AddSingleton<PartnerSetupScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PartnerSetupScheduler>());
+builder.Services.AddSingleton<CertificateChangeScheduler>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CertificateChangeScheduler>());
 builder.Services.AddHttpClient(WebhookDispatcher.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient(TslService.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddHttpClient(CrlStore.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));

@@ -9,6 +9,7 @@ using Oftp4Net.Services.Oftp;
 using Oftp4Net.Services.Pdx;
 using Oftp4Net.Services.Api;
 using Oftp4Net.Services.ConnectionTests;
+using Oftp4Net.Services.Security;
 
 namespace Oftp4Net.Server.Api;
 
@@ -23,9 +24,10 @@ public static class ApiEndpoints
             .RequireAuthorization(new AuthorizeAttribute { AuthenticationSchemes = ApiTokenAuthenticationHandler.SchemeName })
             .WithTags("Oftp4Net");
 
-        MapOutbox(api, app);
-        MapInbox(api);
+        MapOutbox(api.MapGroup("").RequireAuthorization(ApiTokenAuthenticationHandler.PolicyFor(ApiTokenScopes.Outbox)), app);
+        MapInbox(api.MapGroup("").RequireAuthorization(ApiTokenAuthenticationHandler.PolicyFor(ApiTokenScopes.Inbox)));
         MapReference(api);
+        MapCertificateChanges(api);
     }
 
     #region Outbox
@@ -271,6 +273,9 @@ public static class ApiEndpoints
 
     private static void MapReference(RouteGroupBuilder api)
     {
+        // Reading is open to every token; testing connections needs the scope Certificates.
+        var certificates = api.MapGroup("").RequireAuthorization(ApiTokenAuthenticationHandler.PolicyFor(ApiTokenScopes.Certificates));
+
         api.MapGet("/partners", async (IPartnerRepository repository, CancellationToken cancellationToken) =>
                 Results.Ok((await repository.GetAllAsync(cancellationToken))
                     .Select(p => new PartyDto(p.Id, p.Name, p.SSID, p.SFID)).ToList()))
@@ -281,7 +286,7 @@ public static class ApiEndpoints
                     .Select(i => new PartyDto(i.Id, i.Name, i.SSID, i.SFID)).ToList()))
             .WithSummary("Lists our identities that can be used when sending.");
 
-        api.MapPost("/partners/{partner}/connection-test", async (string partner, string? identity,
+        certificates.MapPost("/partners/{partner}/connection-test", async (string partner, string? identity,
                 IPartnerRepository partners, IIdentityRepository identities, ConnectionTestService tests,
                 CancellationToken cancellationToken) =>
             {
@@ -351,6 +356,84 @@ public static class ApiEndpoints
 
     #endregion
 
+    #region Certificate changes
+
+    private static void MapCertificateChanges(RouteGroupBuilder api)
+    {
+        var certificates = api.MapGroup("").RequireAuthorization(ApiTokenAuthenticationHandler.PolicyFor(ApiTokenScopes.Certificates));
+
+        api.MapGet("/partners/{partner}/certificate-changes", async (string partner, IPartnerRepository partners,
+                ICertificateChangeRepository changes, CancellationToken cancellationToken) =>
+                await FindPartnerAsync(partner, partners, cancellationToken) is { } entity
+                    ? Results.Ok((await changes.GetByPartnerAsync(entity.Id, cancellationToken)).Select(CertificateChangeDto.From).ToList())
+                    : Results.NotFound(new ApiError($"Unknown partner '{partner}'.")))
+            .WithSummary("Certificate changes of a partner, scheduled and past.");
+
+        certificates.MapPost("/partners/{partner}/certificate-changes", async (
+                string partner,
+                IFormFile file,
+                [FromForm] PartnerCertificateUsage? usage,
+                [FromForm] string activateAt,
+                [FromForm] string? note,
+                HttpContext httpContext,
+                IPartnerRepository partners,
+                CertificateChangeService service,
+                ApplicationTimeService time,
+                CancellationToken cancellationToken) =>
+            {
+                if (await FindPartnerAsync(partner, partners, cancellationToken) is not { } entity)
+                    return Results.NotFound(new ApiError($"Unknown partner '{partner}'."));
+                if (!time.TryParseTime(activateAt, out var activateAtTime))
+                    return Results.BadRequest(new ApiError($"'{activateAt}' is not a time such as 2026-10-01T06:00 or 2026-10-01T04:00:00Z."));
+
+                using var buffer = new MemoryStream();
+                await file.CopyToAsync(buffer, cancellationToken);
+                try
+                {
+                    var change = await service.ScheduleFileAsync(entity.Id, buffer.ToArray(), file.FileName,
+                        usage ?? PartnerCertificateUsage.Security, activateAtTime, note, "API: " + httpContext.User.Identity?.Name,
+                        cancellationToken);
+                    return Results.Created($"/api/v1/certificate-changes/{change.Id}", CertificateChangeDto.From(change));
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.BadRequest(new ApiError(ex.Message));
+                }
+            })
+            .DisableAntiforgery()
+            .WithSummary("Uploads a new certificate of the partner (.cer, .crt, .pem) to be used from activateAt.")
+            .WithDescription("activateAt is an ISO 8601 time: with an offset or Z an instant, without one the local time of the server. " +
+                             "usage: Security (default; file encryption and signature verification, the previous certificate stays accepted " +
+                             "for signatures), Tls (trusted TLS certificate) or SecurityAndTls. A time in the past applies it right away.");
+
+        certificates.MapDelete("/certificate-changes/{id:int}", async (int id, HttpContext httpContext, ICertificateChangeRepository changes,
+                CertificateChangeService service, CancellationToken cancellationToken) =>
+            {
+                if ((await changes.GetAllAsync(cancellationToken)).All(c => c.Id != id))
+                    return Results.NotFound();
+
+                try
+                {
+                    await service.CancelAsync(id, "API: " + httpContext.User.Identity?.Name, cancellationToken);
+                    return Results.NoContent();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.Conflict(new ApiError(ex.Message));
+                }
+            })
+            .WithSummary("Cancels a scheduled certificate change.");
+    }
+
+    /// <summary>The partner with the SSID or the name.</summary>
+    private static async Task<Partner?> FindPartnerAsync(string partner, IPartnerRepository partners, CancellationToken cancellationToken)
+    {
+        var all = await partners.GetAllAsync(cancellationToken);
+        return all.FirstOrDefault(p => Matches(p.SSID, partner)) ?? all.FirstOrDefault(p => Matches(p.Name, partner));
+    }
+
+    #endregion
+
     private static bool Matches(string? value, string other) => string.Equals(value?.Trim(), other.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private static int Skip(int? skip) => Math.Max(0, skip ?? 0);
@@ -406,6 +489,13 @@ public record TransferEventDto(int Id, DateTime Timestamp, string Category, stri
     public static TransferEventDto From(TransferEvent e) => new(e.Id, e.Timestamp, e.Category.ToString(), e.Level.ToString(),
         e.Type.ToString(), e.Message, e.PartnerName, e.VirtualFileName, e.DurationMs, e.SendQueueItemId, e.ReceivedFileId,
         e.IsArchived);
+}
+
+public record CertificateChangeDto(int Id, string Partner, int? CertificateId, string? CertificateName, DateTime? CertificateValidTo,
+    string Usage, DateTime ActivateAt, string Status, DateTime? AppliedAt, string? Note, string? LastError, DateTime Created, string? CreatedBy)
+{
+    public static CertificateChangeDto From(CertificateChange c) => new(c.Id, c.PartnerName, c.CertificateId, c.Certificate?.Name,
+        c.Certificate?.ValidTo, c.Usage.ToString(), c.ActivateAt, c.Status.ToString(), c.AppliedAt, c.Note, c.LastError, c.Created, c.CreatedBy);
 }
 
 public record ListenerStatusDto(string Name, string EndPoint, bool Running, string? Error, int ActiveSessions);

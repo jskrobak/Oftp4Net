@@ -27,9 +27,11 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Secure authentication (SSIDAUTH with SECD/AUCH/AURP): both sides prove they hold the private key of their certificate
 - Restart of interrupted transfers and ODETTE-FTP buffer compression, both negotiated per partner
 - Partners on the older ODETTE-FTP 1.2 - 1.4 (RFC 2204) with their own command layout
-- REST API with bearer tokens and webhooks, scripts run on transfer events, persistent transfer log
+- REST API with bearer tokens limited to what they need (scopes) and webhooks, scripts run on transfer events,
+  persistent transfer log
 - Partner Details Exchange (PDX, Odette OFTP2 Communication Setup): partners set up and updated from their datasheets,
   received by e-mail or over OFTP, our own datasheet exported and sent
+- New certificates of partners scheduled for the time the partner starts using them, from the UI or the REST API
 - Automatic exchange of certificates over OFTP (ODETTE_CERTIFICATE_DELIVER, _REQUEST and _REPLACE): renewals,
   roll-overs and replacements taken over without the administrator
 - Certificate signing requests (CSR) with the profile of the OFTP2 Certificate Policy, for the Odette CA and others
@@ -307,7 +309,8 @@ readinessProbe:
 | `send-service` | the service stopped or has not processed the queue for three send intervals and a minute; degraded while paused |
 | `trust-list` | degraded: the Odette trust list cannot be downloaded or is past its next update |
 | `revocation-lists` | degraded: a revocation list cannot be read or is older than *Maximum age of a revocation list* |
-| `certificates` | degraded: a certificate in use (ours, listeners, partners, per station and purpose) expired or expires within 30 days |
+| `certificates` | degraded: a certificate in use (ours, listeners, partners, per station and purpose) expired or expires within 30 days, unless a scheduled certificate change replaces it in time |
+| `certificate-changes` | degraded: a scheduled certificate change is more than 10 minutes overdue, failed in the last 7 days, or its certificate expires before it is to be used |
 | `send-queue` | degraded: a file waits to be sent for more than 24 hours, failed for good in the last 24 hours, or a received file waits for more than an hour for its End to End Response |
 | `internal-queues` | degraded: the queue of the transfer log, the webhooks or the hooks is 80 % full and about to drop items |
 | `retention` | degraded: the nightly removal of old data failed or has not run for two days |
@@ -670,6 +673,18 @@ to the TLS connection and the SSID password.
 Integrations can use a REST API authenticated with a bearer token: `Authorization: Bearer <token>`.
 Tokens are created in *Settings → API tokens* and shown only once (only their hash is stored).
 
+Every token reads partners, identities, certificate changes, the transfer log, the status, our partner setup (PDX)
+and the health checks. Anything else needs a scope of the token; a request without it gets `403`:
+
+| Scope | Allows | E.g. for |
+|---|---|---|
+| *(none)* | reading only | the monitoring (Zabbix) |
+| `Outbox` | `/outbox`: sending files, reading, retrying and removing them | an ERP |
+| `Inbox` | `/inbox`: fetching received files; the token's inbox webhook is called only with it | an ERP |
+| `Certificates` | scheduling and cancelling certificate changes of partners, `connection-test` | an agent that keeps the partners' certificates up to date |
+
+Tokens created before the scopes have all three.
+
 *Settings → REST API* shows the interactive documentation (Scalar) with request examples in several languages;
 the OpenAPI description itself is at `/openapi/v1.json`. Both require a signed in administrator.
 
@@ -685,6 +700,8 @@ the OpenAPI description itself is at `/openapi/v1.json`. Both require a signed i
 | `POST /api/v1/inbox/{id}/fetched` | marks a received file as fetched |
 | `GET /api/v1/partners`, `/identities` | codes usable when sending |
 | `POST /api/v1/partners/{partner}/connection-test` | tests the connection to a partner without transferring anything (`identity`, default the first one) |
+| `GET`, `POST /api/v1/partners/{partner}/certificate-changes` | certificate changes of a partner; uploads a certificate with the time it is used from (see [Scheduled certificate changes](#scheduled-certificate-changes)) |
+| `DELETE /api/v1/certificate-changes/{id}` | cancels a scheduled certificate change |
 | `GET /api/v1/events` | reads the transfer log |
 | `GET /api/v1/status` | state of the services, listeners and queues |
 
@@ -901,6 +918,35 @@ answered with a NERP carrying the reason, as the specification requires, and has
 certificates that replace one the partner already has here (default), those plus a first certificate whose chain
 ends with a trusted certification authority, or nothing at all. A self signed certificate is only accepted as the
 renewal of one that is already configured, as OP08 requires.
+
+## Scheduled certificate changes
+
+Partners usually announce a new certificate by e-mail some time ahead, with the time they start using it.
+*Certificate changes* (or *Schedule a new certificate* in the menu of a partner) takes the new certificate — a file
+or one stored already — and the time, and the scheduler puts it in place at that time:
+
+| Used for | What changes |
+|---|---|
+| File security (default) | the *Partner certificate*: files are encrypted for it and the partner's signatures are verified against it. The replaced certificate becomes the *previous* one and is still accepted for signatures of files and End to End Responses that were on their way, and so is every certificate of a station or purpose that was the same one |
+| TLS trust | the *trusted certificate* of the partner; the listeners take it over at once |
+| File security and TLS trust | both, the usual case of an Odette certificate used for files and TLS |
+
+A time that has passed applies the certificate right away, and a scheduled change can be cancelled until its time.
+Every change is written to *Logs → Certificates*. The health check `certificate-changes` reports a change that is
+overdue (the scheduler would be stuck), a certificate that expires before it is to be used and a change that failed;
+`certificates` does not report a certificate that expires when a change replaces it in time. A partner whose TLS
+certificate is issued by a public or the Odette CA needs no change of the TLS trust at all.
+
+The same through the REST API, with a token that has the scope `Certificates`:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -F file=@partner-2027.crt -F usage=Security \
+     -F activateAt=2026-11-06T10:00 -F note="Announced by e-mail on 2026-10-20" \
+     https://oftp.example.com/api/v1/partners/O0013000000PARTNER/certificate-changes
+```
+
+`partner` is the SSID or the name of the partner, `usage` one of `Security`, `Tls` and `SecurityAndTls`.
+`activateAt` without an offset is the local time of the server (Europe/Prague), with `Z` or an offset an instant.
 
 ## Certificates per station and purpose
 

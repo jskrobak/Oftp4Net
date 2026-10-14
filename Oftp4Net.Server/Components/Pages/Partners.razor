@@ -485,6 +485,10 @@
                                                Icon="BootstrapIcon.Award"
                                                OnClick="async () => await HandleSendCertificateClick(row.Partner)" />
 
+                            <HxContextMenuItem Text="Schedule a new certificate"
+                                               Icon="BootstrapIcon.CalendarPlus"
+                                               Href="@($"CertificateChanges?partner={row.Partner.Id}")" />
+
                             <HxContextMenuItem Text="Test connection"
                                                Icon="BootstrapIcon.Plug"
                                                OnClick="async () => await HandleTestConnectionClick(row.Partner)" />

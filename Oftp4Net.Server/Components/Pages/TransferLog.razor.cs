@@ -9,7 +9,7 @@ using Oftp4Net.Services.Hooks;
 
 namespace Oftp4Net.Server.Components.Pages;
 
-/// <summary>Transfer history of one category (outgoing, incoming, EERP/NERP, hooks).</summary>
+/// <summary>Transfer history of one category (outgoing, incoming, EERP/NERP, hooks, certificate changes).</summary>
 public partial class TransferLog : ComponentBase
 {
     /// <summary>URL segments of the sections in the Logs menu.</summary>
@@ -20,6 +20,7 @@ public partial class TransferLog : ComponentBase
             ["incoming"] = (TransferEventCategory.Incoming, "Incoming"),
             ["eerp"] = (TransferEventCategory.EndResponse, "EERP / NERP"),
             ["hooks"] = (TransferEventCategory.Hook, "Hooks and webhooks"),
+            ["certificates"] = (TransferEventCategory.Certificate, "Certificate changes"),
         };
 
     [Parameter] public string Section { get; set; } = "";

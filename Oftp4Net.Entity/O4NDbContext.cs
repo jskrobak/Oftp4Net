@@ -25,6 +25,7 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
     public DbSet<ApiToken> ApiTokens { get; init; }
     public DbSet<PartnerSetupDocument> PartnerSetupDocuments { get; init; }
     public DbSet<CertificateSigningRequest> CertificateSigningRequests { get; init; }
+    public DbSet<CertificateChange> CertificateChanges { get; init; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -109,6 +110,17 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
             entity.HasIndex(e => new { e.IsArchived, e.Timestamp });
             // Retention goes through the records in this order.
             entity.HasIndex(e => new { e.Timestamp, e.Id });
+        });
+
+        modelBuilder.Entity<CertificateChange>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Usage).HasConversion<string>().HasMaxLength(20);
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(20);
+            // The history stays when the partner or the certificate is deleted; the change then fails.
+            entity.HasOne(e => e.Partner).WithMany().OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.Certificate).WithMany().OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(e => new { e.Status, e.ActivateAt });
         });
 
         modelBuilder.Entity<ApiToken>(entity =>

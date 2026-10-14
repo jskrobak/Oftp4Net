@@ -35,6 +35,7 @@
                 <th>Last used</th>
                 <th>Expires</th>
                 <th>Inbox webhook</th>
+                <th>Scopes</th>
                 <th></th>
             </tr>
             </thead>
@@ -54,6 +55,16 @@
                         }
                     </td>
                     <td class="small">@token.InboxWebhookUrl</td>
+                    <td>
+                        @foreach (var scope in token.Scopes.Each())
+                        {
+                            <HxBadge Color="ThemeColor.Secondary" CssClass="me-1">@scope</HxBadge>
+                        }
+                        @if (token.Scopes == ApiTokenScopes.None)
+                        {
+                            <span class="small text-body-secondary">read only</span>
+                        }
+                    </td>
                     <td class="text-end text-nowrap">
                         <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary"
                                   Icon="@(token.Enabled ? BootstrapIcon.PauseFill : BootstrapIcon.PlayFill)"
@@ -73,7 +84,16 @@
     <BodyTemplate>
         <HxInputText Label="Name" @bind-Value="newName" MaxLength="50" />
         <HxInputDate TValue="DateTime?" Label="Expires" Hint="Leave empty for a token without expiration." @bind-Value="newExpiresAt" />
-        <HxInputText Label="Inbox webhook URL" Hint="Optional: notified about files received from partners." @bind-Value="newWebhookUrl" />
+        <label class="form-label">Scopes</label>
+        <p class="small text-body-secondary mb-2">
+            Every token reads partners, identities, certificate changes, the transfer log, the status, our partner setup
+            and the health checks. Give a token only the scopes it needs; none for the monitoring.
+        </p>
+        <HxCheckbox Text="Outbox" Hint="Sends files, reads, retries and removes them (e.g. an ERP)." @bind-Value="newOutbox" />
+        <HxCheckbox Text="Inbox" Hint="Fetches received files; needed by the inbox webhook." @bind-Value="newInbox" />
+        <HxCheckbox Text="Certificates" Hint="Schedules and cancels certificate changes of partners and tests connections. Nothing else of a partner can be changed."
+                    @bind-Value="newCertificates" CssClass="mb-3" />
+        <HxInputText Label="Inbox webhook URL" Hint="Optional, with the scope Inbox: notified about files received from partners." @bind-Value="newWebhookUrl" />
         <HxInputText Label="Webhook secret" Hint="Optional: requests are signed with HMAC-SHA256 in the X-Oftp4Net-Signature header." @bind-Value="newWebhookSecret" />
     </BodyTemplate>
     <FooterTemplate>

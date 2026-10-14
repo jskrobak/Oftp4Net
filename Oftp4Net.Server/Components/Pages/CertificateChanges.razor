@@ -1,0 +1,127 @@
+@page "/CertificateChanges"
+@rendermode InteractiveServer
+@using Oftp4Net.Domain
+@using Oftp4Net.Services.Security
+
+<HxModal @ref="scheduleModal" Title="Schedule a certificate of a partner" ShowCloseButton="true" Size="ModalSize.Large">
+    <BodyTemplate>
+        <p class="small text-body-secondary">
+            Upload the new certificate the partner announced and the time it starts using it. Until then the current
+            certificate stays in use; from then on the new one is used, and the file security certificate it replaces is
+            still accepted for signatures of files and End to End Responses that were on their way. A time that has passed
+            applies the certificate right away.
+        </p>
+        <HxSelect TItem="Partner" TValue="int?" Label="Partner" Data="partners" @bind-Value="partnerId"
+                  TextSelector="@(p => $"{p.Name} ({p.SSID})")" ValueSelector="@(p => (int?)p.Id)" Nullable="true" NullText="-select-" />
+        <HxSelect TItem="PartnerCertificateUsage" TValue="PartnerCertificateUsage" Label="Used for" Data="usages" @bind-Value="usage"
+                  TextSelector="@(u => CertificateChangeService.Describe(u))" Nullable="false"
+                  Hint="File security: encrypting files for the partner and verifying its signatures. TLS: trusting its server certificate." />
+
+        <div class="mb-3">
+            <label class="form-label" for="activateAt">Used from (local time)</label>
+            <input id="activateAt" type="datetime-local" class="form-control" @bind="activateAt" @bind:format="yyyy-MM-ddTHH:mm" />
+        </div>
+
+        <HxRadioButtonList TItem="bool" TValue="bool" Label="Certificate" Data="sources" @bind-Value="uploadFile"
+                           ItemTextSelector="@(b => b ? "Upload a file (.cer, .crt, .pem)" : "A stored certificate")" ItemValueSelector="@(b => b)" Inline="true" />
+        @if (uploadFile)
+        {
+            <HxInputFile @ref="inputFileComponent" UploadUrl="/upload" OnFileUploaded="HandleFileUploaded"
+                         Accept=".cer,.crt,.pem,.der,application/x-x509-ca-cert,application/pkix-cert" Multiple="false" MaxFileSize="500000" />
+        }
+        else
+        {
+            <HxSelect TItem="Certificate" TValue="int?" Data="certificates" @bind-Value="certificateId"
+                      TextSelector="@(c => $"{c.Name} (valid {c.ValidFrom:d} - {c.ValidTo:d})")" ValueSelector="@(c => (int?)c.Id)" Nullable="true" NullText="-select-" />
+        }
+
+        <HxInputText Label="Note" CssClass="mt-3" @bind-Value="note" Hint="E.g. where the partner announced the change." />
+    </BodyTemplate>
+    <FooterTemplate>
+        <HxButton Text="Schedule" Color="ThemeColor.Primary" Icon="BootstrapIcon.CalendarPlus" OnClick="HandleScheduleAsync" />
+    </FooterTemplate>
+</HxModal>
+
+<HxCard>
+    <HeaderTemplate>
+        <div class="d-flex align-items-center gap-2">
+            <h5 class="card-title mb-0 me-auto">Certificate changes</h5>
+            <HxButton Color="ThemeColor.Secondary" Icon="BootstrapIcon.ArrowClockwise" Size="ButtonSize.Small" OnClick="LoadAsync">Refresh</HxButton>
+            <HxButton Text="Schedule a certificate" Color="ThemeColor.Primary" Icon="BootstrapIcon.CalendarPlus" OnClick="() => ShowScheduleAsync(null)" />
+        </div>
+    </HeaderTemplate>
+    <BodyTemplate>
+        <p class="small text-body-secondary">
+            New certificates of partners used from a scheduled time, also through the REST API
+            (<code>POST /api/v1/partners/{partner}/certificate-changes</code>). Every change is in <a href="Logs/certificates">Logs → Certificates</a>.
+            Shown: all scheduled changes and the latest @HistoryCount others.
+        </p>
+
+        @if (changes.Count == 0)
+        {
+            <p class="text-body-secondary">No certificate change yet.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead>
+                    <tr>
+                        <th>Used from</th>
+                        <th>Partner</th>
+                        <th>Used for</th>
+                        <th>Certificate</th>
+                        <th>State</th>
+                        <th>Note</th>
+                        <th>Scheduled</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var change in changes)
+                    {
+                        <tr>
+                            <td class="text-nowrap">@change.ActivateAt.ToString("g")</td>
+                            <td>@change.PartnerName</td>
+                            <td>@CertificateChangeService.Describe(change.Usage)</td>
+                            <td>
+                                @if (change.Certificate is { } certificate)
+                                {
+                                    <div>@certificate.Name</div>
+                                    <div class="small text-body-secondary">valid @certificate.ValidFrom.ToString("d") - @certificate.ValidTo.ToString("d")</div>
+                                }
+                            </td>
+                            <td>
+                                <HxBadge Color="@StatusColor(change.Status)">@change.Status</HxBadge>
+                                @if (change.AppliedAt is { } applied)
+                                {
+                                    <span class="small ms-1">@applied.ToString("g")</span>
+                                }
+                                @if (change.LastError is { } error)
+                                {
+                                    <div class="small text-body-secondary">@error</div>
+                                }
+                            </td>
+                            <td class="small">@change.Note</td>
+                            <td class="small">@change.Created.ToString("g") @change.CreatedBy</td>
+                            <td class="text-end text-nowrap">
+                                @if (change.Status == CertificateChangeStatus.Scheduled)
+                                {
+                                    <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.XCircle" Tooltip="Cancel"
+                                              OnClick="() => HandleCancelAsync(change)" />
+                                }
+                                @if (change.CertificateId is { } id)
+                                {
+                                    <a class="btn btn-sm btn-secondary" href="certificates/@id/download" title="Download certificate" target="_blank">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </BodyTemplate>
+</HxCard>
