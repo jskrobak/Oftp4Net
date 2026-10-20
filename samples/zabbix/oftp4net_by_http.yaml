@@ -44,6 +44,8 @@ zabbix_export:
               priority: HIGH
               description: 'Database, storage, a listener or the send service fails. The details are in the health check items.'
               tags:
+                - tag: service
+                  value: oftp
                 - tag: scope
                   value: availability
             - uuid: b38fa6a8f8b4496b8e1b10e3e6e8ff6c
@@ -52,6 +54,8 @@ zabbix_export:
               priority: HIGH
               description: 'The server is down or cannot be reached; it cannot report anything itself.'
               tags:
+                - tag: service
+                  value: oftp
                 - tag: scope
                   value: availability
         - uuid: 2aad966c3fb34e0e812a34edb02b488f
@@ -155,6 +159,8 @@ zabbix_export:
                 - name: 'Oftp4Net: Server does not answer for {$OFTP.NODATA}'
                   expression: 'nodata(/Oftp4Net by HTTP/oftp.health.ready,{$OFTP.NODATA})=1'
               tags:
+                - tag: service
+                  value: oftp
                 - tag: scope
                   value: availability
         - uuid: 481e044b45c6485289782233dbfb4672
@@ -307,6 +313,8 @@ zabbix_export:
               opdata: '{ITEM.LASTVALUE2}'
               priority: HIGH
               tags:
+                - tag: service
+                  value: oftp
                 - tag: scope
                   value: availability
             - uuid: 45b02223fd574f1d9e83021cc89100fa
@@ -315,6 +323,8 @@ zabbix_export:
               opdata: '{ITEM.LASTVALUE2}'
               priority: WARNING
               tags:
+                - tag: service
+                  value: oftp
                 - tag: scope
                   value: notice
         - uuid: bc906e694d314478a95f8f852326ef1d
@@ -466,6 +476,8 @@ zabbix_export:
               priority: AVERAGE
               description: 'The partner cannot be reached or refuses the session; the send queue keeps retrying.'
               tags:
+                - tag: service
+                  value: oftp
                 - tag: scope
                   value: notice
             - uuid: 7a49c00d0caf462eb34eaa712de03197
@@ -476,6 +488,8 @@ zabbix_export:
               description: 'The retries are exhausted or the partner refused the file. Send the file again or delete it in Queues / Send queue.'
               manual_close: 'YES'
               tags:
+                - tag: service
+                  value: oftp
                 - tag: scope
                   value: notice
             - uuid: c4579255586144dc85c50f2f8729fd44
@@ -485,6 +499,8 @@ zabbix_export:
               priority: WARNING
               description: 'The partner received the file but has not sent its End to End Response (EERP). Raise the threshold for partners that confirm late or never.'
               tags:
+                - tag: service
+                  value: oftp
                 - tag: scope
                   value: notice
       tags:
