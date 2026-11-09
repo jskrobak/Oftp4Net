@@ -1,8 +1,8 @@
 namespace Oftp4Net.Domain;
 
 /// <summary>
-/// What an API token may do besides reading: partners, identities, certificate changes, the transfer log, the
-/// status, our partner setup (PDX) and the health checks are open to every token.
+/// What an API token may do besides reading: partners, identities, stored certificates, certificate changes, the
+/// transfer log, the status, our partner setup (PDX) and the health checks are open to every token.
 /// </summary>
 [Flags]
 public enum ApiTokenScopes
@@ -23,11 +23,17 @@ public enum ApiTokenScopes
 
     /// <summary>What every token could do before tokens had scopes.</summary>
     Default = Outbox | Inbox | Certificates,
+
+    /// <summary>
+    /// Setting partners up: storing public certificates, creating partners (as drafts an administrator activates),
+    /// changing their settings except passwords, testing the connection and running loop tests.
+    /// </summary>
+    Partners = 8,
 }
 
 public static class ApiTokenScopesExtensions
 {
-    public static readonly IReadOnlyList<ApiTokenScopes> All = [ApiTokenScopes.Outbox, ApiTokenScopes.Inbox, ApiTokenScopes.Certificates];
+    public static readonly IReadOnlyList<ApiTokenScopes> All = [ApiTokenScopes.Outbox, ApiTokenScopes.Inbox, ApiTokenScopes.Certificates, ApiTokenScopes.Partners];
 
     /// <summary>The individual scopes, without <see cref="ApiTokenScopes.None"/> and <see cref="ApiTokenScopes.Default"/>.</summary>
     public static IEnumerable<ApiTokenScopes> Each(this ApiTokenScopes scopes) =>

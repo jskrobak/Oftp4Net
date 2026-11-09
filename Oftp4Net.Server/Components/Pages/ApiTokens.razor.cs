@@ -23,10 +23,11 @@ public partial class ApiTokens : ComponentBase
     private bool newOutbox;
     private bool newInbox;
     private bool newCertificates;
+    private bool newPartners;
 
     private ApiTokenScopes NewScopes =>
         (newOutbox ? ApiTokenScopes.Outbox : 0) | (newInbox ? ApiTokenScopes.Inbox : 0) |
-        (newCertificates ? ApiTokenScopes.Certificates : 0);
+        (newCertificates ? ApiTokenScopes.Certificates : 0) | (newPartners ? ApiTokenScopes.Partners : 0);
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 

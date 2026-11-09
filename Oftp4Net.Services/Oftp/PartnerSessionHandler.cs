@@ -176,6 +176,12 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             return OftpAuthenticationResult.Reject(ReasonCodes.UserCodeNotKnown, "User code not known.");
         }
 
+        if (partner.Draft)
+        {
+            _logger.LogWarning("Rejected OFTP session from {Partner}: the partner is a draft", partner.Name);
+            return OftpAuthenticationResult.Reject(ReasonCodes.UserCodeNotKnown, "User code not known.");
+        }
+
         if (!CheckPassword(remote, partner))
         {
             _logger.LogWarning("Rejected OFTP session from {Partner}: invalid password", partner.Name);

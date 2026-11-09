@@ -30,6 +30,28 @@ public class CertificateChangeService(
     public async Task<CertificateChange> ScheduleFileAsync(int partnerId, byte[] data, string fileName, PartnerCertificateUsage usage,
         DateTime activateAt, string? note, string? createdBy, CancellationToken cancellationToken = default)
     {
+        using var loaded = LoadPublicCertificate(data, fileName);
+        var partner = await partnerRepository.GetObjectAsync(partnerId, cancellationToken);
+        var (certificate, _) = await StoreAsync($"{partner.Name}: {loaded.GetNameInfo(X509NameType.SimpleName, forIssuer: false)}", loaded, cancellationToken);
+        return await ScheduleAsync(partnerId, certificate.Id, usage, activateAt, note, createdBy, cancellationToken);
+    }
+
+    /// <summary>Stores a public certificate, unless the same one is stored already; says whether it was added.</summary>
+    /// <param name="name">Name of the record; the subject of the certificate when empty.</param>
+    public async Task<(Certificate Certificate, bool Created)> StoreFileAsync(byte[] data, string fileName, string? name,
+        CancellationToken cancellationToken = default)
+    {
+        using var loaded = LoadPublicCertificate(data, fileName);
+        return await StoreAsync(string.IsNullOrWhiteSpace(name) ? loaded.Subject : name.Trim(), loaded, cancellationToken);
+    }
+
+    /// <summary>The certificate of a file (.cer, .crt, .pem); a file with a private key is refused.</summary>
+    internal static X509Certificate2 LoadPublicCertificate(byte[] data, string fileName)
+    {
+        // A PEM file may carry the key next to the certificate, and the loader would just skip it.
+        if (data.AsSpan().IndexOf("PRIVATE KEY"u8) >= 0)
+            throw new InvalidOperationException("A certificate of a partner is its public part (.cer, .crt, .pem) without a private key.");
+
         X509Certificate2 loaded;
         try
         {
@@ -40,15 +62,13 @@ public class CertificateChangeService(
             throw new InvalidOperationException($"The file {fileName} is not a certificate (.cer, .crt, .pem): {ex.Message}", ex);
         }
 
-        using (loaded)
+        if (loaded.HasPrivateKey)
         {
-            if (loaded.HasPrivateKey)
-                throw new InvalidOperationException("A certificate of a partner is its public part (.cer, .crt, .pem) without a private key.");
-
-            var partner = await partnerRepository.GetObjectAsync(partnerId, cancellationToken);
-            var certificate = await StoreAsync(partner, loaded, cancellationToken);
-            return await ScheduleAsync(partnerId, certificate.Id, usage, activateAt, note, createdBy, cancellationToken);
+            loaded.Dispose();
+            throw new InvalidOperationException("A certificate of a partner is its public part (.cer, .crt, .pem) without a private key.");
         }
+
+        return loaded;
     }
 
     /// <summary>Schedules a stored certificate for the partner. A time that has passed already applies it right away.</summary>
@@ -196,7 +216,7 @@ public class CertificateChangeService(
     };
 
     /// <summary>Stores the certificate in DER, or returns the stored one with the same thumbprint.</summary>
-    private async Task<Certificate> StoreAsync(Partner partner, X509Certificate2 certificate, CancellationToken cancellationToken)
+    private async Task<(Certificate Certificate, bool Created)> StoreAsync(string name, X509Certificate2 certificate, CancellationToken cancellationToken)
     {
         foreach (var stored in (await certificateRepository.GetAllAsync(cancellationToken)).Where(c => !c.HasPrivateKey))
         {
@@ -204,7 +224,7 @@ public class CertificateChangeService(
             {
                 using var existing = CertificateLoader.Load(stored);
                 if (existing.Thumbprint == certificate.Thumbprint)
-                    return stored;
+                    return (stored, false);
             }
             catch (Exception ex) when (ex is CryptographicException or FormatException or InvalidOperationException)
             {
@@ -214,7 +234,7 @@ public class CertificateChangeService(
 
         var entity = new Certificate
         {
-            Name = $"{partner.Name}: {certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false)}",
+            Name = name,
             Base64Data = Convert.ToBase64String(certificate.RawData),
             ValidFrom = certificate.NotBefore,
             ValidTo = certificate.NotAfter,
@@ -223,7 +243,7 @@ public class CertificateChangeService(
         unitOfWork.AddForInsert(entity);
         // The identifier is needed for the change.
         await unitOfWork.CommitAsync(cancellationToken);
-        return entity;
+        return (entity, true);
     }
 
     private void Record(TransferEventType type, TransferEventLevel level, int? partnerId, string partnerName, string message) =>

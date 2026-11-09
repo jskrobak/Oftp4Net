@@ -376,6 +376,9 @@ namespace Oftp4Net.Entity.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<bool>("Draft")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Duns")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");

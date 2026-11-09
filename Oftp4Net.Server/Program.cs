@@ -193,6 +193,7 @@ builder.Services.AddScoped<CertificateExchangeService>();
 builder.Services.AddScoped<CertificateChangeService>();
 builder.Services.AddScoped<PartnerTlsTrustService>();
 builder.Services.AddScoped<TestFileService>();
+builder.Services.AddScoped<PartnerProvisioningService>();
 builder.Services.AddSingleton<PartnerSetupScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PartnerSetupScheduler>());
 builder.Services.AddSingleton<CertificateChangeScheduler>();

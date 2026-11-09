@@ -74,6 +74,7 @@ public partial class Partners : ComponentBase
     {
         var applied = new[]
         {
+            partner.Draft ? "DRAFT" : null,
             partner.SignFiles ? "signed" : null,
             partner.CompressFiles ? "compressed" : null,
             partner.EncryptFiles ? "encrypted" : null,

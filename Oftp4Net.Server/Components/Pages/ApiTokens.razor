@@ -92,7 +92,9 @@
         <HxCheckbox Text="Outbox" Hint="Sends files, reads, retries and removes them (e.g. an ERP)." @bind-Value="newOutbox" />
         <HxCheckbox Text="Inbox" Hint="Fetches received files; needed by the inbox webhook." @bind-Value="newInbox" />
         <HxCheckbox Text="Certificates" Hint="Schedules and cancels certificate changes of partners and tests connections. Nothing else of a partner can be changed."
-                    @bind-Value="newCertificates" CssClass="mb-3" />
+                    @bind-Value="newCertificates" />
+        <HxCheckbox Text="Partners" Hint="Stores public certificates, creates partners as drafts, changes their settings except passwords, tests connections and runs loop tests."
+                    @bind-Value="newPartners" CssClass="mb-3" />
         <HxInputText Label="Inbox webhook URL" Hint="Optional, with the scope Inbox: notified about files received from partners." @bind-Value="newWebhookUrl" />
         <HxInputText Label="Webhook secret" Hint="Optional: requests are signed with HMAC-SHA256 in the X-Oftp4Net-Signature header." @bind-Value="newWebhookSecret" />
     </BodyTemplate>

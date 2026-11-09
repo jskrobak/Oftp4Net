@@ -673,8 +673,8 @@ to the TLS connection and the SSID password.
 Integrations can use a REST API authenticated with a bearer token: `Authorization: Bearer <token>`.
 Tokens are created in *Settings → API tokens* and shown only once (only their hash is stored).
 
-Every token reads partners, identities, certificate changes, the transfer log, the status, our partner setup (PDX)
-and the health checks. Anything else needs a scope of the token; a request without it gets `403`:
+Every token reads partners (without passwords), identities, stored certificates (without content), certificate
+changes, the transfer log, the status, our partner setup (PDX) and the health checks. Anything else needs a scope of the token; a request without it gets `403`:
 
 | Scope | Allows | E.g. for |
 |---|---|---|
@@ -682,8 +682,9 @@ and the health checks. Anything else needs a scope of the token; a request witho
 | `Outbox` | `/outbox`: sending files, reading, retrying and removing them | an ERP |
 | `Inbox` | `/inbox`: fetching received files; the token's inbox webhook is called only with it | an ERP |
 | `Certificates` | scheduling and cancelling certificate changes of partners, `connection-test` | an agent that keeps the partners' certificates up to date |
+| `Partners` | storing public certificates, creating partners as drafts, changing their settings except passwords, `connection-test`, `loop-test` | a script or an agent that sets partners up |
 
-Tokens created before the scopes have all three.
+Tokens created before the scopes have the first three; `Partners` has to be given explicitly.
 
 *Settings → REST API* shows the interactive documentation (Scalar) with request examples in several languages;
 the OpenAPI description itself is at `/openapi/v1.json`. Both require a signed in administrator.
@@ -699,6 +700,10 @@ the OpenAPI description itself is at `/openapi/v1.json`. Both require a signed i
 | `GET /api/v1/inbox/{id}` / `…/content` | detail / content of a received file |
 | `POST /api/v1/inbox/{id}/fetched` | marks a received file as fetched |
 | `GET /api/v1/partners`, `/identities` | codes usable when sending |
+| `GET /api/v1/partners/{partner}` | settings of a partner, without passwords |
+| `POST /api/v1/partners`, `PATCH /api/v1/partners/{partner}` | creates a partner as a draft / changes its settings; `dryRun=true` only reports what would be done (see [Setting partners up through the API](#setting-partners-up-through-the-api)) |
+| `GET`, `POST /api/v1/certificates` | lists stored certificates / stores a public one (multipart: `file`, optional `name`) |
+| `POST /api/v1/partners/{partner}/loop-test`, `GET …/loop-test/{id}` | sends a file the partner echoes back / follows it |
 | `POST /api/v1/partners/{partner}/connection-test` | tests the connection to a partner without transferring anything (`identity`, default the first one) |
 | `GET`, `POST /api/v1/partners/{partner}/certificate-changes` | certificate changes of a partner; uploads a certificate with the time it is used from (see [Scheduled certificate changes](#scheduled-certificate-changes)) |
 | `DELETE /api/v1/certificate-changes/{id}` | cancels a scheduled certificate change |
@@ -816,6 +821,39 @@ OS4X is lenient with TLS: it accepts expired and self-signed certificates of par
 certificates partners present. Oftp4Net checks the certificates of partners it calls; run the connection tests after
 the import and, for a partner whose certificate cannot be fixed, switch on *Accept an invalid TLS certificate* in the
 partner dialog. Certificates partners present when they call us are checked only when the listener requires one.
+
+### Setting partners up through the API
+
+A partner is set up with a token with the scope `Partners`, step by step, and an administrator activates it:
+
+```bash
+# 1. Store the certificate of the partner; storing the same one again returns the existing record.
+curl -H "Authorization: Bearer $TOKEN" -F file=@partner.crt https://oftp.example.com/api/v1/certificates
+
+# 2. Check what would be created, then repeat the request without dryRun.
+curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+     -d '{"name":"PARTNER-TEST","ssid":"O0013000000PARTNER","host":"oftp.partner.example","cipherSuite":"01",
+          "signFiles":true,"encryptFiles":true,"secureAuthentication":true,"securityCertificateId":42,"inboundIdentity":"ARTIPA"}' \
+     "https://oftp.example.com/api/v1/partners?dryRun=true"
+```
+
+3. An administrator opens the partner, sets its passwords and clears *Draft*. The API accepts neither passwords nor
+   *Draft*: until then the partner is refused with reason `03` when it calls, and files queued for it wait.
+4. `POST …/connection-test`, then a loop test with the virtual file name from the partner's datasheet:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"virtualFileName":"PARTNERLOOP"}' \
+     https://oftp.example.com/api/v1/partners/PARTNER-TEST/loop-test
+curl -H "Authorization: Bearer $TOKEN" https://oftp.example.com/api/v1/partners/PARTNER-TEST/loop-test/123
+```
+
+`stage` of the loop test goes through `Queued` (or `Retrying`), `AwaitingEndResponse` and `AwaitingReturn` to `Returned`;
+`SendFailed`, `Refused` and `ReturnFailed` say that it stopped, `lastError` and the `returned` files why.
+
+A response lists `changes`, `warnings` and `errors`; a refused request has status `400` and changes nothing. Unknown fields
+are refused, so a misspelt setting does not pass unnoticed. `PATCH` changes only what the request contains; a certificate id
+of `0` and an empty `inboundIdentity` clear the value. The certificate of an active partner is replaced with
+`certificate-changes`, which keeps the previous one for files under way. Every change is in *Logs → Configuration*.
 
 ## Testing the connection to partners
 

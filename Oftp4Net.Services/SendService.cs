@@ -134,6 +134,7 @@ public class SendService(ILogger<SendService> logger,
 
             var items = await sendQueue.GetAllToProcessAsync();
             sessions = items
+                .Where(i => !i.Partner.Draft)
                 .GroupBy(i => (i.PartnerId, i.IdentityId))
                 .Select(g => (g.First().Partner, g.First().Identity))
                 .ToList();

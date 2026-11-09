@@ -9,6 +9,12 @@ namespace Oftp4Net.Domain;
 /// </summary>
 public class Partner: BaseParty
 {   
+    /// <summary>
+    /// Being set up, typically created through the API: no sessions run with the partner until an administrator has
+    /// checked it, set its passwords and cleared this.
+    /// </summary>
+    public bool Draft { get; set; }
+
     [Required]
     [StringLength(100)]
     public string Host { get; set; } = string.Empty;

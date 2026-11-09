@@ -28,6 +28,7 @@ public static class ApiEndpoints
         MapInbox(api.MapGroup("").RequireAuthorization(ApiTokenAuthenticationHandler.PolicyFor(ApiTokenScopes.Inbox)));
         MapReference(api);
         MapCertificateChanges(api);
+        MapProvisioning(api);
     }
 
     #region Outbox
@@ -273,8 +274,9 @@ public static class ApiEndpoints
 
     private static void MapReference(RouteGroupBuilder api)
     {
-        // Reading is open to every token; testing connections needs the scope Certificates.
-        var certificates = api.MapGroup("").RequireAuthorization(ApiTokenAuthenticationHandler.PolicyFor(ApiTokenScopes.Certificates));
+        // Reading is open to every token; testing connections needs the scope Certificates or Partners.
+        var connectionTests = api.MapGroup("").RequireAuthorization(policy => policy.RequireClaim(
+            ApiTokenAuthenticationHandler.ScopeClaim, nameof(ApiTokenScopes.Certificates), nameof(ApiTokenScopes.Partners)));
 
         api.MapGet("/partners", async (IPartnerRepository repository, CancellationToken cancellationToken) =>
                 Results.Ok((await repository.GetAllAsync(cancellationToken))
@@ -286,7 +288,7 @@ public static class ApiEndpoints
                     .Select(i => new PartyDto(i.Id, i.Name, i.SSID, i.SFID)).ToList()))
             .WithSummary("Lists our identities that can be used when sending.");
 
-        certificates.MapPost("/partners/{partner}/connection-test", async (string partner, string? identity,
+        connectionTests.MapPost("/partners/{partner}/connection-test", async (string partner, string? identity,
                 IPartnerRepository partners, IIdentityRepository identities, ConnectionTestService tests,
                 CancellationToken cancellationToken) =>
             {
@@ -425,6 +427,124 @@ public static class ApiEndpoints
             .WithSummary("Cancels a scheduled certificate change.");
     }
 
+    #region Setting partners up
+
+    private static void MapProvisioning(RouteGroupBuilder api)
+    {
+        var provisioning = api.MapGroup("").RequireAuthorization(ApiTokenAuthenticationHandler.PolicyFor(ApiTokenScopes.Partners));
+
+        api.MapGet("/certificates", async (ICertificateRepository certificates, CancellationToken cancellationToken) =>
+                Results.Ok((await certificates.GetAllAsync(cancellationToken)).OrderBy(c => c.Id).Select(CertificateDto.From).ToList()))
+            .WithSummary("Lists stored certificates, without their content.");
+
+        provisioning.MapPost("/certificates", async (IFormFile file, [FromForm] string? name, CertificateChangeService service,
+                CancellationToken cancellationToken) =>
+            {
+                using var buffer = new MemoryStream();
+                await file.CopyToAsync(buffer, cancellationToken);
+                try
+                {
+                    var (certificate, created) = await service.StoreFileAsync(buffer.ToArray(), file.FileName, name, cancellationToken);
+                    var dto = CertificateDto.From(certificate);
+                    return created ? Results.Created($"/api/v1/certificates/{certificate.Id}", dto) : Results.Ok(dto);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.BadRequest(new ApiError(ex.Message));
+                }
+            })
+            .DisableAntiforgery()
+            .WithSummary("Stores a public certificate (.cer, .crt, .pem); a certificate stored already is returned as it is (200).");
+
+        api.MapGet("/partners/{partner}", async (string partner, IPartnerRepository partners, CancellationToken cancellationToken) =>
+                await FindPartnerAsync(partner, partners, cancellationToken) is { } entity
+                    ? Results.Ok(PartnerDetailDto.From(entity))
+                    : Results.NotFound(new ApiError($"Unknown partner '{partner}'.")))
+            .WithSummary("Settings of a partner, without its passwords.");
+
+        provisioning.MapPost("/partners", async (PartnerChangeRequest request, bool? dryRun, HttpContext httpContext,
+                PartnerProvisioningService service, CancellationToken cancellationToken) =>
+            {
+                var result = await service.CreateAsync(request, dryRun ?? false, Actor(httpContext), cancellationToken);
+                if (!result.Plan.IsValid)
+                    return Results.BadRequest(PartnerPlanDto.From(result));
+                return result.Applied
+                    ? Results.Created($"/api/v1/partners/{Uri.EscapeDataString(result.Partner!.SSID)}", PartnerPlanDto.From(result))
+                    : Results.Ok(PartnerPlanDto.From(result));
+            })
+            .WithSummary("Creates a partner as a draft; dryRun=true only reports what would be done.")
+            .WithDescription("No session runs with a draft until an administrator has set its passwords and cleared Draft. " +
+                             "Passwords are not accepted through the API, unknown fields are refused.");
+
+        provisioning.MapMethods("/partners/{partner}", [HttpMethods.Patch], async (string partner, PartnerChangeRequest request, bool? dryRun,
+                HttpContext httpContext, IPartnerRepository partners, PartnerProvisioningService service, CancellationToken cancellationToken) =>
+            {
+                if (await FindPartnerAsync(partner, partners, cancellationToken) is not { } entity)
+                    return Results.NotFound(new ApiError($"Unknown partner '{partner}'."));
+
+                var result = await service.UpdateAsync(entity, request, dryRun ?? false, Actor(httpContext), cancellationToken);
+                return result.Plan.IsValid ? Results.Ok(PartnerPlanDto.From(result)) : Results.BadRequest(PartnerPlanDto.From(result));
+            })
+            .WithSummary("Changes the settings in the request and leaves the others; dryRun=true only reports what would change.")
+            .WithDescription("A certificate id of 0 and an empty inboundIdentity clear the value. The certificate of an active partner " +
+                             "is replaced with certificate-changes, which keeps the previous one. Draft and passwords stay with the administration.");
+
+        provisioning.MapPost("/partners/{partner}/loop-test", async (string partner, LoopTestRequest request, HttpContext httpContext,
+                IPartnerRepository partners, IIdentityRepository identities, TestFileService tests, CancellationToken cancellationToken) =>
+            {
+                if (await FindPartnerAsync(partner, partners, cancellationToken) is not { } entity)
+                    return Results.NotFound(new ApiError($"Unknown partner '{partner}'."));
+                if (entity.Draft)
+                    return Results.Conflict(new ApiError($"Partner {entity.Name} is a draft, an administrator has to activate it first."));
+
+                var all = await identities.GetAllAsync(cancellationToken);
+                var identity = string.IsNullOrWhiteSpace(request.Identity)
+                    ? all.FirstOrDefault(i => i.Id == entity.InboundIdentityId) ?? all.OrderBy(i => i.Id).FirstOrDefault()
+                    : all.FirstOrDefault(i => Matches(i.Name, request.Identity)) ?? all.FirstOrDefault(i => Matches(i.SSID, request.Identity));
+                if (identity is null)
+                    return Results.BadRequest(new ApiError(string.IsNullOrWhiteSpace(request.Identity) ? "No identity is configured." : $"Unknown identity '{request.Identity}'."));
+
+                var test = new TestFileRequest
+                {
+                    PartnerId = entity.Id,
+                    IdentityId = identity.Id,
+                    VirtualFileName = request.VirtualFileName ?? "",
+                    Content = string.IsNullOrWhiteSpace(request.Content) ? TestFileService.DefaultContent : request.Content,
+                };
+                if (TestFileService.Validate(test) is { } problem)
+                    return Results.BadRequest(new ApiError(problem));
+
+                var item = await tests.QueueAsync(test, Actor(httpContext), cancellationToken);
+                item.Partner = entity;
+                return Results.Accepted($"/api/v1/partners/{Uri.EscapeDataString(entity.SSID)}/loop-test/{item.Id}", LoopTestDto.From(item, []));
+            })
+            .WithSummary("Sends a test file under the virtual file name the partner echoes back; follow it with GET loop-test/{id}.");
+
+        provisioning.MapGet("/partners/{partner}/loop-test/{id:int}", async (string partner, int id, IPartnerRepository partners,
+                TestFileService tests, IReceivedFileRepository received, CancellationToken cancellationToken) =>
+            {
+                if (await FindPartnerAsync(partner, partners, cancellationToken) is not { } entity)
+                    return Results.NotFound(new ApiError($"Unknown partner '{partner}'."));
+                if (await tests.GetAsync(id, cancellationToken) is not { } item || item.PartnerId != entity.Id)
+                    return Results.NotFound();
+
+                List<ReceivedFile> returned = [];
+                if (item.SentDate is { } sent)
+                {
+                    var filter = new ReceivedFileFilter { Name = item.VirtualFileName, PartnerSsid = entity.SSID, From = sent };
+                    var page = await received.GetListAsync(filter, 0, 50, cancellationToken);
+                    returned = page.Data.Where(f => f.VirtualFileName == item.VirtualFileName).ToList();
+                }
+
+                return Results.Ok(LoopTestDto.From(item, returned));
+            })
+            .WithSummary("State of a loop test: sent, End to End Response, and the files received back since.");
+    }
+
+    private static string Actor(HttpContext httpContext) => "API: " + httpContext.User.Identity?.Name;
+
+    #endregion
+
     /// <summary>The partner with the SSID or the name.</summary>
     private static async Task<Partner?> FindPartnerAsync(string partner, IPartnerRepository partners, CancellationToken cancellationToken)
     {
@@ -496,6 +616,51 @@ public record CertificateChangeDto(int Id, string Partner, int? CertificateId, s
 {
     public static CertificateChangeDto From(CertificateChange c) => new(c.Id, c.PartnerName, c.CertificateId, c.Certificate?.Name,
         c.Certificate?.ValidTo, c.Usage.ToString(), c.ActivateAt, c.Status.ToString(), c.AppliedAt, c.Note, c.LastError, c.Created, c.CreatedBy);
+}
+
+public record CertificateDto(int Id, string Name, DateTime ValidFrom, DateTime ValidTo, bool HasPrivateKey, bool TrustedForTls)
+{
+    public static CertificateDto From(Certificate c) => new(c.Id, c.Name, c.ValidFrom, c.ValidTo, c.HasPrivateKey, c.TrustedForTls);
+}
+
+public record PartnerDetailDto(int Id, string Name, string? Description, string Ssid, string Sfid, bool Draft, bool HasPassword, bool HasOurPassword,
+    string Host, int Port, bool UseTls, IReadOnlyList<string> TlsVersions, bool AcceptInvalidTlsCertificate, int? TrustedCertificateId,
+    int? InboundIdentityId, int ProtocolLevel, bool BufferCompression, bool Restart, bool SignFiles, bool EncryptFiles, bool CompressFiles,
+    bool SecureAuthentication, bool RequestSignedEndResponse, bool RequireSignedFiles, bool RequireEncryptedFiles, bool RequireCompressedFiles,
+    string CipherSuite, int? SecurityCertificateId)
+{
+    public static PartnerDetailDto From(Partner p) => new(p.Id, p.Name, p.Description, p.SSID, p.SFID, p.Draft,
+        !string.IsNullOrEmpty(p.Password), !string.IsNullOrEmpty(p.OurPassword), p.Host, p.Port, p.UseTls,
+        Oftp4Net.Core.OftpDefaults.AllowedSslProtocols.Where(v => p.Tls.HasFlag(v)).Select(PartnerProvisioningService.TlsVersion).ToList(),
+        p.AcceptInvalidTlsCertificate, p.TrustedCertificateId, p.InboundIdentityId, p.ProtocolLevel, p.BufferCompression, p.Restart,
+        p.SignFiles, p.EncryptFiles, p.CompressFiles, p.SecureAuthentication, p.RequestSignedEndResponse, p.RequireSignedFiles,
+        p.RequireEncryptedFiles, p.RequireCompressedFiles, p.FileCipherSuite, p.SecurityCertificateId);
+}
+
+/// <summary>Outcome of creating or changing a partner.</summary>
+/// <param name="Applied">The change was written; <c>false</c> for a dry run, a refused request and nothing to change.</param>
+public record PartnerPlanDto(bool Applied, IReadOnlyList<PartnerFieldChange> Changes, IReadOnlyList<string> Warnings, IReadOnlyList<string> Errors,
+    PartnerDetailDto? Partner)
+{
+    public static PartnerPlanDto From(PartnerProvisioningResult r) => new(r.Applied, r.Plan.Changes, r.Plan.Warnings, r.Plan.Errors,
+        r.Partner is null ? null : PartnerDetailDto.From(r.Partner));
+}
+
+/// <param name="VirtualFileName">The name the partner echoes back, from its datasheet.</param>
+/// <param name="Identity">Name or SSID of our identity; by default the partner's inbound identity.</param>
+/// <param name="Content">Content of the test file; a short default text when left out.</param>
+public record LoopTestRequest(string? VirtualFileName, string? Identity, string? Content);
+
+public record ReturnedFileDto(int Id, DateTime Received, string Status, long Size, string? LastError);
+
+/// <param name="Stage">Queued, Retrying, SendFailed, Refused, AwaitingEndResponse, AwaitingReturn, Returned or ReturnFailed.</param>
+public record LoopTestDto(int Id, string? Partner, string VirtualFileName, string Stage, string Status, DateTime? SentDate, DateTime? DeliveredDate,
+    DateTime? NextRetry, string? LastError, IReadOnlyList<ReturnedFileDto> Returned)
+{
+    public static LoopTestDto From(SendQueueItem i, IReadOnlyList<ReceivedFile> returned) => new(i.Id, i.Partner?.Name, i.VirtualFileName,
+        LoopTestStage.From(i.Status, returned.Select(f => f.Status).ToList()), i.Status.ToString(), i.SentDate, i.DeliveredDate,
+        i.Status == SendStatus.ERROR ? i.NextRetry : null, i.LastError,
+        returned.Select(f => new ReturnedFileDto(f.Id, f.Created, f.Status.ToString(), f.Size, f.LastError)).ToList());
 }
 
 public record ListenerStatusDto(string Name, string EndPoint, bool Running, string? Error, int ActiveSessions);

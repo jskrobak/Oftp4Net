@@ -21,6 +21,7 @@ public partial class TransferLog : ComponentBase
             ["eerp"] = (TransferEventCategory.EndResponse, "EERP / NERP"),
             ["hooks"] = (TransferEventCategory.Hook, "Hooks and webhooks"),
             ["certificates"] = (TransferEventCategory.Certificate, "Certificate changes"),
+            ["configuration"] = (TransferEventCategory.Configuration, "Configuration changes"),
         };
 
     [Parameter] public string Section { get; set; } = "";

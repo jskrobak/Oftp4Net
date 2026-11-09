@@ -18,6 +18,9 @@ public enum TransferEventCategory
 
     /// <summary>Scheduled certificate changes of partners.</summary>
     Certificate,
+
+    /// <summary>Settings of partners changed through the API.</summary>
+    Configuration,
 }
 
 public enum TransferEventLevel
@@ -61,6 +64,9 @@ public enum TransferEventType
     CertificateChangeCancelled,
     CertificateChangeApplied,
     CertificateChangeFailed,
+
+    PartnerCreated,
+    PartnerChanged,
 }
 
 /// <summary>
