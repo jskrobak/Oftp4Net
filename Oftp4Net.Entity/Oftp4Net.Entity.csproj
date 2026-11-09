@@ -12,6 +12,8 @@
       <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" />
       <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
       <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+      <!-- Pinned above the vulnerable version that Microsoft.Data.SqlClient brings in. -->
+      <PackageReference Include="System.Security.Cryptography.Pkcs" />
     </ItemGroup>
 
     <ItemGroup>
