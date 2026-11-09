@@ -279,6 +279,41 @@ public class FileSecurityTests
         Assert.Throws<FileSecurityException>(() => FileSecurity.DecryptChallenge(envelope, Ours));
     }
 
+    private static byte[] SignWithoutIncludedCertificate(byte[] content, X509Certificate2 certificate)
+    {
+        var cms = new SignedCms(new ContentInfo(content), detached: false);
+        cms.ComputeSignature(new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, certificate)
+        {
+            DigestAlgorithm = CipherSuite.Default.DigestAlgorithm,
+            IncludeOption = X509IncludeOption.None,
+        }, silent: true);
+        return cms.Encode();
+    }
+
+    /// <summary>CMS does not require the signer's certificate in the package.</summary>
+    [Fact]
+    public void SignatureWithoutIncludedCertificateIsVerifiedAgainstThePartnersCertificate()
+    {
+        var descriptor = Descriptor(new FileSecuritySettings { Sign = true, Suite = CipherSuite.Default });
+
+        var signed = SignWithoutIncludedCertificate(Content, Partner);
+
+        Assert.Equal(Content, FileSecurity.Unprotect(signed, descriptor, null, Partner));
+        Assert.Throws<FileSecurityException>(() =>
+            FileSecurity.Unprotect(signed, descriptor, null, CreateCertificate("CN=Stranger")));
+    }
+
+    [Fact]
+    public void EndResponseSignatureWithoutIncludedCertificateIsVerified()
+    {
+        var content = "EERP content"u8.ToArray();
+
+        var signature = SignWithoutIncludedCertificate(content, Partner);
+
+        FileSecurity.VerifyEndResponse(signature, content, Partner);
+        Assert.Throws<FileSecurityException>(() => FileSecurity.VerifyEndResponse(signature, content, Ours));
+    }
+
     [Fact]
     public void EndResponseSignatureIsVerifiedAgainstItsContent()
     {

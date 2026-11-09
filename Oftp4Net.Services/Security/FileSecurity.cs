@@ -196,7 +196,9 @@ public static class FileSecurity
                 "The signature is not valid: " + ex.Message, ex);
         }
 
-        if (!cms.SignerInfos.Cast<SignerInfo>().Any(s => partnerCertificate.Equals(s.Certificate)))
+        // SignerInfo.Certificate only looks into the package, where the signer's certificate is optional. Without it
+        // the check above could only have used the partner's certificate, so the signature is the partner's.
+        if (!cms.SignerInfos.Cast<SignerInfo>().Any(s => s.Certificate is null || partnerCertificate.Equals(s.Certificate)))
             throw new FileSecurityException(AnswerReasonCodes.InvalidFileSignature,
                 $"The content is not signed by the certificate configured for the partner ('{partnerCertificate.Subject}').");
 
