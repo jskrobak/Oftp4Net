@@ -211,6 +211,28 @@
                     </div>
 
                     <div class="col-12">
+                        <h6 class="mb-1 mt-2">Public certificate page</h6>
+                        <p class="small text-body-secondary mb-2">
+                            Publishes our certificates in use and the ones scheduled to replace them without sign in at
+                            <a href="/cert" target="_blank">/cert</a>, with their fingerprints and downloads (DER, PEM, PEM with
+                            the chain), e.g. for a link in the announcement of a new certificate. Only the public parts of our
+                            own certificates; the company, public host and port above are shown with them.
+                        </p>
+                        <HxCheckbox Label="Publish our certificates" @bind-Value="@settings.PublishCertificates" />
+                    </div>
+                    <div class="col-12">
+                        <HxMultiSelect TItem="Identity"
+                                       TValue="int"
+                                       Label="Odette IDs shown on the page"
+                                       Hint="None shows no station; the IDs of the identities may tell who our customers are."
+                                       Data="availableIdentities"
+                                       @bind-Value="@settings.PublishedIdentityIds"
+                                       TextSelector="@(i => $"{i.Name} ({i.SSID})")"
+                                       ValueSelector="@(i => i.Id)"
+                                       EmptyText="-none-" />
+                    </div>
+
+                    <div class="col-12">
                         <HxSelect TItem="PdxAutoApply"
                                   TValue="PdxAutoApply"
                                   Label="Apply datasheets received over OFTP"

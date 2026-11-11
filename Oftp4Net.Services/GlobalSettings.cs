@@ -120,6 +120,21 @@ public class GlobalSettings
     public DateTime? PreviousFileSecurityCertificateUntil { get; set; } = null;
 
     /// <summary>
+    /// Publish our certificates without sign in at <c>/cert</c>: the ones in use and the ones scheduled to replace
+    /// them, with their fingerprints, so that partners can download and verify them (e.g. from a link in the
+    /// announcement of a new certificate). Only the public parts of our own certificates are published.
+    /// </summary>
+    [SettingsItem]
+    public bool PublishCertificates { get; set; } = false;
+
+    /// <summary>
+    /// Our identities whose Odette IDs the public certificate page names; none names no station (the IDs may tell
+    /// who our customers are).
+    /// </summary>
+    [SettingsItem]
+    public List<int> PublishedIdentityIds { get; set; } = [];
+
+    /// <summary>
     /// Signing, compression and encryption of files is done in memory, so files larger than this are not
     /// secured and their transfer fails with an error.
     /// </summary>

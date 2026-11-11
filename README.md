@@ -33,7 +33,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
   received by e-mail or over OFTP, our own datasheet exported and sent
 - New certificates of partners scheduled for the time the partner starts using them, from the UI or the REST API
 - Our own certificate replaced at a scheduled time, with files encrypted for the previous or the next one still
-  decrypted around the roll-over
+  decrypted around the roll-over, and our certificates published on a page without sign in for partners to download
 - Automatic exchange of certificates over OFTP (ODETTE_CERTIFICATE_DELIVER, _REQUEST and _REPLACE): renewals,
   roll-overs and replacements taken over without the administrator
 - Certificate signing requests (CSR) with the profile of the OFTP2 Certificate Policy, for the Odette CA and others
@@ -1016,6 +1016,27 @@ A roll-over of our certificate then goes like this:
    one at the partner at once) and announce the time; a partner that pins our TLS certificate rather than trusting
    its CA has to trust the new one.
 4. After the time: test the connections (*Connection tests*); *Logs → Certificates* lists what was replaced.
+
+## Publishing our certificates
+
+*Settings → Public certificate page → Publish our certificates* (off by default) publishes our certificates without
+sign in, e.g. for a link in the announcement of a new certificate:
+
+| Address | Content |
+|---|---|
+| `/cert` | page with our certificates in use and the ones scheduled to replace them, with the time they are used from, subject, issuer, serial number, validity, SHA-256 and SHA-1 fingerprints and what they are used for |
+| `/cert/index.json` | the same as JSON, for scripts and monitoring |
+| `/cert/{key}.cer`, `.pem`, `-chain.pem` | the certificate in DER, in PEM, and in PEM with the authorities above it; `{key}` is the beginning of its SHA-256 fingerprint |
+
+Only the public parts of our own certificates are published: the file security and TLS client certificates of the
+settings, the certificates of our identities, the server certificates of enabled TLS listeners and the certificates
+of scheduled changes of ours. Never a private key, a certificate of a partner, an authority on its own, an expired
+certificate or the previous certificate kept only to decrypt. The company, public host and port of the station
+profile are shown with them, the Odette IDs only of the identities chosen in the settings (the IDs may tell who our
+customers are). Switched off, every address answers 404; each client address may ask 30 times a minute.
+
+An announcement should still carry the fingerprint and the certificate itself (PEM) in its text: many partners do
+not download certificates from links in e-mails, and the fingerprint lets the others check what they downloaded.
 
 ## Certificates per station and purpose
 

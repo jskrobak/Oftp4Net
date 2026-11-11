@@ -35,6 +35,9 @@ public partial class Settings : ComponentBase, IDisposable
     private List<Listener> availableListeners = [];
 
     [Inject] protected IListenerRepository Listeners { get; set; } = null!;
+    [Inject] protected IIdentityRepository Identities { get; set; } = null!;
+
+    private List<Identity> availableIdentities = [];
 
     private string? AddressText
     {
@@ -56,6 +59,7 @@ public partial class Settings : ComponentBase, IDisposable
         // Certificates first: the selects of the form need them as soon as the settings are rendered.
         availableCertificates = (await DataService.GetAllCertificatesAsync()).Where(c => c.HasPrivateKey).ToList();
         availableListeners = await Listeners.GetAllAsync();
+        availableIdentities = (await Identities.GetAllAsync()).OrderBy(i => i.Name).ToList();
         settings = await GlobalSettingsService.GetGlobalSettingsAsync();
         Retention.Changed += HandleRetentionChanged;
     }

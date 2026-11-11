@@ -18,6 +18,10 @@ public partial class ApplicationTimeService : TimeZoneTimeServiceBase, ITimeServ
             ? "Central Europe Standard Time"
             : "Europe/Prague"); // MacOS
 
+    /// <summary>A local time of the application as an instant with its offset, e.g. for a time shown to partners.</summary>
+    public DateTimeOffset ToInstant(DateTime localTime) =>
+        new(DateTime.SpecifyKind(localTime, DateTimeKind.Unspecified), CurrentTimeZone.GetUtcOffset(localTime));
+
     /// <summary>
     /// Reads a time given to the application, e.g. through the REST API: with an offset or <c>Z</c> it is an instant
     /// and is converted to the local time, without one it is the local time already.

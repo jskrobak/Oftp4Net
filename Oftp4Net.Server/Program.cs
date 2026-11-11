@@ -191,6 +191,8 @@ builder.Services.AddScoped<PdxExporter>();
 builder.Services.AddScoped<CertificateSigningRequestService>();
 builder.Services.AddScoped<CertificateExchangeService>();
 builder.Services.AddScoped<CertificateChangeService>();
+builder.Services.AddScoped<PublicCertificateService>();
+builder.Services.AddPublicCertificateRateLimit();
 builder.Services.AddScoped<PartnerTlsTrustService>();
 builder.Services.AddScoped<TestFileService>();
 builder.Services.AddScoped<PartnerProvisioningService>();
@@ -271,6 +273,7 @@ app.MapStaticAssets().AllowAnonymous();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.UseAntiforgery();
 
 app.MapRazorComponents<App>()
@@ -279,6 +282,7 @@ app.MapRazorComponents<App>()
 app.MapApi();
 app.MapHealth();
 app.MapMonitoring();
+app.MapPublicCertificates();
 
 // API description and its documentation; both require a signed in administrator (fallback policy).
 app.MapOpenApi();
