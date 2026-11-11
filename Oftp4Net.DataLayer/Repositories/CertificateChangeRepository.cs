@@ -23,6 +23,7 @@ public class CertificateChangeRepository(
         .Where(c => c.Status == CertificateChangeStatus.Scheduled && c.ActivateAt <= now)
         .Include(c => c.Partner)
         .Include(c => c.Certificate)
+        .Include(c => c.ReplacedCertificate)
         .OrderBy(c => c.ActivateAt)
         .ThenBy(c => c.Id)
         .ToListAsync(cancellationToken);
@@ -41,7 +42,15 @@ public class CertificateChangeRepository(
         .Where(c => c.Status == CertificateChangeStatus.Scheduled)
         .Include(c => c.Partner)
         .Include(c => c.Certificate)
+        .Include(c => c.ReplacedCertificate)
         .OrderBy(c => c.ActivateAt)
+        .ToListAsync(cancellationToken);
+
+    public Task<List<int>> GetScheduledOwnCertificateIdsAsync(CancellationToken cancellationToken = default) => Data
+        .Where(c => c.Status == CertificateChangeStatus.Scheduled && c.Target == CertificateChangeTarget.Own &&
+                    c.Usage != PartnerCertificateUsage.Tls && c.CertificateId != null)
+        .Select(c => c.CertificateId!.Value)
+        .Distinct()
         .ToListAsync(cancellationToken);
 
     public async Task<List<CertificateChange>> GetOverviewAsync(int take, CancellationToken cancellationToken = default)
@@ -50,6 +59,7 @@ public class CertificateChangeRepository(
         var others = await Data
             .Where(c => c.Status != CertificateChangeStatus.Scheduled)
             .Include(c => c.Certificate)
+            .Include(c => c.ReplacedCertificate)
             .OrderByDescending(c => c.ActivateAt)
             .ThenByDescending(c => c.Id)
             .Take(take)

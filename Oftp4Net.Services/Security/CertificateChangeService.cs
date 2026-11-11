@@ -14,6 +14,11 @@ namespace Oftp4Net.Services.Security;
 /// Certificates of partners uploaded in advance: each replaces the partner's current certificate of its purpose at
 /// the time the partner starts using it. The file security certificate it replaces is kept as the previous one, so
 /// that files and End to End Responses signed shortly before the change are still verified.
+/// <para>
+/// Our own certificate is replaced the same way at the time announced to the partners: wherever we use the replaced
+/// one for the purpose. The replaced one still decrypts for partners that have not taken over the new one yet, and
+/// the new one decrypts already before the change for partners that use it early.
+/// </para>
 /// </summary>
 public class CertificateChangeService(
     ICertificateChangeRepository changeRepository,
@@ -24,6 +29,9 @@ public class CertificateChangeService(
     ITransferEventLog eventLog,
     CertificateChangeScheduler scheduler,
     ListenerService listenerService,
+    GlobalSettingsService settingsService,
+    IIdentityRepository identityRepository,
+    IListenerRepository listenerRepository,
     ILogger<CertificateChangeService> logger)
 {
     /// <summary>Imports the certificate file (unless it is stored already) and schedules it for the partner.</summary>
@@ -107,6 +115,58 @@ public class CertificateChangeService(
         return change;
     }
 
+    /// <summary>
+    /// Schedules our certificate <paramref name="certificateId"/> to replace our certificate
+    /// <paramref name="replacedCertificateId"/> for the purpose at <paramref name="activateAt"/>. A time that has
+    /// passed already applies it right away.
+    /// </summary>
+    /// <param name="keepPreviousUntil">
+    /// Until when the replaced certificate still decrypts files and challenges of partners that have not taken over
+    /// the new one; <c>null</c> until it expires.
+    /// </param>
+    public async Task<CertificateChange> ScheduleOwnAsync(int certificateId, int replacedCertificateId, PartnerCertificateUsage usage,
+        DateTime activateAt, DateTime? keepPreviousUntil, string? note, string? createdBy, CancellationToken cancellationToken = default)
+    {
+        if (certificateId == replacedCertificateId)
+            throw new InvalidOperationException("The new certificate is the one it is to replace.");
+
+        var certificate = await certificateRepository.GetObjectAsync(certificateId, cancellationToken);
+        var replaced = await certificateRepository.GetObjectAsync(replacedCertificateId, cancellationToken);
+        if (!certificate.HasPrivateKey)
+            throw new InvalidOperationException($"Certificate {certificate.Name} has no private key; our certificate needs one.");
+        if (certificate.ValidTo < activateAt)
+            throw new InvalidOperationException($"The certificate expires on {certificate.ValidTo:g}, before it is to be used.");
+        if (certificate.ValidFrom > activateAt)
+            throw new InvalidOperationException($"The certificate is valid from {certificate.ValidFrom:g} only, after it is to be used.");
+        if (keepPreviousUntil is { } until && until < activateAt)
+            throw new InvalidOperationException("The replaced certificate cannot be kept until a time before the change.");
+
+        var change = new CertificateChange
+        {
+            Target = CertificateChangeTarget.Own,
+            PartnerName = string.Empty,
+            CertificateId = certificate.Id,
+            ReplacedCertificateId = replaced.Id,
+            Usage = usage,
+            ActivateAt = activateAt,
+            KeepPreviousUntil = keepPreviousUntil,
+            Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
+            CreatedBy = Truncate(createdBy, 50),
+            Created = timeService.GetCurrentTime(),
+        };
+        unitOfWork.AddForInsert(change);
+        await unitOfWork.CommitAsync(cancellationToken);
+
+        logger.LogInformation("Our certificate {Certificate} scheduled to replace {Replaced} ({Usage}) at {ActivateAt}",
+            certificate.Name, replaced.Name, usage, activateAt);
+        Record(TransferEventType.CertificateChangeScheduled, TransferEventLevel.Information, null, string.Empty,
+            $"Our certificate {certificate.Name} (valid to {certificate.ValidTo:d}) scheduled to replace {replaced.Name} for " +
+            $"{DescribeOwn(usage)} at {activateAt:g}; until then it already decrypts files of partners that use it");
+
+        scheduler.Trigger();
+        return change;
+    }
+
     public async Task CancelAsync(int changeId, string? cancelledBy, CancellationToken cancellationToken = default)
     {
         var change = await changeRepository.GetObjectAsync(changeId, cancellationToken);
@@ -119,7 +179,7 @@ public class CertificateChangeService(
         await unitOfWork.CommitAsync(cancellationToken);
 
         Record(TransferEventType.CertificateChangeCancelled, TransferEventLevel.Information, change.PartnerId, change.PartnerName,
-            $"The certificate change of partner {change.PartnerName} at {change.ActivateAt:g} was cancelled" +
+            $"The change of {Whose(change)} at {change.ActivateAt:g} was cancelled" +
             (cancelledBy is null ? "" : $" by {cancelledBy}"));
     }
 
@@ -129,12 +189,21 @@ public class CertificateChangeService(
         var now = timeService.GetCurrentTime();
         var due = await changeRepository.GetDueAsync(now, cancellationToken);
         var tls = false;
+        var listeners = false;
         foreach (var change in due)
-            tls |= await ApplyAsync(change, now, cancellationToken);
+        {
+            if (change.Target == CertificateChangeTarget.Own)
+                listeners |= await ApplyOwnAsync(change, now, cancellationToken);
+            else
+                tls |= await ApplyAsync(change, now, cancellationToken);
+        }
 
         // The listeners check the certificates of partners that call us against the trusted ones.
         if (tls)
             await listenerService.RefreshTrustedCertificatesAsync();
+        // They present the new server certificate from the next connection on; running sessions go on.
+        if (listeners)
+            await listenerService.ReloadServerCertificatesAsync();
         return due.Count;
     }
 
@@ -166,6 +235,121 @@ public class CertificateChangeService(
             $"Certificate {change.Certificate?.Name} is used for {Describe(change.Usage)} of partner {partner.Name} from now on" +
             (changed.Count == 0 ? " (it was in use already)." : $": {string.Join(", ", changed)}."));
         return change.Usage is PartnerCertificateUsage.Tls or PartnerCertificateUsage.SecurityAndTls;
+    }
+
+    /// <summary>Applies one change of our certificate; returns whether the server certificate of a listener changed.</summary>
+    private async Task<bool> ApplyOwnAsync(CertificateChange change, DateTime now, CancellationToken cancellationToken)
+    {
+        if (change.CertificateId is not { } certificateId || change.ReplacedCertificateId is not { } replacedId)
+        {
+            change.Status = CertificateChangeStatus.Failed;
+            change.LastError = change.CertificateId is null ? "The certificate was deleted." : "The replaced certificate was deleted.";
+            unitOfWork.AddForUpdate(change);
+            await unitOfWork.CommitAsync(cancellationToken);
+            Record(TransferEventType.CertificateChangeFailed, TransferEventLevel.Error, null, string.Empty,
+                $"The change of our certificate at {change.ActivateAt:g} could not be applied: {change.LastError}");
+            return false;
+        }
+
+        var settings = await settingsService.GetGlobalSettingsAsync();
+        var identities = await identityRepository.GetAllAsync(cancellationToken);
+        var listeners = await listenerRepository.GetAllAsync(cancellationToken);
+        var result = ApplyOwn(settings, identities, listeners, certificateId, replacedId, change.Usage,
+            change.KeepPreviousUntil ?? change.ReplacedCertificate?.ValidTo);
+
+        // The settings first: should the rest fail, the change stays scheduled and is applied again, which finds
+        // the settings done already.
+        if (result.Settings)
+            await settingsService.SetGlobalSettingsAsync(settings);
+        foreach (var identity in result.Identities)
+            unitOfWork.AddForUpdate(identity);
+        foreach (var listener in result.Listeners)
+            unitOfWork.AddForUpdate(listener);
+        change.Status = CertificateChangeStatus.Applied;
+        change.AppliedAt = now;
+        unitOfWork.AddForUpdate(change);
+        await unitOfWork.CommitAsync(cancellationToken);
+
+        logger.LogInformation("Our certificate {Certificate} replaces {Replaced} for {Usage} from now on",
+            change.Certificate?.Name, change.ReplacedCertificate?.Name, change.Usage);
+        Record(TransferEventType.CertificateChangeApplied,
+            result.Changed.Count == 0 ? TransferEventLevel.Warning : TransferEventLevel.Information, null, string.Empty,
+            $"Our certificate {change.Certificate?.Name} replaces {change.ReplacedCertificate?.Name} for {DescribeOwn(change.Usage)} from now on" +
+            (result.Changed.Count == 0
+                ? ", but the replaced certificate was not used for it anywhere."
+                : $": {string.Join(", ", result.Changed)}."));
+        return result.Listeners.Count > 0;
+    }
+
+    /// <summary>What a change of our certificate changed.</summary>
+    public sealed record OwnChangeResult(List<string> Changed, bool Settings, List<Identity> Identities, List<Listener> Listeners);
+
+    /// <summary>
+    /// Puts our certificate in place of the replaced one wherever that is used for the purpose: for file security
+    /// in the settings and at our identities, the replaced one being kept as the previous one until
+    /// <paramref name="keepPreviousUntil"/>; for TLS as client certificate and at the listeners.
+    /// </summary>
+    public static OwnChangeResult ApplyOwn(GlobalSettings settings, IEnumerable<Identity> identities, IEnumerable<Listener> listeners,
+        int certificateId, int replacedId, PartnerCertificateUsage usage, DateTime? keepPreviousUntil)
+    {
+        var result = new OwnChangeResult([], false, [], []);
+        var settingsChanged = false;
+
+        if (usage is PartnerCertificateUsage.Security or PartnerCertificateUsage.SecurityAndTls)
+        {
+            var replacedForSecurity = false;
+            if (settings.FileSecurityCertificateId == replacedId)
+            {
+                settings.FileSecurityCertificateId = certificateId;
+                result.Changed.Add("file security certificate");
+                replacedForSecurity = true;
+            }
+
+            foreach (var identity in identities)
+            {
+                var assignments = identity.Certificates.Where(a => a.CertificateId == replacedId).ToList();
+                foreach (var assignment in assignments)
+                {
+                    assignment.PreviousCertificateId = replacedId;
+                    assignment.CertificateId = certificateId;
+                    result.Changed.Add($"{assignment.Usage} certificate of identity {identity.Name}" +
+                                       (string.IsNullOrEmpty(assignment.Sfid) ? "" : $" ({assignment.Sfid})"));
+                }
+
+                if (assignments.Count > 0)
+                {
+                    result.Identities.Add(identity);
+                    replacedForSecurity = true;
+                }
+            }
+
+            if (replacedForSecurity)
+            {
+                settings.PreviousFileSecurityCertificateId = replacedId;
+                settings.PreviousFileSecurityCertificateUntil = keepPreviousUntil;
+                settingsChanged = true;
+            }
+        }
+
+        if (usage is PartnerCertificateUsage.Tls or PartnerCertificateUsage.SecurityAndTls)
+        {
+            if (settings.OftpClientCertificateId == replacedId)
+            {
+                settings.OftpClientCertificateId = certificateId;
+                result.Changed.Add("TLS client certificate");
+                settingsChanged = true;
+            }
+
+            foreach (var listener in listeners.Where(l => l.CertificateId == replacedId))
+            {
+                listener.CertificateId = certificateId;
+                listener.Certificate = null;
+                result.Listeners.Add(listener);
+                result.Changed.Add($"server certificate of listener {listener.Name}");
+            }
+        }
+
+        return result with { Settings = settingsChanged };
     }
 
     /// <summary>
@@ -206,6 +390,19 @@ public class CertificateChangeService(
 
         return changed;
     }
+
+    /// <summary>What the purpose means for our own certificate.</summary>
+    public static string DescribeOwn(PartnerCertificateUsage usage) => usage switch
+    {
+        PartnerCertificateUsage.Security => "file security (signing, decryption, authentication)",
+        PartnerCertificateUsage.Tls => "TLS (client certificate and listeners)",
+        PartnerCertificateUsage.SecurityAndTls => "file security and TLS",
+        _ => usage.ToString(),
+    };
+
+    /// <summary>Whose certificate a change replaces, for messages.</summary>
+    public static string Whose(CertificateChange change) =>
+        change.Target == CertificateChangeTarget.Own ? "our certificate" : $"the certificate of partner {change.PartnerName}";
 
     public static string Describe(PartnerCertificateUsage usage) => usage switch
     {

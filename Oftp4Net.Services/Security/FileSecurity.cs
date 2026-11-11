@@ -44,7 +44,16 @@ public static class FileSecurity
     /// </summary>
     public static byte[] Unprotect(byte[] content, FileSecurityDescriptor descriptor,
         X509Certificate2? decryptionCertificate, X509Certificate2? partnerCertificate) =>
-        Unprotect(content, descriptor, decryptionCertificate, partnerCertificate, strictSignature: true, out _);
+        Unprotect(content, descriptor, One(decryptionCertificate), partnerCertificate, strictSignature: true, out _);
+
+    /// <summary>
+    /// Like <see cref="Unprotect(byte[], FileSecurityDescriptor, X509Certificate2?, X509Certificate2?)"/>, decrypting
+    /// with the one of <paramref name="decryptionCertificates"/> the partner encrypted for: around a roll-over of our
+    /// certificate a partner may still use the previous one or already the next one.
+    /// </summary>
+    public static byte[] Unprotect(byte[] content, FileSecurityDescriptor descriptor,
+        IReadOnlyList<X509Certificate2> decryptionCertificates, X509Certificate2? partnerCertificate) =>
+        Unprotect(content, descriptor, decryptionCertificates, partnerCertificate, strictSignature: true, out _);
 
     /// <summary>
     /// Like <see cref="Unprotect(byte[], FileSecurityDescriptor, X509Certificate2?, X509Certificate2?)"/>, but a
@@ -54,10 +63,17 @@ public static class FileSecurity
     /// </summary>
     public static byte[] Unprotect(byte[] content, FileSecurityDescriptor descriptor,
         X509Certificate2? decryptionCertificate, X509Certificate2? partnerCertificate, out string? signatureProblem) =>
-        Unprotect(content, descriptor, decryptionCertificate, partnerCertificate, strictSignature: false, out signatureProblem);
+        Unprotect(content, descriptor, One(decryptionCertificate), partnerCertificate, strictSignature: false, out signatureProblem);
+
+    /// <inheritdoc cref="Unprotect(byte[], FileSecurityDescriptor, X509Certificate2?, X509Certificate2?, out string?)"/>
+    public static byte[] Unprotect(byte[] content, FileSecurityDescriptor descriptor,
+        IReadOnlyList<X509Certificate2> decryptionCertificates, X509Certificate2? partnerCertificate, out string? signatureProblem) =>
+        Unprotect(content, descriptor, decryptionCertificates, partnerCertificate, strictSignature: false, out signatureProblem);
+
+    private static IReadOnlyList<X509Certificate2> One(X509Certificate2? certificate) => certificate is null ? [] : [certificate];
 
     private static byte[] Unprotect(byte[] content, FileSecurityDescriptor descriptor,
-        X509Certificate2? decryptionCertificate, X509Certificate2? partnerCertificate, bool strictSignature,
+        IReadOnlyList<X509Certificate2> decryptionCertificates, X509Certificate2? partnerCertificate, bool strictSignature,
         out string? signatureProblem)
     {
         signatureProblem = null;
@@ -70,10 +86,10 @@ public static class FileSecurity
 
         if (descriptor.Encrypted)
         {
-            if (decryptionCertificate is null)
+            if (decryptionCertificates.Count == 0)
                 throw new FileSecurityException(AnswerReasonCodes.FileDecryptionFailure,
                     "No certificate with a private key is configured to decrypt files with.");
-            result = Decrypt(result, decryptionCertificate, suite);
+            result = Decrypt(result, decryptionCertificates, suite);
         }
 
         if (descriptor.Compressed)
@@ -136,7 +152,14 @@ public static class FileSecurity
 
     /// <summary>Secure authentication: decrypts a challenge received from the peer with our own private key.</summary>
     public static byte[] DecryptChallenge(byte[] challenge, X509Certificate2 certificate) =>
-        Decrypt(challenge, certificate);
+        Decrypt(challenge, [certificate]);
+
+    /// <summary>
+    /// Secure authentication: decrypts a challenge with the one of our certificates the peer encrypted it for, the
+    /// current one or another one around a roll-over.
+    /// </summary>
+    public static byte[] DecryptChallenge(byte[] challenge, IReadOnlyList<X509Certificate2> certificates) =>
+        Decrypt(challenge, certificates);
 
     private static byte[] Sign(byte[] content, X509Certificate2 certificate, CipherSuite suite)
     {
@@ -242,20 +265,23 @@ public static class FileSecurity
         return enveloped.Encode();
     }
 
-    private static byte[] Decrypt(byte[] content, X509Certificate2 certificate, CipherSuite? suite = null)
+    private static byte[] Decrypt(byte[] content, IReadOnlyList<X509Certificate2> certificates, CipherSuite? suite = null)
     {
         if (suite is not null && Sha3Cms.IsHandled(suite))
-            return Sha3Cms.Decrypt(content, certificate, suite);
+            return Sha3Cms.Decrypt(content, certificates, suite);
 
-        if (!certificate.HasPrivateKey)
-            throw new FileSecurityException(AnswerReasonCodes.FileDecryptionFailure,
-                $"Certificate '{certificate.Subject}' has no private key to decrypt with.");
+        var withKey = certificates.Where(c => c.HasPrivateKey).ToArray();
+        if (withKey.Length == 0)
+            throw new FileSecurityException(AnswerReasonCodes.FileDecryptionFailure, certificates.Count == 1
+                ? $"Certificate '{certificates[0].Subject}' has no private key to decrypt with."
+                : "None of our certificates has a private key to decrypt with.");
 
         var enveloped = new EnvelopedCms();
         try
         {
             enveloped.Decode(content);
-            enveloped.Decrypt(new X509Certificate2Collection(certificate));
+            // The recipient info names the certificate the package is encrypted for; it is looked up among these.
+            enveloped.Decrypt(new X509Certificate2Collection(withKey));
         }
         catch (CryptographicException ex)
         {
@@ -263,7 +289,7 @@ public static class FileSecurity
             // refuses a key wrapped with OAEP and a SHA3 digest. Such a package is unwrapped by hand.
             try
             {
-                return Sha3Cms.Decrypt(content, certificate);
+                return Sha3Cms.Decrypt(content, withKey);
             }
             catch (FileSecurityException)
             {

@@ -80,6 +80,87 @@ public class CertificateChangeTests
     }
 
     [Fact]
+    public void Own_Security_ReplacesOurCertificateAndKeepsThePreviousOne()
+    {
+        var settings = new GlobalSettings { FileSecurityCertificateId = 1, OftpClientCertificateId = 1 };
+        var identity = new Identity
+        {
+            Name = "ARTIPA",
+            Certificates =
+            [
+                new CertificateAssignment { Usage = CertificateUsage.FileEncryption, CertificateId = 1 },
+                new CertificateAssignment { Usage = CertificateUsage.Authentication, CertificateId = 5 },
+            ],
+        };
+        var listener = new Listener { Name = "TLS", CertificateId = 1 };
+        var until = new DateTime(2026, 12, 31, 23, 59, 0);
+
+        var result = CertificateChangeService.ApplyOwn(settings, [identity, new Identity { Name = "OTHER" }], [listener], 2, 1,
+            PartnerCertificateUsage.Security, until);
+
+        Assert.Equal((2, 1, until), (settings.FileSecurityCertificateId!.Value, settings.PreviousFileSecurityCertificateId!.Value,
+            settings.PreviousFileSecurityCertificateUntil!.Value));
+        Assert.Equal((2, 1), (identity.Certificates[0].CertificateId, identity.Certificates[0].PreviousCertificateId!.Value));
+        // Another certificate of ours is not the replaced one, and TLS stays as it is.
+        Assert.Equal(5, identity.Certificates[1].CertificateId);
+        Assert.Equal((1, 1), (settings.OftpClientCertificateId!.Value, listener.CertificateId!.Value));
+        Assert.True(result.Settings);
+        Assert.Equal([identity], result.Identities);
+        Assert.Empty(result.Listeners);
+        Assert.Equal(["file security certificate", "FileEncryption certificate of identity ARTIPA"], result.Changed);
+    }
+
+    [Fact]
+    public void Own_SecurityAndTls_ReplacesTheClientCertificateAndTheListenersToo()
+    {
+        var settings = new GlobalSettings { FileSecurityCertificateId = 1, OftpClientCertificateId = 1 };
+        var replaced = new Listener { Name = "TLS", CertificateId = 1 };
+        var other = new Listener { Name = "Test", CertificateId = 9 };
+
+        var result = CertificateChangeService.ApplyOwn(settings, [], [replaced, other], 2, 1, PartnerCertificateUsage.SecurityAndTls, null);
+
+        Assert.Equal((2, 2, 2), (settings.FileSecurityCertificateId!.Value, settings.OftpClientCertificateId!.Value, replaced.CertificateId!.Value));
+        Assert.Equal(9, other.CertificateId);
+        Assert.Null(settings.PreviousFileSecurityCertificateUntil);
+        Assert.Equal([replaced], result.Listeners);
+    }
+
+    [Fact]
+    public void Own_Tls_KeepsFileSecurity()
+    {
+        var settings = new GlobalSettings { FileSecurityCertificateId = 1, OftpClientCertificateId = 1 };
+
+        CertificateChangeService.ApplyOwn(settings, [], [], 2, 1, PartnerCertificateUsage.Tls, null);
+
+        Assert.Equal((1, 2), (settings.FileSecurityCertificateId!.Value, settings.OftpClientCertificateId!.Value));
+        Assert.Null(settings.PreviousFileSecurityCertificateId);
+    }
+
+    [Fact]
+    public void Own_ACertificateNotInUse_ChangesNothing()
+    {
+        var settings = new GlobalSettings { FileSecurityCertificateId = 3, PreviousFileSecurityCertificateId = 7 };
+
+        var result = CertificateChangeService.ApplyOwn(settings, [], [], 2, 1, PartnerCertificateUsage.SecurityAndTls, null);
+
+        Assert.Empty(result.Changed);
+        Assert.False(result.Settings);
+        Assert.Equal((3, 7), (settings.FileSecurityCertificateId!.Value, settings.PreviousFileSecurityCertificateId!.Value));
+    }
+
+    [Fact]
+    public void HealthCheck_NamesOurCertificate()
+    {
+        var change = Change(1, Now.AddHours(-1), Certificate(10, Now.AddYears(1)));
+        change.Target = CertificateChangeTarget.Own;
+        change.PartnerName = "";
+
+        var result = CertificateChangesHealthCheck.Evaluate([change], [], Now);
+
+        Assert.Contains("The change of our certificate due at", result.Description);
+    }
+
+    [Fact]
     public void HealthCheck_ReportsOverdueFailedAndExpiringChanges()
     {
         var overdue = Change(1, Now.AddHours(-1), Certificate(10, Now.AddYears(1)));

@@ -101,10 +101,23 @@ public class GlobalSettings
 
     /// <summary>
     /// Certificate with private key used for file level security: outgoing files and End to End Responses are
-    /// signed with it, incoming ones are decrypted with it. Give its public part to your partners.
+    /// signed with it, incoming ones are decrypted with it. Give its public part to your partners. Replace it with a
+    /// scheduled change of our certificate, which keeps the replaced one for decryption for a while.
     /// </summary>
     [SettingsItem]
     public int? FileSecurityCertificateId { get; set; } = null;
+
+    /// <summary>
+    /// Our file security certificate before the last roll-over: until <see cref="PreviousFileSecurityCertificateUntil"/>
+    /// it still decrypts files and authentication challenges of partners that have not taken over the new one yet.
+    /// Set by a scheduled change of our certificate.
+    /// </summary>
+    [SettingsItem]
+    public int? PreviousFileSecurityCertificateId { get; set; } = null;
+
+    /// <summary>End of the use of <see cref="PreviousFileSecurityCertificateId"/>, local time.</summary>
+    [SettingsItem]
+    public DateTime? PreviousFileSecurityCertificateUntil { get; set; } = null;
 
     /// <summary>
     /// Signing, compression and encryption of files is done in memory, so files larger than this are not

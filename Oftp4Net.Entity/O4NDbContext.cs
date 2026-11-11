@@ -119,7 +119,9 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
             entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(20);
             // The history stays when the partner or the certificate is deleted; the change then fails.
             entity.HasOne(e => e.Partner).WithMany().OnDelete(DeleteBehavior.SetNull);
+            entity.Property(e => e.Target).HasConversion<string>().HasMaxLength(20);
             entity.HasOne(e => e.Certificate).WithMany().OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ReplacedCertificate).WithMany().OnDelete(DeleteBehavior.SetNull);
             entity.HasIndex(e => new { e.Status, e.ActivateAt });
         });
 

@@ -11,9 +11,10 @@ public sealed class OftpTlsOptions
 
     /// <summary>
     /// Certificate with private key presented by this side: the server certificate of a listener,
-    /// or the optional client certificate of a connecting client.
+    /// or the optional client certificate of a connecting client. A listener reads it on every handshake; assign
+    /// another one to change it while the listener is running.
     /// </summary>
-    public X509Certificate2? LocalCertificate { get; init; }
+    public X509Certificate2? LocalCertificate { get; set; }
 
     /// <summary>
     /// Additional trust anchors. The remote certificate is accepted when it is valid according to the operating

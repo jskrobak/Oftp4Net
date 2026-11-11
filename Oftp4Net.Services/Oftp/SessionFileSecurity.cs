@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Havit.Services.TimeServices;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
 using Oftp4Net.Services.Security;
@@ -15,8 +16,13 @@ namespace Oftp4Net.Services.Oftp;
 /// Certification authorities of the Odette trust list, used to build the chain of a certificate up to its issuer.
 /// </param>
 /// <param name="crls">The revocation lists of the authorities; without it only the validity period is checked.</param>
+/// <param name="changes">
+/// Scheduled changes of our certificate: a partner that took the next one over already may encrypt for it.
+/// </param>
+/// <param name="time">The time of the application, which the end of the previous certificate is in.</param>
 public sealed class SessionFileSecurity(ICertificateRepository certificates, GlobalSettings settings,
-    X509Certificate2Collection? trustAnchors = null, CrlStore? crls = null) : IDisposable
+    X509Certificate2Collection? trustAnchors = null, CrlStore? crls = null, ICertificateChangeRepository? changes = null,
+    ITimeService? time = null) : IDisposable
 {
     private readonly Dictionary<int, X509Certificate2> _loaded = [];
     private readonly Dictionary<string, string?> _checked = [];
@@ -35,6 +41,48 @@ public sealed class SessionFileSecurity(ICertificateRepository certificates, Glo
     public Task<X509Certificate2?> GetOwnCertificateAsync(Identity? identity, CertificateUsage usage,
         CancellationToken cancellationToken) =>
         GetAsync(identity?.FindCertificate(null, usage)?.CertificateId ?? settings.FileSecurityCertificateId, cancellationToken);
+
+    /// <summary>
+    /// Our certificates a partner may encrypt a file or an authentication challenge for: the one of the purpose
+    /// (<see cref="GetOwnCertificateAsync"/>) first, then, around a roll-over of ours, the one before it while it is
+    /// kept (<see cref="GlobalSettings.PreviousFileSecurityCertificateUntil"/>) and the ones scheduled to replace it,
+    /// which a partner may use as soon as it has them. The package itself names the one it is encrypted for.
+    /// </summary>
+    public async Task<IReadOnlyList<X509Certificate2>> GetOwnDecryptionCertificatesAsync(Identity? identity, CertificateUsage usage,
+        CancellationToken cancellationToken)
+    {
+        var result = new List<X509Certificate2>();
+        if (await GetOwnCertificateAsync(identity, usage, cancellationToken) is { } current)
+            result.Add(current);
+
+        var ids = new List<int>();
+        var now = time?.GetCurrentTime() ?? DateTime.Now;
+        if (settings.PreviousFileSecurityCertificateId is { } previous &&
+            (settings.PreviousFileSecurityCertificateUntil is not { } until || now < until))
+            ids.Add(previous);
+        if (changes is not null)
+            ids.AddRange(await changes.GetScheduledOwnCertificateIdsAsync(cancellationToken));
+
+        foreach (var id in ids.Distinct())
+        {
+            X509Certificate2? certificate;
+            try
+            {
+                certificate = await GetAsync(id, cancellationToken);
+            }
+            catch (Exception ex) when (ex is CryptographicException or InvalidOperationException or FormatException
+                                           or Havit.Data.Patterns.Exceptions.ObjectNotFoundException)
+            {
+                // A deleted or unreadable certificate decrypts nothing; the current one is still tried.
+                continue;
+            }
+
+            if (certificate is { HasPrivateKey: true } && result.All(c => c.Thumbprint != certificate.Thumbprint))
+                result.Add(certificate);
+        }
+
+        return result;
+    }
 
     /// <summary>The partner's certificate: encrypts files for it and verifies its signatures.</summary>
     public Task<X509Certificate2?> GetPartnerCertificateAsync(StationSettings station, CertificateUsage usage,

@@ -95,6 +95,44 @@ public class FileSecurityTests
         Assert.Equal(Content, FileSecurity.Unprotect(protectedContent, Descriptor(settings), Partner, Ours));
     }
 
+    /// <summary>
+    /// Around a roll-over of our certificate a partner encrypts for the previous one or already for the next one; the
+    /// file is decrypted with whichever of them it names.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SupportedSuites))]
+    public void FileIsDecryptedWithTheOneOfOurCertificatesItIsEncryptedFor(string code)
+    {
+        var next = CreateCertificate("CN=Us 2027");
+        FileSecuritySettings For(X509Certificate2 recipient) => new()
+        {
+            Sign = true, Compress = true, Encrypt = true, Suite = CipherSuite.Get(code)!,
+            SigningCertificate = Partner, EncryptionCertificate = recipient,
+        };
+        var settings = For(Ours);
+        var forPrevious = FileSecurity.Protect(Content, settings);
+        var forNext = FileSecurity.Protect(Content, For(next));
+
+        Assert.Equal(Content, FileSecurity.Unprotect(forPrevious, Descriptor(settings), [next, Ours], Partner));
+        Assert.Equal(Content, FileSecurity.Unprotect(forNext, Descriptor(settings), [Ours, next], Partner));
+        var ex = Assert.Throws<FileSecurityException>(() =>
+            FileSecurity.Unprotect(forNext, Descriptor(settings), [Ours], Partner));
+        Assert.Equal(AnswerReasonCodes.FileDecryptionFailure, ex.ReasonCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(SupportedSuites))]
+    public void AuthenticationChallengeIsDecryptedWithTheOneOfOurCertificatesItIsEncryptedFor(string code)
+    {
+        var next = CreateCertificate("CN=Us 2027");
+        var challenge = Oftp4Net.Core.Protocol.SecureAuthentication.CreateChallenge();
+
+        var envelope = FileSecurity.EncryptChallenge(challenge, next, CipherSuite.Get(code)!);
+
+        Assert.Equal(challenge, FileSecurity.DecryptChallenge(envelope, [Ours, next]));
+        Assert.Throws<FileSecurityException>(() => FileSecurity.DecryptChallenge(envelope, [Ours, Partner]));
+    }
+
     [Fact]
     public void CompressionMakesRepetitiveContentSmaller()
     {
@@ -114,12 +152,12 @@ public class FileSecurityTests
         var signed = FileSecurity.Protect(Content, settings);
         var stranger = CreateCertificate("CN=Stranger");
 
-        var content = FileSecurity.Unprotect(signed, Descriptor(settings), null, stranger, out var problem);
+        var content = FileSecurity.Unprotect(signed, Descriptor(settings), [], stranger, out var problem);
 
         Assert.Equal(Content, content);
         Assert.NotNull(problem);
 
-        Assert.Equal(Content, FileSecurity.Unprotect(signed, Descriptor(settings), null, Ours, out problem));
+        Assert.Equal(Content, FileSecurity.Unprotect(signed, Descriptor(settings), [], Ours, out problem));
         Assert.Null(problem);
     }
 
@@ -131,7 +169,7 @@ public class FileSecurityTests
         var stranger = CreateCertificate("CN=Stranger");
 
         var exception = Assert.Throws<FileSecurityException>(
-            () => FileSecurity.Unprotect(signed, Descriptor(settings), null, stranger));
+            () => FileSecurity.Unprotect(signed, Descriptor(settings), [], stranger));
 
         Assert.Equal(AnswerReasonCodes.InvalidFileSignature, exception.ReasonCode);
     }
@@ -156,7 +194,7 @@ public class FileSecurityTests
         compressed[^1] ^= 0xFF;
 
         var exception = Assert.Throws<FileSecurityException>(
-            () => FileSecurity.Unprotect(compressed, Descriptor(settings), null, null));
+            () => FileSecurity.Unprotect(compressed, Descriptor(settings), [], null));
 
         Assert.Equal(AnswerReasonCodes.FileDecompressionFailure, exception.ReasonCode);
     }
@@ -298,9 +336,9 @@ public class FileSecurityTests
 
         var signed = SignWithoutIncludedCertificate(Content, Partner);
 
-        Assert.Equal(Content, FileSecurity.Unprotect(signed, descriptor, null, Partner));
+        Assert.Equal(Content, FileSecurity.Unprotect(signed, descriptor, [], Partner));
         Assert.Throws<FileSecurityException>(() =>
-            FileSecurity.Unprotect(signed, descriptor, null, CreateCertificate("CN=Stranger")));
+            FileSecurity.Unprotect(signed, descriptor, [], CreateCertificate("CN=Stranger")));
     }
 
     [Fact]

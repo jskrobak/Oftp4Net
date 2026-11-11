@@ -152,6 +152,9 @@ namespace Oftp4Net.Entity.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<DateTime?>("KeepPreviousUntil")
+                        .HasColumnType("timestamp without time zone");
+
                     b.Property<string>("LastError")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
@@ -168,7 +171,15 @@ namespace Oftp4Net.Entity.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<int?>("ReplacedCertificateId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Target")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
@@ -183,6 +194,8 @@ namespace Oftp4Net.Entity.Migrations
                     b.HasIndex("CertificateId");
 
                     b.HasIndex("PartnerId");
+
+                    b.HasIndex("ReplacedCertificateId");
 
                     b.HasIndex("Status", "ActivateAt");
 
@@ -983,9 +996,16 @@ namespace Oftp4Net.Entity.Migrations
                         .HasForeignKey("PartnerId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Oftp4Net.Domain.Certificate", "ReplacedCertificate")
+                        .WithMany()
+                        .HasForeignKey("ReplacedCertificateId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Certificate");
 
                     b.Navigation("Partner");
+
+                    b.Navigation("ReplacedCertificate");
                 });
 
             modelBuilder.Entity("Oftp4Net.Domain.CertificateSigningRequest", b =>

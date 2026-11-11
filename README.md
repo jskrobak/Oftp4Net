@@ -32,6 +32,8 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - Partner Details Exchange (PDX, Odette OFTP2 Communication Setup): partners set up and updated from their datasheets,
   received by e-mail or over OFTP, our own datasheet exported and sent
 - New certificates of partners scheduled for the time the partner starts using them, from the UI or the REST API
+- Our own certificate replaced at a scheduled time, with files encrypted for the previous or the next one still
+  decrypted around the roll-over
 - Automatic exchange of certificates over OFTP (ODETTE_CERTIFICATE_DELIVER, _REQUEST and _REPLACE): renewals,
   roll-overs and replacements taken over without the administrator
 - Certificate signing requests (CSR) with the profile of the OFTP2 Certificate Policy, for the Odette CA and others
@@ -985,6 +987,35 @@ curl -H "Authorization: Bearer $TOKEN" -F file=@partner-2027.crt -F usage=Securi
 
 `partner` is the SSID or the name of the partner, `usage` one of `Security`, `Tls` and `SecurityAndTls`.
 `activateAt` without an offset is the local time of the server (Europe/Prague), with `Z` or an offset an instant.
+
+## Changing our own certificate
+
+Our certificate is replaced the same way, at the time announced to the partners: *Certificate changes* →
+*Schedule a certificate* → *Ours* takes the new certificate (requested with *Request certificate* or imported with
+its private key), the certificate it replaces and the purpose:
+
+| Used for | What changes at that time |
+|---|---|
+| File security | the file security certificate in *Settings* and every assignment of the replaced one at our identities: files and End to End Responses are signed with the new one, files and authentication challenges are decrypted with it |
+| TLS | the TLS client certificate in *Settings* and the server certificate of every listener that has the replaced one; the listeners present it from the next connection on, without a restart |
+| File security and TLS | both, the usual case of an Odette certificate |
+
+Partners do not all take the new certificate over at the same moment, so a file or an authentication challenge is
+decrypted with whichever of our certificates it is encrypted for: the new one already from the time the change is
+scheduled (a partner may use it as soon as it has it), and the replaced one after the change until the time given
+as *The replaced certificate still decrypts until* (empty: until it expires). Set that time to the end of its
+use, e.g. when the contract for it ends. Our own certificate is changed only in the administration, not through the
+REST API: the scope `Certificates` lets a token replace certificates of partners, not ours.
+
+A roll-over of our certificate then goes like this:
+
+1. *Certificates* → *Request certificate*, submit the CSR to the CA and import the certificate it issues.
+2. *Certificate changes*: schedule it to replace the current one for *File security and TLS* at the announced time,
+   with the end of the old one.
+3. *Partners* → *Send our certificate* with the new certificate as a delivery (not a replacement, which ends the old
+   one at the partner at once) and announce the time; a partner that pins our TLS certificate rather than trusting
+   its CA has to trust the new one.
+4. After the time: test the connections (*Connection tests*); *Logs → Certificates* lists what was replaced.
 
 ## Certificates per station and purpose
 

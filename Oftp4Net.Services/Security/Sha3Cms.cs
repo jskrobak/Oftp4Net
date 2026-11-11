@@ -305,21 +305,54 @@ public static class Sha3Cms
 
     /// <summary>Unwraps a package written by <see cref="Encrypt"/> with our own private key.</summary>
     public static byte[] Decrypt(byte[] envelope, X509Certificate2 certificate, CipherSuite suite) =>
-        Decrypt(envelope, certificate, suite.EncryptionPadding);
+        Decrypt(envelope, [certificate], suite.EncryptionPadding);
+
+    /// <summary>
+    /// Unwraps a package written by <see cref="Encrypt"/> with the one of our certificates it is encrypted for, e.g.
+    /// the current one or the one before a roll-over.
+    /// </summary>
+    public static byte[] Decrypt(byte[] envelope, IReadOnlyList<X509Certificate2> certificates, CipherSuite suite) =>
+        Decrypt(envelope, certificates, suite.EncryptionPadding);
 
     /// <summary>
     /// Unwraps a package whose cipher suite we do not know, e.g. an authentication challenge: the padding of the
     /// key transport is read from the package. Used where the CMS classes of .NET refuse the algorithm.
     /// </summary>
     public static byte[] Decrypt(byte[] envelope, X509Certificate2 certificate) =>
-        Decrypt(envelope, certificate, padding: null);
+        Decrypt(envelope, [certificate], padding: null);
 
-    private static byte[] Decrypt(byte[] envelope, X509Certificate2 certificate, RSAEncryptionPadding? padding)
+    /// <inheritdoc cref="Decrypt(byte[], X509Certificate2)"/>
+    public static byte[] Decrypt(byte[] envelope, IReadOnlyList<X509Certificate2> certificates) =>
+        Decrypt(envelope, certificates, padding: null);
+
+    private static byte[] Decrypt(byte[] envelope, IReadOnlyList<X509Certificate2> certificates, RSAEncryptionPadding? padding)
     {
-        using var key = certificate.GetRSAPrivateKey()
-            ?? throw new FileSecurityException(Core.Protocol.AnswerReasonCodes.FileDecryptionFailure,
-                $"Certificate '{certificate.Subject}' has no RSA private key to decrypt with.");
+        var keys = new List<(X509Certificate2 Certificate, RSA Key)>();
+        try
+        {
+            foreach (var certificate in certificates)
+            {
+                if (certificate.GetRSAPrivateKey() is { } key)
+                    keys.Add((certificate, key));
+            }
 
+            if (keys.Count == 0)
+                throw new FileSecurityException(Core.Protocol.AnswerReasonCodes.FileDecryptionFailure,
+                    certificates.Count == 1
+                        ? $"Certificate '{certificates[0].Subject}' has no RSA private key to decrypt with."
+                        : "None of our certificates has an RSA private key to decrypt with.");
+
+            return Decrypt(envelope, keys, padding);
+        }
+        finally
+        {
+            foreach (var (_, key) in keys)
+                key.Dispose();
+        }
+    }
+
+    private static byte[] Decrypt(byte[] envelope, List<(X509Certificate2 Certificate, RSA Key)> keys, RSAEncryptionPadding? padding)
+    {
         try
         {
             var reader = new AsnReader(envelope, AsnEncodingRules.BER).ReadSequence();
@@ -336,25 +369,30 @@ public static class Sha3Cms
             {
                 var recipient = recipients.ReadSequence();
                 recipient.ReadInteger();
-                // The recipient is identified by issuer and serial number; we only have one certificate.
-                recipient.ReadEncodedValue();
+                var identifier = recipient.ReadEncodedValue();
                 var keyAlgorithm = recipient.ReadSequence();
                 var keyPadding = padding ?? ReadKeyEncryptionPadding(keyAlgorithm);
                 var encryptedKey = recipient.ReadOctetString();
 
-                try
+                // The certificate the recipient names comes first; the others are tried as well, in case the
+                // recipient is identified in another way than by issuer and serial number.
+                foreach (var (_, key) in keys.OrderBy(k => Names(identifier, k.Certificate) ? 0 : 1))
                 {
-                    contentKey = key.Decrypt(encryptedKey, keyPadding);
-                }
-                catch (CryptographicException)
-                {
-                    // Not our recipient info, try the next one.
+                    try
+                    {
+                        contentKey = key.Decrypt(encryptedKey, keyPadding);
+                        break;
+                    }
+                    catch (CryptographicException)
+                    {
+                        // Not this key, try the next one.
+                    }
                 }
             }
 
             if (contentKey is null)
                 throw new FileSecurityException(Core.Protocol.AnswerReasonCodes.FileDecryptionFailure,
-                    $"The package is not encrypted for '{certificate.Subject}'.");
+                    $"The package is not encrypted for {string.Join(" or ", keys.Select(k => $"'{k.Certificate.Subject}'"))}.");
 
             var encryptedContentInfo = enveloped.ReadSequence();
             encryptedContentInfo.ReadObjectIdentifier();
@@ -441,6 +479,27 @@ public static class Sha3Cms
                         writer.WriteObjectIdentifier(hash);
                 }
             }
+        }
+    }
+
+    /// <summary>Whether a recipient identifier (issuer and serial number) names the certificate.</summary>
+    private static bool Names(ReadOnlyMemory<byte> identifier, X509Certificate2 certificate)
+    {
+        try
+        {
+            var reader = new AsnReader(identifier, AsnEncodingRules.BER);
+            if (!reader.PeekTag().HasSameClassAndValue(Asn1Tag.Sequence))
+                return false;
+
+            var sequence = reader.ReadSequence();
+            var issuer = sequence.ReadEncodedValue();
+            var serial = sequence.ReadInteger();
+            return issuer.Span.SequenceEqual(certificate.IssuerName.RawData) &&
+                   serial == new BigInteger(certificate.SerialNumberBytes.Span, isUnsigned: true, isBigEndian: true);
+        }
+        catch (AsnContentException)
+        {
+            return false;
         }
     }
 

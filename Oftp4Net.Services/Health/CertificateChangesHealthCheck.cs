@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Oftp4Net.DataLayer.Repositories;
 using Oftp4Net.Domain;
+using static Oftp4Net.Services.Security.CertificateChangeService;
 
 namespace Oftp4Net.Services.Health;
 
@@ -36,11 +37,11 @@ public sealed class CertificateChangesHealthCheck(IServiceScopeFactory serviceSc
 
         var problems = new List<string>();
         foreach (var change in scheduled.Where(c => now - c.ActivateAt > OverdueLimit))
-            problems.Add($"The certificate change of partner {change.PartnerName} due at {change.ActivateAt:g} has not been applied.");
+            problems.Add($"The change of {Whose(change)} due at {change.ActivateAt:g} has not been applied.");
         foreach (var change in scheduled.Where(c => c.Certificate is { } certificate && certificate.ValidTo < c.ActivateAt))
-            problems.Add($"The certificate scheduled for partner {change.PartnerName} at {change.ActivateAt:g} expires before, on {change.Certificate!.ValidTo:d}.");
+            problems.Add($"The certificate scheduled to replace {Whose(change)} at {change.ActivateAt:g} expires before, on {change.Certificate!.ValidTo:d}.");
         foreach (var change in failed.Where(c => now - c.ActivateAt < FailedWindow))
-            problems.Add($"The certificate change of partner {change.PartnerName} at {change.ActivateAt:g} failed: {change.LastError}");
+            problems.Add($"The change of {Whose(change)} at {change.ActivateAt:g} failed: {change.LastError}");
 
         return problems.Count > 0
             ? HealthCheckResult.Degraded(string.Join(" ", problems), data: data)

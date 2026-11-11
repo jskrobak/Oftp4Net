@@ -22,6 +22,7 @@ public partial class CertificateChanges : ComponentBase
     [Inject] protected IHxMessengerService Messenger { get; set; } = null!;
     [Inject] protected IHxMessageBoxService MessageBox { get; set; } = null!;
     [Inject] protected ITimeService TimeService { get; set; } = null!;
+    [Inject] protected GlobalSettingsService SettingsService { get; set; } = null!;
     [CascadingParameter] private Task<AuthenticationState> AuthenticationState { get; set; } = null!;
 
     /// <summary>Opens the form for the partner right away (from the menu of the partner).</summary>
@@ -29,12 +30,14 @@ public partial class CertificateChanges : ComponentBase
 
     private static readonly PartnerCertificateUsage[] usages = Enum.GetValues<PartnerCertificateUsage>();
     private static readonly bool[] sources = [true, false];
+    private static readonly bool[] targets = [false, true];
 
     private List<CertificateChange> changes = [];
     private HxModal scheduleModal = null!;
     private HxInputFile? inputFileComponent;
     private List<Partner> partners = [];
     private List<Certificate> certificates = [];
+    private List<Certificate> ownCertificates = [];
 
     private int? partnerId;
     private PartnerCertificateUsage usage = PartnerCertificateUsage.Security;
@@ -42,11 +45,15 @@ public partial class CertificateChanges : ComponentBase
     private bool uploadFile = true;
     private int? certificateId;
     private string? note;
+    private bool own;
+    private int? replacedCertificateId;
+    private DateTime? keepPreviousUntil;
 
     protected override async Task OnInitializedAsync()
     {
         partners = (await DataService.GetAllPartnersAsync()).OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
         certificates = await PartnerCertificatesAsync();
+        ownCertificates = await OwnCertificatesAsync();
         await LoadAsync();
     }
 
@@ -61,8 +68,16 @@ public partial class CertificateChanges : ComponentBase
     private async Task<List<Certificate>> PartnerCertificatesAsync() =>
         (await DataService.GetAllCertificatesAsync()).Where(c => !c.HasPrivateKey).OrderBy(c => c.Name).ToList();
 
+    private async Task<List<Certificate>> OwnCertificatesAsync() =>
+        (await DataService.GetAllCertificatesAsync()).Where(c => c.HasPrivateKey).OrderBy(c => c.Name).ToList();
+
     private async Task ShowScheduleAsync(int? partner)
     {
+        own = false;
+        keepPreviousUntil = null;
+        // Our certificate in use is the one most likely replaced.
+        var settings = await SettingsService.GetGlobalSettingsAsync();
+        replacedCertificateId = settings.FileSecurityCertificateId ?? settings.OftpClientCertificateId;
         partnerId = partner;
         usage = PartnerCertificateUsage.Security;
         // A whole hour, a week ahead: a usual announcement of a partner.
@@ -74,8 +89,25 @@ public partial class CertificateChanges : ComponentBase
         await scheduleModal.ShowAsync();
     }
 
+    /// <summary>An Odette certificate of ours usually serves file security and TLS alike.</summary>
+    private void HandleTargetChanged() =>
+        usage = own ? PartnerCertificateUsage.SecurityAndTls : PartnerCertificateUsage.Security;
+
     private async Task HandleScheduleAsync()
     {
+        if (own)
+        {
+            if (certificateId is null || replacedCertificateId is null)
+            {
+                Messenger.AddWarning("Select the new certificate and the one it replaces.");
+                return;
+            }
+
+            await ScheduleAsync(() => ChangeService.ScheduleOwnAsync(certificateId.Value, replacedCertificateId.Value,
+                usage, activateAt, keepPreviousUntil, note, UserName()));
+            return;
+        }
+
         if (partnerId is null)
         {
             Messenger.AddWarning("Select the partner.");
@@ -132,7 +164,7 @@ public partial class CertificateChanges : ComponentBase
 
     private async Task HandleCancelAsync(CertificateChange change)
     {
-        if (!await MessageBox.ConfirmAsync("Cancel the change", $"Cancel the certificate change of {change.PartnerName} at {change.ActivateAt:g}?"))
+        if (!await MessageBox.ConfirmAsync("Cancel the change", $"Cancel the change of {CertificateChangeService.Whose(change)} at {change.ActivateAt:g}?"))
             return;
 
         try

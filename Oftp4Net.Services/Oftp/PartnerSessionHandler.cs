@@ -72,7 +72,9 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         _apiTokens = scopedServices.GetRequiredService<ApiTokenService>();
         _fileSecurity = new SessionFileSecurity(scopedServices.GetRequiredService<ICertificateRepository>(), settings,
             scopedServices.GetRequiredService<TslService>().TrustAnchors,
-            scopedServices.GetRequiredService<CrlStore>());
+            scopedServices.GetRequiredService<CrlStore>(),
+            scopedServices.GetRequiredService<ICertificateChangeRepository>(),
+            scopedServices.GetRequiredService<ITimeService>());
         _setups = scopedServices.GetRequiredService<PartnerSetupService>();
         _certificateExchange = scopedServices.GetRequiredService<CertificateExchangeService>();
         _remoteEndPoint = remoteEndPoint;
@@ -231,13 +233,15 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
     /// <summary>Secure authentication: decrypts the challenge of the partner with our own private key.</summary>
     public override async ValueTask<byte[]> DecryptChallengeAsync(byte[] challenge, CancellationToken cancellationToken)
     {
-        var certificate = await _fileSecurity.GetOwnCertificateAsync(SessionIdentity, CertificateUsage.Authentication, cancellationToken)
-            ?? throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
+        // Around a roll-over of ours the partner may encrypt for the previous or the next certificate.
+        var certificates = await _fileSecurity.GetOwnDecryptionCertificatesAsync(SessionIdentity, CertificateUsage.Authentication, cancellationToken);
+        if (certificates.Count == 0)
+            throw new OftpProtocolException(ReasonCodes.SecureAuthenticationRequirementsIncompatible,
                 "No certificate for file security is configured (setting FileSecurityCertificateId).");
 
         try
         {
-            return FileSecurity.DecryptChallenge(challenge, certificate);
+            return FileSecurity.DecryptChallenge(challenge, certificates);
         }
         catch (FileSecurityException ex)
         {
@@ -976,7 +980,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
 
         var identity = await IdentityForAsync(record.Destination, cancellationToken);
         var station = StationSettings.For(Partner!, record.Originator);
-        var ownCertificate = await _fileSecurity.GetOwnCertificateAsync(identity, CertificateUsage.FileEncryption, cancellationToken);
+        var ownCertificates = await _fileSecurity.GetOwnDecryptionCertificatesAsync(identity, CertificateUsage.FileEncryption, cancellationToken);
         var partnerCertificate = await _fileSecurity.GetPartnerCertificateAsync(station, CertificateUsage.FileSignature, cancellationToken);
         var previousCertificate = security.Signed
             ? await _fileSecurity.GetPreviousPartnerCertificateAsync(station, CertificateUsage.FileSignature, cancellationToken)
@@ -985,7 +989,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
         byte[] plain;
         try
         {
-            plain = FileSecurity.Unprotect(content, security, ownCertificate, partnerCertificate);
+            plain = FileSecurity.Unprotect(content, security, ownCertificates, partnerCertificate);
         }
         catch (FileSecurityException ex) when (ex.ReasonCode == AnswerReasonCodes.InvalidFileSignature &&
                                                (previousCertificate is not null || isConfiguration))
@@ -997,7 +1001,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
                 // Files already on their way when the partner replaced its certificate are signed with the old one.
                 try
                 {
-                    plain = FileSecurity.Unprotect(content, security, ownCertificate, previousCertificate);
+                    plain = FileSecurity.Unprotect(content, security, ownCertificates, previousCertificate);
                     problem = null;
                     _logger.LogInformation("File {VirtualFileName} from {Partner} is signed with the previous certificate of the partner",
                         record.VirtualFileName, Partner?.Name);
@@ -1010,7 +1014,7 @@ public sealed class PartnerSessionHandler : OftpSessionHandler, IDisposable
             if (problem is not null)
             {
                 // Only a datasheet or a certificate gets here: it may be signed with the partner's new certificate.
-                plain = FileSecurity.Unprotect(content, security, ownCertificate, partnerCertificate, out problem);
+                plain = FileSecurity.Unprotect(content, security, ownCertificates, partnerCertificate, out problem);
                 signature = PartnerSetupSignature.Invalid;
                 _logger.LogWarning("Signature of the OFTP2 Communication Setup from {Partner} cannot be verified: {Problem}",
                     Partner?.Name, problem);

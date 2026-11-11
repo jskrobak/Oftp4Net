@@ -29,7 +29,7 @@ public class ListenerService(
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly List<OftpListener> _listeners = [];
-    private readonly List<OftpTlsOptions> _tlsOptions = [];
+    private readonly Dictionary<int, OftpTlsOptions> _tlsOptions = [];
     private readonly ConcurrentDictionary<int, ListenerStatus> _status = new();
     private CancellationTokenSource _stopping = new();
     private int _disposed;
@@ -105,10 +105,37 @@ public class ListenerService(
         await _lock.WaitAsync();
         try
         {
-            foreach (var tls in _tlsOptions)
+            foreach (var tls in _tlsOptions.Values)
             {
                 tls.TrustedCertificates = LoadTrustedCertificates(partnerCertificates);
                 tls.VerificationOnlyCertificates = tsl.VerificationRoots;
+            }
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Presents the server certificates configured now (after a change of our certificate) from the next connection
+    /// on, without restarting the listeners, so running transfers are not interrupted.
+    /// </summary>
+    public async Task ReloadServerCertificatesAsync()
+    {
+        List<Listener> configured;
+        using (var scope = serviceScopeFactory.CreateScope())
+        {
+            configured = await scope.ServiceProvider.GetRequiredService<IListenerRepository>().GetEnabledWithRefsAsync();
+        }
+
+        await _lock.WaitAsync();
+        try
+        {
+            foreach (var listener in configured)
+            {
+                if (_tlsOptions.TryGetValue(listener.Id, out var tls) && listener.Certificate is { HasPrivateKey: true } certificate)
+                    tls.LocalCertificate = CertificateLoader.Load(certificate);
             }
         }
         finally
@@ -176,7 +203,7 @@ public class ListenerService(
                     VerificationOnlyCertificates = tsl.VerificationRoots,
                     Revocation = revocation,
                 };
-                _tlsOptions.Add(tls);
+                _tlsOptions[listener.Id] = tls;
             }
 
             var oftpListener = new OftpListener(new IPEndPoint(address, listener.Port), tls,
