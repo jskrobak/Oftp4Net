@@ -158,6 +158,12 @@
                             <td class="small">@change.Note</td>
                             <td class="small">@change.Created.ToString("g") @change.CreatedBy</td>
                             <td class="text-end text-nowrap">
+                                @if (change is { Status: CertificateChangeStatus.Scheduled, Target: CertificateChangeTarget.Own })
+                                {
+                                    <a class="btn btn-sm btn-primary" href="CertificateChanges/@change.Id/Announce" title="Announce to partners by e-mail">
+                                        <i class="bi bi-envelope"></i>
+                                    </a>
+                                }
                                 @if (change.Status == CertificateChangeStatus.Scheduled)
                                 {
                                     <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.XCircle" Tooltip="Cancel"

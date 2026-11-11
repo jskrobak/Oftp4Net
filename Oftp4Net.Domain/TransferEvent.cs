@@ -65,6 +65,9 @@ public enum TransferEventType
     CertificateChangeApplied,
     CertificateChangeFailed,
 
+    /// <summary>Our new certificate announced to a partner by e-mail.</summary>
+    CertificateAnnounced,
+
     PartnerCreated,
     PartnerChanged,
 }

@@ -1,0 +1,152 @@
+@page "/CertificateChanges/{ChangeId:int}/Announce"
+@rendermode InteractiveServer
+@using Oftp4Net.Services.Security
+
+<HxCard>
+    <HeaderTemplate>
+        <div class="d-flex align-items-center gap-2">
+            <h5 class="card-title mb-0 me-auto">Announce our new certificate</h5>
+            <a class="btn btn-sm btn-secondary" href="CertificateChanges"><i class="bi bi-arrow-left"></i> Certificate changes</a>
+        </div>
+    </HeaderTemplate>
+    <BodyTemplate>
+        @if (error is not null)
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        else if (plan is null)
+        {
+            <p class="text-body-secondary">Loading…</p>
+        }
+        else
+        {
+            <p class="mb-1">
+                <strong>@plan.CertificateSubject</strong> replaces @(plan.Change.ReplacedCertificate?.Name ?? "our certificate")
+                for @CertificateChangeService.DescribeOwn(plan.Change.Usage) from <strong>@plan.Change.ActivateAt.ToString("g")</strong>.
+            </p>
+            <p class="small text-body-secondary">
+                One e-mail per set of recipients (the e-mail addresses of the partners' contacts), in Czech and English, with the
+                certificate attached as @plan.FileName. Sent messages are written to <a href="Logs/certificates">Logs → Certificates</a>.
+            </p>
+
+            @if (mailProblem is not null)
+            {
+                <div class="alert alert-warning small">
+                    @mailProblem The texts can be checked here, but nothing can be sent until e-mail is configured (see the README, section
+                    <i>Sending e-mail</i>).
+                </div>
+            }
+            else
+            {
+                <p class="small">E-mail goes out through @MailService.Description.</p>
+            }
+
+            <div class="row g-3 align-items-end mb-3">
+                <div class="col-md-7">
+                    <HxInputText Label="Address of the certificate page" Hint="Named in the text; empty to leave the line out." @bind-Value="pageUrl" />
+                </div>
+                <div class="col-md-5">
+                    <HxCheckbox Text="Also send the certificate over OFTP (delivery)" @bind-Value="viaOftp" />
+                </div>
+                <div class="col-12">
+                    <HxButton Text="Update the texts" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ArrowClockwise" OnClick="LoadAsync" />
+                </div>
+            </div>
+
+            <h6>Messages (@plan.Mails.Count)</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead>
+                    <tr>
+                        <th><input type="checkbox" class="form-check-input" checked="@(selected.Count == plan.Mails.Count && plan.Mails.Count > 0)"
+                                   @onchange="e => SelectAll((bool)e.Value!)" title="All"/></th>
+                        <th>Partners</th>
+                        <th>Recipients</th>
+                        <th>Sent</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var mail in plan.Mails)
+                    {
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" checked="@selected.Contains(mail.Key)"
+                                       @onchange="e => Toggle(mail.Key, (bool)e.Value!)"/></td>
+                            <td>@string.Join(", ", mail.Connections.Select(c => c.PartnerName))</td>
+                            <td class="small">@string.Join(", ", mail.To)</td>
+                            <td class="small text-nowrap">@(mail.SentAt?.ToString("g") ?? "")</td>
+                            <td class="text-end text-nowrap">
+                                <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Eye" Tooltip="Preview"
+                                          OnClick="() => preview = preview == mail.Key ? null : mail.Key" />
+                            </td>
+                        </tr>
+                        @if (preview == mail.Key)
+                        {
+                            <tr>
+                                <td colspan="5">
+                                    <div class="small text-body-secondary">To: @string.Join(", ", mail.To)</div>
+                                    <div class="mb-2"><strong>@mail.Subject</strong></div>
+                                    <pre class="border rounded p-2 small" style="white-space: pre-wrap">@mail.Body</pre>
+                                </td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (plan.PartnersWithoutContact.Count > 0)
+            {
+                <p class="small text-body-secondary">
+                    Without an e-mail address (add one to a contact of the partner to include it):
+                    @string.Join(", ", plan.PartnersWithoutContact)
+                </p>
+            }
+
+            <div class="row g-2 align-items-end mb-2">
+                <div class="col-md-6">
+                    <HxInputText Label="Send a test of the first selected message to" @bind-Value="testAddress" />
+                </div>
+                <div class="col-md-6 d-flex gap-2">
+                    <HxButton Text="Send test" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Send" Enabled="@(!busy && mailProblem is null)" OnClick="SendTestAsync" />
+                    <HxButton Text="@($"Send {selected.Count} selected")" Color="ThemeColor.Primary" Icon="BootstrapIcon.SendCheck"
+                              Enabled="@(!busy && mailProblem is null && selected.Count > 0)" OnClick="SendAsync" />
+                </div>
+            </div>
+
+            @if (results is not null)
+            {
+                <ul class="small">
+                    @foreach (var result in results)
+                    {
+                        <li class="@(result.Error is null ? "text-success" : "text-danger")">
+                            @string.Join(", ", result.To): @(result.Error ?? "sent")
+                        </li>
+                    }
+                </ul>
+            }
+        }
+    </BodyTemplate>
+</HxCard>
+
+<HxCard CssClass="mt-3">
+    <HeaderTemplate>
+        <h5 class="card-title mb-0">Text of the announcement</h5>
+    </HeaderTemplate>
+    <BodyTemplate>
+        <p class="small text-body-secondary mb-2">
+            Plain text with placeholders in braces. A line with <code>{?Name}</code> is left out when that value is empty.
+            Placeholders:
+            @foreach (var (name, description) in CertificateAnnouncementTemplate.Placeholders)
+            {
+                <span class="me-2" title="@description"><code>{@name}</code></span>
+            }
+        </p>
+        <HxInputText Label="Subject" @bind-Value="subject" />
+        <HxInputTextArea Label="Text" Rows="24" CssClass="font-monospace small" @bind-Value="body" />
+        <div class="d-flex gap-2 mt-2">
+            <HxButton Text="Save the text" Color="ThemeColor.Primary" Icon="BootstrapIcon.Save" OnClick="SaveTemplateAsync" />
+            <HxButton Text="Default text" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ArrowCounterclockwise" OnClick="ResetTemplate" />
+        </div>
+    </BodyTemplate>
+</HxCard>

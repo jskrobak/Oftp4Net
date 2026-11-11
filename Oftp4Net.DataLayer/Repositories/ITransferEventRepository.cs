@@ -15,6 +15,9 @@ public interface ITransferEventRepository : IRepository<TransferEvent, int>
         CancellationToken cancellationToken = default);
 
     /// <summary>Marks records older than <paramref name="cutoff"/> as archived, returns their count.</summary>
+    /// <summary>Events of a type whose details are exactly <paramref name="details"/>, e.g. the announcements of one change.</summary>
+    Task<List<TransferEvent>> GetByDetailsAsync(TransferEventType type, string details, CancellationToken cancellationToken = default);
+
     Task<int> ArchiveOlderThanAsync(DateTime cutoff, CancellationToken cancellationToken = default);
 
     /// <summary>

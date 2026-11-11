@@ -134,6 +134,14 @@ public class GlobalSettings
     [SettingsItem]
     public List<int> PublishedIdentityIds { get; set; } = [];
 
+    /// <summary>Subject of the e-mail announcing a new certificate of ours; the default one when empty.</summary>
+    [SettingsItem]
+    public string? CertificateAnnouncementSubject { get; set; }
+
+    /// <summary>Text of the e-mail announcing a new certificate of ours; the default one when empty.</summary>
+    [SettingsItem]
+    public string? CertificateAnnouncementBody { get; set; }
+
     /// <summary>
     /// Signing, compression and encryption of files is done in memory, so files larger than this are not
     /// secured and their transfer fails with an error.

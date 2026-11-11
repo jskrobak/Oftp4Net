@@ -33,7 +33,8 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
   received by e-mail or over OFTP, our own datasheet exported and sent
 - New certificates of partners scheduled for the time the partner starts using them, from the UI or the REST API
 - Our own certificate replaced at a scheduled time, with files encrypted for the previous or the next one still
-  decrypted around the roll-over, and our certificates published on a page without sign in for partners to download
+  decrypted around the roll-over, our certificates published on a page without sign in for partners to download, and
+  the new certificate announced to the partners by e-mail (SMTP or Microsoft Graph) in Czech and English
 - Automatic exchange of certificates over OFTP (ODETTE_CERTIFICATE_DELIVER, _REQUEST and _REPLACE): renewals,
   roll-overs and replacements taken over without the administrator
 - Certificate signing requests (CSR) with the profile of the OFTP2 Certificate Policy, for the Odette CA and others
@@ -1037,6 +1038,55 @@ customers are). Switched off, every address answers 404; each client address may
 
 An announcement should still carry the fingerprint and the certificate itself (PEM) in its text: many partners do
 not download certificates from links in e-mails, and the fingerprint lets the others check what they downloaded.
+
+## Announcing our new certificate by e-mail
+
+*Certificate changes* → envelope at a scheduled change of ours opens the announcement: one e-mail per set of
+recipients (the e-mail addresses in the contacts of the partners, so that partners sharing a service desk get one
+message), with the partner's connections (its Odette ID and host, and our Odette ID it knows us by), the time of the
+change, until when the replaced certificate is still accepted, the details and fingerprints of the new certificate,
+the address of the [certificate page](#publishing-our-certificates) when it is published, the certificate in PEM at
+the end and as an attached `.cer` file. *Also send the certificate over OFTP* puts it into the send queue of each
+partner as `ODETTE_CERTIFICATE_DELIVER` at the same time.
+
+The page shows every message before it goes out, sends a test of one to an address of your choice, and sends the
+selected ones; each sent message is written to *Logs → Certificates* per partner and marked as sent, so that it is not
+selected again. Partners without an e-mail address are listed to be completed.
+
+The text is a template with placeholders, edited on the same page and stored in the settings: by default Czech and
+English in one message, with "English version below." on top. `{Name}` is replaced by its value (the page lists
+them); a line with `{?Name}` is left out when the value is empty, e.g. `{?PageUrl}` when the certificate page is not
+published and `{?Oftp}` when the certificate is not sent over OFTP.
+
+## Sending e-mail
+
+E-mail is optional and configured in the section `Mail` (in the environment e.g. `Mail__Provider=Smtp`); passwords
+and secrets belong to the environment, as the other secrets. Without it the texts can still be previewed.
+
+| Setting | Meaning |
+|---|---|
+| `Mail:Provider` | `None` (default), `Smtp` or `Graph` |
+| `Mail:From`, `Mail:FromName` | sender the recipients see |
+| `Mail:ReplyTo` | address the answers go to |
+| `Mail:Bcc` | a blind copy of every message, e.g. into a shared mailbox |
+| `Mail:Smtp:Host`, `Port` (587), `Security` | SMTP server; `Security` is `Auto` (default: TLS on port 465, STARTTLS when offered), `StartTls`, `SslOnConnect` or `None` |
+| `Mail:Smtp:UserName`, `Password` | sign in; empty for a relay that does not ask |
+| `Mail:Graph:TenantId`, `ClientId`, `ClientSecret` | app registration in Entra ID with the application permission `Mail.Send` |
+| `Mail:Graph:Mailbox` | mailbox the message is sent from; `Mail:From` may be another address it may send as |
+
+SMTP works with any mail server, relay or mail service. Microsoft 365 often has SMTP AUTH switched off; Graph then
+sends through an app registration of its own (not the one used for signing in). Restrict it to the sending mailbox,
+otherwise `Mail.Send` lets it send as anybody in the tenant, with RBAC for Applications in Exchange Online:
+
+```powershell
+New-ManagementScope -Name "Oftp4Net mailer" -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'mailer@example.com'"
+New-ManagementRoleAssignment -App <ClientId> -Role "Application Mail.Send" -CustomResourceScope "Oftp4Net mailer"
+```
+
+To send from `mailer@example.com` as `support@example.com`, give the mailer *Send As* on the support address
+(`Add-RecipientPermission support@example.com -Trustee mailer@example.com -AccessRights SendAs`) and set
+`Mail:Graph:Mailbox=mailer@example.com`, `Mail:From=support@example.com`. The sent copy stays in the mailer's
+*Sent Items*.
 
 ## Certificates per station and purpose
 

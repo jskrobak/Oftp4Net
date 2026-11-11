@@ -17,6 +17,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftVersion)" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageVersion Include="MySqlConnector" Version="2.6.1" />
+    <PackageVersion Include="MailKit" Version="4.18.2" />
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="9.0.21" />
     <PackageVersion Include="Havit.Blazor.Components.Web.Bootstrap" Version="4.27.0" />
     <PackageVersion Include="Havit.Data.EntityFrameworkCore" Version="2.10.3" />

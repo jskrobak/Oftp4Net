@@ -21,6 +21,9 @@ public class TransferEventRepository(
     : DbRepository<TransferEvent, int>(dbContext, entityKeyAccessor, dataLoader, softDeleteManager, entityCacheManager,
         repositoryQueryProvider), ITransferEventRepository
 {
+    public Task<List<TransferEvent>> GetByDetailsAsync(TransferEventType type, string details, CancellationToken cancellationToken = default) =>
+        Data.AsNoTracking().Where(e => e.Type == type && e.Details == details).OrderBy(e => e.Id).ToListAsync(cancellationToken);
+
     public async Task<DataFragment<TransferEvent>> GetFragmentAsync(TransferEventFilter filter,
         GridDataProviderRequest<TransferEvent> request, CancellationToken cancellationToken = default)
     {
