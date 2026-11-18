@@ -71,8 +71,9 @@ public sealed class SmtpMailOptions
 }
 
 /// <summary>
-/// Microsoft Graph with an app registration of its own (application permission Mail.Send, client credentials).
-/// Restrict it to the sending mailbox in Exchange Online (RBAC for Applications), otherwise it may send as anybody.
+/// Microsoft Graph with an app registration of its own (client credentials). The right to send is given in Exchange
+/// Online for the sending mailbox only (RBAC for Applications, role "Application Mail.Send"); granting Mail.Send in
+/// Entra ID instead would let it send as anybody in the tenant.
 /// </summary>
 public sealed class GraphMailOptions
 {

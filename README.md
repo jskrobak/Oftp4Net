@@ -1091,22 +1091,34 @@ and secrets belong to the environment, as the other secrets. Without it the text
 | `Mail:Bcc` | a blind copy of every message, e.g. into a shared mailbox |
 | `Mail:Smtp:Host`, `Port` (587), `Security` | SMTP server; `Security` is `Auto` (default: TLS on port 465, STARTTLS when offered), `StartTls`, `SslOnConnect` or `None` |
 | `Mail:Smtp:UserName`, `Password` | sign in; empty for a relay that does not ask |
-| `Mail:Graph:TenantId`, `ClientId`, `ClientSecret` | app registration in Entra ID with the application permission `Mail.Send` |
+| `Mail:Graph:TenantId`, `ClientId`, `ClientSecret` | app registration in Entra ID with a client secret; the right to send is given in Exchange Online (below) |
 | `Mail:Graph:Mailbox` | mailbox the message is sent from; `Mail:From` may be another address it may send as |
 
 SMTP works with any mail server, relay or mail service. Microsoft 365 often has SMTP AUTH switched off; Graph then
-sends through an app registration of its own (not the one used for signing in). Restrict it to the sending mailbox,
-otherwise `Mail.Send` lets it send as anybody in the tenant, with RBAC for Applications in Exchange Online:
+sends through an app registration of its own (not the one used for signing in), allowed to send from one mailbox
+only. Do **not** grant it the permission `Mail.Send` in Entra ID: permissions granted there apply to every mailbox of
+the tenant and add to the ones of Exchange, so no restriction could narrow them. Give the right in Exchange Online
+instead (RBAC for Applications), for the sending mailbox only:
 
-```powershell
-New-ManagementScope -Name "Oftp4Net mailer" -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'mailer@example.com'"
-New-ManagementRoleAssignment -App <ClientId> -Role "Application Mail.Send" -CustomResourceScope "Oftp4Net mailer"
-```
+1. Entra ID → *App registrations* → *New registration* (single tenant, no redirect URI), then *Certificates & secrets*
+   → *New client secret*; note the client ID and the secret's value, and the *Object ID* of the app under
+   *Enterprise applications* (not the one of the registration). No API permission is needed.
+2. Exchange Online PowerShell (`Connect-ExchangeOnline`, role Exchange Administrator):
+
+   ```powershell
+   New-ServicePrincipal -AppId <ClientId> -ObjectId <ObjectId of the enterprise application> -DisplayName "Oftp4Net Mailer"
+   New-ManagementScope -Name "Oftp4Net mailer" -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'mailer@example.com'"
+   New-ManagementRoleAssignment -App <ClientId> -Role "Application Mail.Send" -CustomResourceScope "Oftp4Net mailer"
+   Test-ServicePrincipalAuthorization -Identity <ClientId> -Resource mailer@example.com   # InScope: True
+   ```
+
+   A change of these rights takes effect within about an hour. The token of the app then carries no roles, and
+   Graph refuses `sendMail` for any other mailbox with `403 ErrorAccessDenied`.
 
 To send from `mailer@example.com` as `support@example.com`, give the mailer *Send As* on the support address
 (`Add-RecipientPermission support@example.com -Trustee mailer@example.com -AccessRights SendAs`) and set
-`Mail:Graph:Mailbox=mailer@example.com`, `Mail:From=support@example.com`. The sent copy stays in the mailer's
-*Sent Items*.
+`Mail:Graph:Mailbox=mailer@example.com`, `Mail:From=support@example.com`. The mailer may be a shared mailbox without
+a license. The sent copy stays in the mailer's *Sent Items*.
 
 ## Certificates per station and purpose
 
