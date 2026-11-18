@@ -42,15 +42,16 @@
 
         <div class="mb-3">
             <label class="form-label" for="activateAt">Used from (local time)</label>
-            <input id="activateAt" type="datetime-local" class="form-control" @bind="activateAt" @bind:format="yyyy-MM-ddTHH:mm" />
+            <input id="activateAt" type="text" class="form-control" placeholder="2026-12-03 10:00" @bind="activateAtText" @bind:event="oninput" />
+            <div class="form-text">@Interpret(activateAtText, required: true)</div>
         </div>
 
         @if (own)
         {
             <div class="mb-3">
                 <label class="form-label" for="keepPreviousUntil">The replaced certificate still decrypts until (local time)</label>
-                <input id="keepPreviousUntil" type="datetime-local" class="form-control" @bind="keepPreviousUntil" @bind:format="yyyy-MM-ddTHH:mm" />
-                <div class="form-text">Empty: until it expires. Set it to the time the replaced certificate must not be used any more.</div>
+                <input id="keepPreviousUntil" type="text" class="form-control" placeholder="2026-12-31 23:59" @bind="keepPreviousUntilText" @bind:event="oninput" />
+                <div class="form-text">@Interpret(keepPreviousUntilText, required: false) Empty: until it expires. Set it to the time the replaced certificate must not be used any more.</div>
             </div>
         }
         else

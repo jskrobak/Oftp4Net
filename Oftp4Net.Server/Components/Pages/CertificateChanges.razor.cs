@@ -42,6 +42,9 @@ public partial class CertificateChanges : ComponentBase
     private int? partnerId;
     private PartnerCertificateUsage usage = PartnerCertificateUsage.Security;
     private DateTime activateAt;
+    // Typed as text: the value of the browser's date and time input did not always reach the server.
+    private string? activateAtText;
+    private string? keepPreviousUntilText;
     private bool uploadFile = true;
     private int? certificateId;
     private string? note;
@@ -75,6 +78,7 @@ public partial class CertificateChanges : ComponentBase
     {
         own = false;
         keepPreviousUntil = null;
+        keepPreviousUntilText = null;
         // Our certificate in use is the one most likely replaced.
         var settings = await SettingsService.GetGlobalSettingsAsync();
         replacedCertificateId = settings.FileSecurityCertificateId ?? settings.OftpClientCertificateId;
@@ -83,6 +87,7 @@ public partial class CertificateChanges : ComponentBase
         // A whole hour, a week ahead: a usual announcement of a partner.
         var now = TimeService.GetCurrentTime();
         activateAt = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0).AddDays(7);
+        activateAtText = LocalTimeText.ToText(activateAt);
         certificateId = null;
         note = null;
         uploadFile = true;
@@ -93,8 +98,39 @@ public partial class CertificateChanges : ComponentBase
     private void HandleTargetChanged() =>
         usage = own ? PartnerCertificateUsage.SecurityAndTls : PartnerCertificateUsage.Security;
 
+    /// <summary>How the typed time is read, shown under the field so that a mistake is seen before it is saved.</summary>
+    private string Interpret(string? text, bool required)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return required ? "Enter the time, e.g. 2026-12-03 10:00." : "";
+        if (!LocalTimeText.TryParse(text, out var time))
+            return "Not a time; write it as 2026-12-03 10:00.";
+        var days = (time - TimeService.GetCurrentTime()).TotalDays;
+        return $"{time:dddd d MMMM yyyy, HH:mm}" + (days < 0 ? " – in the past, applied right away." : $" – in {Math.Ceiling(days):0} day(s).");
+    }
+
     private async Task HandleScheduleAsync()
     {
+        if (!LocalTimeText.TryParse(activateAtText, out activateAt))
+        {
+            Messenger.AddWarning("The time it is used from is not a time; write it as 2026-12-03 10:00.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(keepPreviousUntilText))
+            keepPreviousUntil = null;
+        else if (LocalTimeText.TryParse(keepPreviousUntilText, out var until))
+            keepPreviousUntil = until;
+        else
+        {
+            Messenger.AddWarning("Until when the replaced certificate decrypts is not a time; write it as 2026-12-31 23:59.");
+            return;
+        }
+
+        if (own && activateAt <= TimeService.GetCurrentTime() &&
+            !await MessageBox.ConfirmAsync("Replace our certificate now", $"{activateAt:g} has passed: our certificate is replaced right away. Continue?"))
+            return;
+
         if (own)
         {
             if (certificateId is null || replacedCertificateId is null)
