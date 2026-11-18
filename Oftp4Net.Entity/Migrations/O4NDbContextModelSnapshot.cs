@@ -128,6 +128,92 @@ namespace Oftp4Net.Entity.Migrations
                     b.ToTable("Certificate");
                 });
 
+            modelBuilder.Entity("Oftp4Net.Domain.CertificateAnnouncementLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CertificateChangeId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ContactName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ContactTakenOverAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<DateTime>("Created")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<bool?>("FiltersByIp")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("PartnerIds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime?>("PlannedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("RecipientKey")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("RemoteAddress")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("Takeover")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TheirIps")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("TlsTrust")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("CertificateChangeId", "RecipientKey")
+                        .IsUnique();
+
+                    b.ToTable("CertificateAnnouncementLinks");
+                });
+
             modelBuilder.Entity("Oftp4Net.Domain.CertificateChange", b =>
                 {
                     b.Property<int>("Id")
@@ -982,6 +1068,17 @@ namespace Oftp4Net.Entity.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Oftp4Net.Domain.CertificateAnnouncementLink", b =>
+                {
+                    b.HasOne("Oftp4Net.Domain.CertificateChange", "CertificateChange")
+                        .WithMany()
+                        .HasForeignKey("CertificateChangeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CertificateChange");
                 });
 
             modelBuilder.Entity("Oftp4Net.Domain.CertificateChange", b =>

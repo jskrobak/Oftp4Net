@@ -68,6 +68,9 @@ public enum TransferEventType
     /// <summary>Our new certificate announced to a partner by e-mail.</summary>
     CertificateAnnounced,
 
+    /// <summary>A partner answered the questionnaire about our new certificate.</summary>
+    CertificateAnnouncementAnswered,
+
     PartnerCreated,
     PartnerChanged,
 }

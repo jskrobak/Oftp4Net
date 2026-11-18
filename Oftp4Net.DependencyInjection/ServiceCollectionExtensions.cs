@@ -108,6 +108,12 @@ public static class ServiceCollectionExtensions
         services.TryAddTransient<IEntityKeyAccessor<SettingsItem, string>, DbEntityKeyAccessor<SettingsItem, string>>();
         services.TryAddSingleton<IRepositoryQueryProvider<SettingsItem, string>, SettingsItemDbRepositoryQueryProvider>();
 
+        //CertificateAnnouncementLink
+        services.TryAddScoped<ICertificateAnnouncementLinkRepository, CertificateAnnouncementLinkRepository>();
+        services.TryAddScoped<IRepository<CertificateAnnouncementLink, int>>(sp => sp.GetRequiredService<ICertificateAnnouncementLinkRepository>());
+        services.TryAddTransient<IEntityKeyAccessor<CertificateAnnouncementLink, int>, DbEntityKeyAccessor<CertificateAnnouncementLink, int>>();
+        services.TryAddSingleton<IRepositoryQueryProvider<CertificateAnnouncementLink, int>, CertificateAnnouncementLinkDbRepositoryQueryProvider>();
+
         //CertificateChange
         services.TryAddScoped<ICertificateChangeRepository, CertificateChangeRepository>();
         services.TryAddScoped<IRepository<CertificateChange, int>>(sp => sp.GetRequiredService<ICertificateChangeRepository>());

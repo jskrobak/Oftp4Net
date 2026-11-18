@@ -115,6 +115,12 @@ public class SendQueueItemRepository(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public Task<List<SendQueueItem>> GetCertificateDeliveriesAsync(IReadOnlyCollection<int> partnerIds, DateTime since,
+        CancellationToken cancellationToken = default) => Data
+        .Where(i => partnerIds.Contains(i.PartnerId) && i.VirtualFileName == "ODETTE_CERTIFICATE_DELIVER" && i.Created >= since)
+        .OrderBy(i => i.Id)
+        .ToListAsync(cancellationToken);
+
     public Task<int> CountWaitingAsync(DateTime createdBefore, CancellationToken cancellationToken = default)
     {
         return Data

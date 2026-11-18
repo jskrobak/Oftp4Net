@@ -47,6 +47,7 @@
                 </div>
                 <div class="col-md-5">
                     <HxCheckbox Text="Also send the certificate over OFTP (delivery)" @bind-Value="viaOftp" />
+                    <HxCheckbox Text="Link a questionnaire to each message" @bind-Value="withQuestionnaire" />
                 </div>
                 <div class="col-12">
                     <HxButton Text="Update the texts" Color="ThemeColor.Secondary" Icon="BootstrapIcon.ArrowClockwise" OnClick="LoadAsync" />
@@ -63,6 +64,8 @@
                         <th>Partners</th>
                         <th>Recipients</th>
                         <th>Sent</th>
+                        <th>Answer</th>
+                        <th>OFTP</th>
                         <th></th>
                     </tr>
                     </thead>
@@ -75,6 +78,23 @@
                             <td>@string.Join(", ", mail.Connections.Select(c => c.PartnerName))</td>
                             <td class="small">@string.Join(", ", mail.To)</td>
                             <td class="small text-nowrap">@(mail.SentAt?.ToString("g") ?? "")</td>
+                            <td class="small text-nowrap">
+                                @if (mail.Questionnaire.RespondedAt is { } responded)
+                                {
+                                    <HxBadge Color="@(mail.Questionnaire.Takeover == Oftp4Net.Domain.AnnouncementTakeover.NeedsHelp ? ThemeColor.Warning : ThemeColor.Success)">
+                                        @Describe(mail.Questionnaire)
+                                    </HxBadge>
+                                    <div class="text-body-secondary">@responded.ToString("g")</div>
+                                }
+                            </td>
+                            <td class="small text-nowrap">
+                                @foreach (var delivery in mail.Deliveries)
+                                {
+                                    <div title="@delivery.PartnerName">
+                                        @(delivery.Status == Oftp4Net.Domain.SendStatus.DELIVERED ? $"✓ EERP {delivery.DeliveredAt:d}" : delivery.Status.ToString())
+                                    </div>
+                                }
+                            </td>
                             <td class="text-end text-nowrap">
                                 <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" Icon="BootstrapIcon.Eye" Tooltip="Preview"
                                           OnClick="() => preview = preview == mail.Key ? null : mail.Key" />
@@ -83,7 +103,34 @@
                         @if (preview == mail.Key)
                         {
                             <tr>
-                                <td colspan="5">
+                                <td colspan="7">
+                                    @if (mail.Questionnaire.RespondedAt is not null)
+                                    {
+                                        var q = mail.Questionnaire;
+                                        <div class="border rounded p-2 mb-2 small">
+                                            <div><strong>Answer of @q.RespondedAt?.ToString("g")</strong> <span class="text-body-secondary">from @q.RemoteAddress; written by anybody with the link, check before relying on it</span></div>
+                                            <div>Certificate: @Describe(q); TLS: @q.TlsTrust; filters by IP: @(q.FiltersByIp switch { true => "yes", false => "no", _ => "unknown" })@(q.TheirIps is { } ips ? $"; calls from {ips}" : "")</div>
+                                            @if (q.ContactEmail is not null || q.ContactPhone is not null)
+                                            {
+                                                <div>
+                                                    Contact: @q.ContactName @q.ContactEmail @q.ContactPhone
+                                                    @if (q.ContactTakenOverAt is { } taken)
+                                                    {
+                                                        <span class="text-body-secondary">(taken over @taken.ToString("g"))</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <HxButton Size="ButtonSize.Small" Color="ThemeColor.Secondary" CssClass="ms-2" Icon="BootstrapIcon.PersonPlus"
+                                                                  Text="Add to the partners" OnClick="() => TakeOverContactAsync(q.Id)" />
+                                                    }
+                                                </div>
+                                            }
+                                            @if (q.Note is not null)
+                                            {
+                                                <div style="white-space: pre-wrap">Note: @q.Note</div>
+                                            }
+                                        </div>
+                                    }
                                     <div class="small text-body-secondary">To: @string.Join(", ", mail.To)</div>
                                     <div class="mb-2"><strong>@mail.Subject</strong></div>
                                     <pre class="border rounded p-2 small" style="white-space: pre-wrap">@mail.Body</pre>
@@ -135,7 +182,7 @@
     </HeaderTemplate>
     <BodyTemplate>
         <p class="small text-body-secondary mb-2">
-            Plain text with placeholders in braces. A line with <code>{?Name}</code> is left out when that value is empty.
+            Plain text with placeholders in braces. A line with <code>{?Name}</code> is left out when that value is empty, one with <code>{!Name}</code> when it is not.
             Placeholders:
             @foreach (var (name, description) in CertificateAnnouncementTemplate.Placeholders)
             {

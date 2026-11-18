@@ -18,6 +18,30 @@ public class CertificateAnnouncementTests
     }
 
     [Fact]
+    public void Render_LeavesOutLinesWithANegativeMarkerWhenTheValueIsThere()
+    {
+        const string template = "Questionnaire: {ConfirmUrl}{?ConfirmUrl}\nReply to this e-mail.{!ConfirmUrl}";
+
+        Assert.Equal("Questionnaire: https://x/cert/confirm/t",
+            CertificateAnnouncementTemplate.Render(template, new Dictionary<string, string?> { ["ConfirmUrl"] = "https://x/cert/confirm/t" }));
+        Assert.Equal("Reply to this e-mail.",
+            CertificateAnnouncementTemplate.Render(template, new Dictionary<string, string?> { ["ConfirmUrl"] = null }));
+    }
+
+    [Fact]
+    public void DefaultTemplate_WithoutQuestionnaire_AsksForAReply()
+    {
+        var values = CertificateAnnouncementTemplate.Placeholders.ToDictionary(p => p.Name, p => (string?)$"<{p.Name}>");
+        values["ConfirmUrl"] = null;
+
+        var text = CertificateAnnouncementTemplate.Render(CertificateAnnouncementTemplate.DefaultBody, values);
+
+        Assert.Contains("potvrďte odpovědí na tento e-mail", text);
+        Assert.Contains("by replying to this e-mail", text);
+        Assert.DoesNotContain("questionnaire", text);
+    }
+
+    [Fact]
     public void DefaultTemplate_HasBothLanguagesWithTheNoteOnTop()
     {
         var values = CertificateAnnouncementTemplate.Placeholders.ToDictionary(p => p.Name, p => (string?)$"<{p.Name}>");
@@ -31,6 +55,9 @@ public class CertificateAnnouncementTests
         Assert.Equal(2, CountOf(text, "<Connections>"));
         Assert.Equal(2, CountOf(text, "<PageUrl>"));
         Assert.Equal(1, CountOf(text, "<Pem>"));
+        Assert.Equal(2, CountOf(text, "<ConfirmUrl>"));
+        // With a questionnaire the line asking for a reply instead is left out.
+        Assert.DoesNotContain("potvrďte odpovědí na tento e-mail", text);
         Assert.DoesNotContain("{?", text);
     }
 

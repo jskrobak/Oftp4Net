@@ -1051,12 +1051,32 @@ partner as `ODETTE_CERTIFICATE_DELIVER` at the same time.
 
 The page shows every message before it goes out, sends a test of one to an address of your choice, and sends the
 selected ones; each sent message is written to *Logs → Certificates* per partner and marked as sent, so that it is not
-selected again. Partners without an e-mail address are listed to be completed.
+selected again. Partners without an e-mail address are listed to be completed. Answers of the
+[questionnaire](#questionnaire) and the delivery of the certificate over OFTP are shown with each message.
 
 The text is a template with placeholders, edited on the same page and stored in the settings: by default Czech and
 English in one message, with "English version below." on top. `{Name}` is replaced by its value (the page lists
 them); a line with `{?Name}` is left out when the value is empty, e.g. `{?PageUrl}` when the certificate page is not
-published and `{?Oftp}` when the certificate is not sent over OFTP.
+published and `{?Oftp}` when the certificate is not sent over OFTP, and a line with `{!Name}` when it is not empty.
+
+### Questionnaire
+
+*Link a questionnaire to each message* (on by default) gives every message its own address,
+`/cert/confirm/{token}`, with a random token of 43 characters; the default text names it as `{ConfirmUrl}` and asks
+for a reply by e-mail only without it (`{!ConfirmUrl}`). The page, in Czech and English, shows the connections of the
+message, the time of the change and the fingerprint, and asks:
+
+1. whether the partner will import the certificate (and by when), has imported it already or needs help,
+2. how it checks our TLS certificate: trusting the issuing authority, pinned, not at all, or does not know,
+3. whether it accepts connections only from known IP addresses (our outbound addresses and our host are shown) and
+   which addresses it calls us from,
+4. the contact of its EDI team, and a note.
+
+Anybody with the link may answer and change the answer until a month after the replaced certificate is given up; it
+is not otherwise protected, so answers are only shown on the announcement page and written to *Logs → Certificates*.
+A contact from an answer goes to the partners only with *Add to the partners*. The announcement page also shows for
+each partner whether it confirmed our certificate sent over OFTP with an EERP. The questionnaire answers 30 times a
+minute per client address, like the certificate page, and does not need the certificate page to be published.
 
 ## Sending e-mail
 

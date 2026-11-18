@@ -196,6 +196,7 @@ builder.Services.Configure<Oftp4Net.Services.Mail.MailOptions>(builder.Configura
 builder.Services.AddHttpClient(Oftp4Net.Services.Mail.MailService.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddSingleton<Oftp4Net.Services.Mail.MailService>();
 builder.Services.AddScoped<CertificateAnnouncementService>();
+builder.Services.AddScoped<CertificateQuestionnaireService>();
 builder.Services.AddPublicCertificateRateLimit();
 builder.Services.AddScoped<PartnerTlsTrustService>();
 builder.Services.AddScoped<TestFileService>();

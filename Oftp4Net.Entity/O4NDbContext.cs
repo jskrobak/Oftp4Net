@@ -26,6 +26,7 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
     public DbSet<PartnerSetupDocument> PartnerSetupDocuments { get; init; }
     public DbSet<CertificateSigningRequest> CertificateSigningRequests { get; init; }
     public DbSet<CertificateChange> CertificateChanges { get; init; }
+    public DbSet<CertificateAnnouncementLink> CertificateAnnouncementLinks { get; init; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -110,6 +111,18 @@ public class O4NDbContext(DbContextOptions options, IDataProtectionProvider? dat
             entity.HasIndex(e => new { e.IsArchived, e.Timestamp });
             // Retention goes through the records in this order.
             entity.HasIndex(e => new { e.Timestamp, e.Id });
+        });
+
+        modelBuilder.Entity<CertificateAnnouncementLink>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Token).IsUnique();
+            entity.HasIndex(e => new { e.CertificateChangeId, e.RecipientKey }).IsUnique();
+            // The questionnaires belong to the announcement of the change.
+            entity.HasOne(e => e.CertificateChange).WithMany().OnDelete(DeleteBehavior.Cascade);
+            entity.Property(e => e.Takeover).HasConversion<string>().HasMaxLength(20);
+            entity.Property(e => e.TlsTrust).HasConversion<string>().HasMaxLength(30);
+            JsonColumn(entity.Property(e => e.PartnerIds));
         });
 
         modelBuilder.Entity<CertificateChange>(entity =>

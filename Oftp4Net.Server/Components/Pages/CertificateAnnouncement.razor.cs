@@ -13,6 +13,7 @@ public partial class CertificateAnnouncement : ComponentBase
     [Parameter] public int ChangeId { get; set; }
 
     [Inject] protected CertificateAnnouncementService Announcements { get; set; } = null!;
+    [Inject] protected CertificateQuestionnaireService Questionnaires { get; set; } = null!;
     [Inject] protected MailService MailService { get; set; } = null!;
     [Inject] protected GlobalSettingsService SettingsService { get; set; } = null!;
     [Inject] protected NavigationManager Navigation { get; set; } = null!;
@@ -25,6 +26,7 @@ public partial class CertificateAnnouncement : ComponentBase
     private string? mailProblem;
     private string? pageUrl;
     private bool viaOftp = true;
+    private bool withQuestionnaire = true;
     private readonly HashSet<string> selected = [];
     private string? preview;
     private string? testAddress;
@@ -54,7 +56,7 @@ public partial class CertificateAnnouncement : ComponentBase
     {
         try
         {
-            plan = await Announcements.PlanAsync(ChangeId, pageUrl, viaOftp);
+            plan = await Announcements.PlanAsync(ChangeId, pageUrl, QuestionnaireBaseUrl, viaOftp);
             selected.IntersectWith(plan.Mails.Select(m => m.Key));
             error = null;
         }
@@ -91,7 +93,7 @@ public partial class CertificateAnnouncement : ComponentBase
         busy = true;
         try
         {
-            await Announcements.SendTestAsync(ChangeId, pageUrl, viaOftp, key, testAddress);
+            await Announcements.SendTestAsync(ChangeId, pageUrl, QuestionnaireBaseUrl, viaOftp, key, testAddress);
             Messenger.AddInformation($"Test sent to {testAddress}.");
         }
         catch (Exception ex) when (ex is MailException or InvalidOperationException)
@@ -117,7 +119,7 @@ public partial class CertificateAnnouncement : ComponentBase
         busy = true;
         try
         {
-            results = await Announcements.SendAsync(ChangeId, pageUrl, viaOftp, selected.ToList(),
+            results = await Announcements.SendAsync(ChangeId, pageUrl, QuestionnaireBaseUrl, viaOftp, selected.ToList(),
                 (await AuthenticationState).User.Identity?.Name);
             var failed = results.Count(r => r.Error is not null);
             if (failed == 0)
@@ -133,6 +135,32 @@ public partial class CertificateAnnouncement : ComponentBase
             busy = false;
         }
     }
+
+    /// <summary>The questionnaires are reached at the address the administration runs at, as the certificate page.</summary>
+    private string? QuestionnaireBaseUrl => withQuestionnaire ? Navigation.BaseUri : null;
+
+    private async Task TakeOverContactAsync(int linkId)
+    {
+        try
+        {
+            var added = await Questionnaires.TakeOverContactAsync(linkId, (await AuthenticationState).User.Identity?.Name);
+            Messenger.AddInformation(added.Count == 0
+                ? "The partners have that contact already."
+                : $"Contact added to {string.Join(", ", added)}.");
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Messenger.AddError(ex.Message);
+        }
+    }
+
+    private static string Describe(Oftp4Net.Domain.CertificateAnnouncementLink a) => a.Takeover switch
+    {
+        Oftp4Net.Domain.AnnouncementTakeover.Imported => "imported",
+        Oftp4Net.Domain.AnnouncementTakeover.NeedsHelp => "needs help",
+        _ => a.PlannedAt is { } at ? $"by {at:d}" : "will import",
+    };
 
     private async Task SaveTemplateAsync()
     {

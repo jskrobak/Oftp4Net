@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Havit.Data.Patterns.UnitOfWorks;
 using Havit.Services.TimeServices;
 using Microsoft.Extensions.Logging;
 using Oftp4Net.DataLayer.Repositories;
@@ -13,11 +14,17 @@ namespace Oftp4Net.Services.Security;
 /// <summary>One partner connection named in an announcement.</summary>
 public sealed record AnnouncedConnection(int PartnerId, string PartnerName, string PartnerSsid, string Host, int Port, string OurSsid, int? IdentityId);
 
+/// <summary>Our certificate sent to a partner over OFTP and what became of it.</summary>
+public sealed record OftpDelivery(string PartnerName, SendStatus Status, DateTime? DeliveredAt);
+
 /// <summary>One e-mail of an announcement: the partners that share the same recipients get one message together.</summary>
 /// <param name="Key">Identifies the message among the others of the change (the recipients).</param>
 /// <param name="SentAt">When it was sent already, <c>null</c> when not yet.</param>
+/// <param name="Questionnaire">The questionnaire of the message with the last answer.</param>
+/// <param name="Deliveries">Our certificate sent to its partners over OFTP since the change was scheduled.</param>
 public sealed record AnnouncementMail(
-    string Key, IReadOnlyList<string> To, IReadOnlyList<AnnouncedConnection> Connections, string Subject, string Body, DateTime? SentAt);
+    string Key, IReadOnlyList<string> To, IReadOnlyList<AnnouncedConnection> Connections, string Subject, string Body, DateTime? SentAt,
+    CertificateAnnouncementLink Questionnaire, IReadOnlyList<OftpDelivery> Deliveries);
 
 /// <summary>The announcement of a scheduled change of our certificate.</summary>
 public sealed record AnnouncementPlan(
@@ -35,6 +42,9 @@ public sealed record AnnouncementResult(string Key, IReadOnlyList<string> To, st
 /// </summary>
 public class CertificateAnnouncementService(
     ICertificateChangeRepository changeRepository,
+    ICertificateAnnouncementLinkRepository linkRepository,
+    ISendQueueItemRepository sendQueueRepository,
+    IUnitOfWork unitOfWork,
     ICertificateRepository certificateRepository,
     IPartnerRepository partnerRepository,
     IIdentityRepository identityRepository,
@@ -48,10 +58,18 @@ public class CertificateAnnouncementService(
     ITransferEventLog eventLog,
     ILogger<CertificateAnnouncementService> logger)
 {
-    /// <summary>The messages of the announcement of change <paramref name="changeId"/>.</summary>
+    /// <summary>
+    /// The messages of the announcement of change <paramref name="changeId"/>. Each one gets its questionnaire, created
+    /// the first time the message is prepared and kept for the same recipients.
+    /// </summary>
     /// <param name="pageUrl">Address of the public certificate page, <c>null</c> when it is not to be named.</param>
+    /// <param name="questionnaireBaseUrl">
+    /// Public address of the application the questionnaires are reached at (e.g. https://oftp.example.com/),
+    /// <c>null</c> to leave them out of the text.
+    /// </param>
     /// <param name="viaOftp">Whether the text says that the certificate is sent over OFTP as well.</param>
-    public async Task<AnnouncementPlan> PlanAsync(int changeId, string? pageUrl, bool viaOftp, CancellationToken cancellationToken = default)
+    public async Task<AnnouncementPlan> PlanAsync(int changeId, string? pageUrl, string? questionnaireBaseUrl, bool viaOftp,
+        CancellationToken cancellationToken = default)
     {
         var change = await LoadChangeAsync(changeId, cancellationToken);
         var settings = await settingsService.GetGlobalSettingsAsync();
@@ -66,13 +84,17 @@ public class CertificateAnnouncementService(
             .GroupBy(e => e.PartnerId).ToDictionary(g => g.Key ?? 0, g => g.Max(e => e.Timestamp));
 
         var values = Values(settings, change, certificate, replaced, pageUrl, viaOftp, defaultIdentity);
+        var groups = Group(partners);
+        var links = await EnsureQuestionnairesAsync(change, groups, cancellationToken);
+        var deliveries = (await sendQueueRepository.GetCertificateDeliveriesAsync(partners.Select(p => p.Id).ToList(), change.Created, cancellationToken))
+            .ToLookup(d => d.PartnerId);
         var subjectTemplate = string.IsNullOrWhiteSpace(settings.CertificateAnnouncementSubject)
             ? CertificateAnnouncementTemplate.DefaultSubject : settings.CertificateAnnouncementSubject;
         var bodyTemplate = string.IsNullOrWhiteSpace(settings.CertificateAnnouncementBody)
             ? CertificateAnnouncementTemplate.DefaultBody : settings.CertificateAnnouncementBody;
 
         var mails = new List<AnnouncementMail>();
-        foreach (var group in Group(partners))
+        foreach (var group in groups)
         {
             var connections = group.Partners.Select(p =>
             {
@@ -80,12 +102,19 @@ public class CertificateAnnouncementService(
                 return new AnnouncedConnection(p.Id, p.Name, p.SSID.Trim(), p.Host, p.Port, identity?.SSID.Trim() ?? "", identity?.Id);
             }).ToList();
 
-            var mailValues = new Dictionary<string, string?>(values) { ["Connections"] = Connections(connections) };
+            var key = Key(group.To);
+            var link = links[key];
+            var mailValues = new Dictionary<string, string?>(values)
+            {
+                ["Connections"] = Connections(connections),
+                ["ConfirmUrl"] = string.IsNullOrWhiteSpace(questionnaireBaseUrl) ? null : QuestionnaireUrl(questionnaireBaseUrl, link.Token),
+            };
             var sentAt = group.Partners.Select(p => sent.TryGetValue(p.Id, out var at) ? at : (DateTime?)null).Max();
-            mails.Add(new AnnouncementMail(string.Join(",", group.To), group.To, connections,
+            var oftp = group.Partners.SelectMany(p => deliveries[p.Id].Select(d => new OftpDelivery(p.Name, d.Status, d.DeliveredDate))).ToList();
+            mails.Add(new AnnouncementMail(key, group.To, connections,
                 CertificateAnnouncementTemplate.Render(subjectTemplate, mailValues),
                 CertificateAnnouncementTemplate.Render(bodyTemplate, mailValues),
-                sentAt));
+                sentAt, link, oftp));
         }
 
         var withoutContact = partners.Where(p => Recipients(p).Count == 0).Select(p => p.Name).Order().ToList();
@@ -93,10 +122,10 @@ public class CertificateAnnouncementService(
     }
 
     /// <summary>Sends the messages with the given keys; a failure of one does not stop the others.</summary>
-    public async Task<List<AnnouncementResult>> SendAsync(int changeId, string? pageUrl, bool viaOftp, IReadOnlyCollection<string> keys,
-        string? actor, CancellationToken cancellationToken = default)
+    public async Task<List<AnnouncementResult>> SendAsync(int changeId, string? pageUrl, string? questionnaireBaseUrl, bool viaOftp,
+        IReadOnlyCollection<string> keys, string? actor, CancellationToken cancellationToken = default)
     {
-        var plan = await PlanAsync(changeId, pageUrl, viaOftp, cancellationToken);
+        var plan = await PlanAsync(changeId, pageUrl, questionnaireBaseUrl, viaOftp, cancellationToken);
         var attachment = await AttachmentAsync(plan, cancellationToken);
         var partners = (await partnerRepository.GetAllAsync(cancellationToken)).ToDictionary(p => p.Id);
         var results = new List<AnnouncementResult>();
@@ -139,14 +168,109 @@ public class CertificateAnnouncementService(
     }
 
     /// <summary>Sends one message of the announcement to <paramref name="address"/> only, to check it; nothing is recorded.</summary>
-    public async Task SendTestAsync(int changeId, string? pageUrl, bool viaOftp, string key, string address,
+    public async Task SendTestAsync(int changeId, string? pageUrl, string? questionnaireBaseUrl, bool viaOftp, string key, string address,
         CancellationToken cancellationToken = default)
     {
-        var plan = await PlanAsync(changeId, pageUrl, viaOftp, cancellationToken);
+        var plan = await PlanAsync(changeId, pageUrl, questionnaireBaseUrl, viaOftp, cancellationToken);
         var mail = plan.Mails.FirstOrDefault(m => m.Key == key) ?? throw new InvalidOperationException("The message is not part of the announcement.");
         var attachment = await AttachmentAsync(plan, cancellationToken);
         await mailService.SendAsync(new OutgoingMail([address.Trim()],
             $"[TEST for {string.Join(", ", mail.To)}] {mail.Subject}", mail.Body, [attachment]), cancellationToken);
+    }
+
+    /// <summary>The address of a questionnaire behind the public address of the application.</summary>
+    public static string QuestionnaireUrl(string baseUrl, string token) => $"{baseUrl.TrimEnd('/')}/cert/confirm/{token}";
+
+    /// <summary>A token nobody guesses: 32 random bytes in URL safe base64.</summary>
+    public static string NewToken() =>
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    /// <summary>How long a questionnaire answers: until a month after the replaced certificate is given up.</summary>
+    public static DateTime QuestionnaireExpiry(CertificateChange change) =>
+        (change.KeepPreviousUntil is { } until && until > change.ActivateAt ? until : change.ActivateAt).AddMonths(1);
+
+    /// <summary>
+    /// Questionnaires are created one preparation at a time: a page is prepared twice when it is opened (prerendering
+    /// and the interactive circuit), and both must not create one for the same recipients.
+    /// </summary>
+    private static readonly SemaphoreSlim QuestionnaireLock = new(1, 1);
+
+    /// <summary>The questionnaire of every message, created when it is prepared for the first time.</summary>
+    private async Task<Dictionary<string, CertificateAnnouncementLink>> EnsureQuestionnairesAsync(CertificateChange change,
+        List<(IReadOnlyList<string> To, List<Partner> Partners)> groups, CancellationToken cancellationToken)
+    {
+        await QuestionnaireLock.WaitAsync(cancellationToken);
+        try
+        {
+            return await EnsureQuestionnairesLockedAsync(change, groups, cancellationToken);
+        }
+        finally
+        {
+            QuestionnaireLock.Release();
+        }
+    }
+
+    private async Task<Dictionary<string, CertificateAnnouncementLink>> EnsureQuestionnairesLockedAsync(CertificateChange change,
+        List<(IReadOnlyList<string> To, List<Partner> Partners)> groups, CancellationToken cancellationToken)
+    {
+        // Should there be more for the same recipients, the one with an answer wins.
+        var existing = (await linkRepository.GetByChangeAsync(change.Id, cancellationToken))
+            .GroupBy(l => l.RecipientKey)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(l => l.RespondedAt.HasValue).ThenBy(l => l.Id).First());
+        var expiresAt = QuestionnaireExpiry(change);
+        var result = new Dictionary<string, CertificateAnnouncementLink>();
+        var changed = false;
+        foreach (var group in groups)
+        {
+            var key = Key(group.To);
+            var partnerIds = group.Partners.Select(p => p.Id).Order().ToList();
+            if (existing.TryGetValue(key, out var link))
+            {
+                if (!link.PartnerIds.Order().SequenceEqual(partnerIds) || link.ExpiresAt != expiresAt)
+                {
+                    link.PartnerIds = partnerIds;
+                    link.ExpiresAt = expiresAt;
+                    unitOfWork.AddForUpdate(link);
+                    changed = true;
+                }
+            }
+            else
+            {
+                link = new CertificateAnnouncementLink
+                {
+                    CertificateChangeId = change.Id,
+                    RecipientKey = key,
+                    PartnerIds = partnerIds,
+                    Token = NewToken(),
+                    Created = timeService.GetCurrentTime(),
+                    ExpiresAt = expiresAt,
+                };
+                unitOfWork.AddForInsert(link);
+                changed = true;
+            }
+
+            result[key] = link;
+        }
+
+        if (changed)
+            await unitOfWork.CommitAsync(cancellationToken);
+        return result;
+    }
+
+    /// <summary>The recipients as one value: the key of the message and of its questionnaire.</summary>
+    private static string Key(IReadOnlyList<string> to) => string.Join(",", to).ToLowerInvariant();
+
+    /// <summary>The connections of the partners, as the announcement names them.</summary>
+    public async Task<List<AnnouncedConnection>> ConnectionsAsync(IReadOnlyCollection<int> partnerIds, CancellationToken cancellationToken = default)
+    {
+        var settings = await settingsService.GetGlobalSettingsAsync();
+        var identities = await identityRepository.GetAllAsync(cancellationToken);
+        var defaultIdentity = DefaultIdentity(settings, identities, await listenerRepository.GetAllAsync(cancellationToken));
+        return (await partnerRepository.GetAllAsync(cancellationToken)).Where(p => partnerIds.Contains(p.Id)).OrderBy(p => p.Name).Select(p =>
+        {
+            var identity = identities.FirstOrDefault(i => i.Id == p.InboundIdentityId) ?? defaultIdentity;
+            return new AnnouncedConnection(p.Id, p.Name, p.SSID.Trim(), p.Host, p.Port, identity?.SSID.Trim() ?? "", identity?.Id);
+        }).ToList();
     }
 
     /// <summary>

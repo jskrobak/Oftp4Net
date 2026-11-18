@@ -44,6 +44,10 @@ public interface ISendQueueItemRepository: IRepository<SendQueueItem, int>
         CancellationToken cancellationToken = default);
 
     /// <summary>Items still waiting to be sent (new or to be retried) that were queued before the given time.</summary>
+    /// <summary>Our certificates sent to the partners over OFTP (ODETTE_CERTIFICATE_DELIVER) since a time.</summary>
+    Task<List<SendQueueItem>> GetCertificateDeliveriesAsync(IReadOnlyCollection<int> partnerIds, DateTime since,
+        CancellationToken cancellationToken = default);
+
     Task<int> CountWaitingAsync(DateTime createdBefore, CancellationToken cancellationToken = default);
 
     /// <summary>Items that failed for good since the given time.</summary>

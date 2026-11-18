@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Oftp4Net.Services.Security;
@@ -8,7 +7,8 @@ namespace Oftp4Net.Services.Security;
 /// <para>
 /// <c>{Name}</c> is replaced by its value (see <see cref="Placeholders"/>). A line that contains <c>{?Name}</c> is
 /// left out when the value is empty, e.g. the line with the address of the certificate page when it is not
-/// published; the marker itself is removed. An unknown placeholder stays as it is, so that a typo shows.
+/// published, and a line with <c>{!Name}</c> when it is not empty (the text used instead); the markers themselves
+/// are removed. An unknown placeholder stays as it is, so that a typo shows.
 /// </para>
 /// </summary>
 public static partial class CertificateAnnouncementTemplate
@@ -35,6 +35,7 @@ public static partial class CertificateAnnouncementTemplate
         ("FileName", "name of the attached certificate file"),
         ("PageUrl", "address of the public certificate page, empty when it is not published"),
         ("Oftp", "not empty when the certificate is sent over OFTP as well"),
+        ("ConfirmUrl", "address of the questionnaire of the message, empty without one"),
         ("Pem", "the new certificate in PEM"),
     ];
 
@@ -65,7 +66,10 @@ public static partial class CertificateAnnouncementTemplate
         Ke stažení je také na {PageUrl}{?PageUrl}
         Certifikát vám zároveň posíláme přes OFTP (ODETTE_CERTIFICATE_DELIVER).{?Oftp}
 
-        Převzetí certifikátu nám prosím potvrďte odpovědí na tento e-mail.
+        Převzetí certifikátu nám prosím potvrďte v krátkém dotazníku (asi na minutu; ptáme se v něm i na whitelisting IP adres):{?ConfirmUrl}
+        {ConfirmUrl}{?ConfirmUrl}
+        S dotazy nám odpovězte na tento e-mail.{?ConfirmUrl}
+        Převzetí certifikátu nám prosím potvrďte odpovědí na tento e-mail.{!ConfirmUrl}
 
         S pozdravem
         {Company}
@@ -93,7 +97,10 @@ public static partial class CertificateAnnouncementTemplate
         It can also be downloaded from {PageUrl}{?PageUrl}
         We also send it to you over OFTP (ODETTE_CERTIFICATE_DELIVER).{?Oftp}
 
-        Please confirm that you have taken the certificate over by replying to this e-mail.
+        Please confirm that you take the certificate over in a short questionnaire (about a minute; it also asks about IP whitelisting):{?ConfirmUrl}
+        {ConfirmUrl}{?ConfirmUrl}
+        For questions, please reply to this e-mail.{?ConfirmUrl}
+        Please confirm that you have taken the certificate over by replying to this e-mail.{!ConfirmUrl}
 
         Best regards
         {Company}
@@ -106,26 +113,21 @@ public static partial class CertificateAnnouncementTemplate
     /// <summary>Fills the placeholders of <paramref name="template"/> with <paramref name="values"/>.</summary>
     public static string Render(string template, IReadOnlyDictionary<string, string?> values)
     {
-        var result = new StringBuilder();
-        var lines = template.Replace("\r\n", "\n").Split('\n');
-        for (var i = 0; i < lines.Length; i++)
+        var kept = new List<string>();
+        foreach (var line in template.Replace("\r\n", "\n").Split('\n'))
         {
-            var line = lines[i];
-            var conditions = Condition().Matches(line).Select(m => m.Groups[1].Value).ToList();
-            if (conditions.Any(name => string.IsNullOrEmpty(values.GetValueOrDefault(name))))
+            // {?Name} keeps the line only with a value, {!Name} only without one.
+            if (Condition().Matches(line).Any(m => string.IsNullOrEmpty(values.GetValueOrDefault(m.Groups[2].Value)) == (m.Groups[1].Value == "?")))
                 continue;
 
-            line = Condition().Replace(line, "");
-            line = Placeholder().Replace(line, m => values.TryGetValue(m.Groups[1].Value, out var value) ? value ?? "" : m.Value);
-            result.Append(line);
-            if (i < lines.Length - 1)
-                result.Append('\n');
+            var text = Condition().Replace(line, "");
+            kept.Add(Placeholder().Replace(text, m => values.TryGetValue(m.Groups[1].Value, out var value) ? value ?? "" : m.Value));
         }
 
-        return result.ToString();
+        return string.Join('\n', kept);
     }
 
-    [GeneratedRegex(@"\{\?([A-Za-z0-9]+)\}")]
+    [GeneratedRegex(@"\{([?!])([A-Za-z0-9]+)\}")]
     private static partial Regex Condition();
 
     [GeneratedRegex(@"\{([A-Za-z0-9]+)\}")]
