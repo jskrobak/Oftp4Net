@@ -190,10 +190,6 @@ namespace Oftp4Net.Entity.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
-                    b.Property<string>("TheirIps")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
                     b.Property<string>("TlsTrust")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");

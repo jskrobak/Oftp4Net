@@ -19,7 +19,7 @@ public sealed record QuestionnaireView(
 
 /// <summary>A partner's answer as it came in, checked.</summary>
 public sealed record QuestionnaireAnswer(
-    AnnouncementTakeover Takeover, DateTime? PlannedAt, AnnouncementTlsTrust TlsTrust, bool? FiltersByIp, string? TheirIps,
+    AnnouncementTakeover Takeover, DateTime? PlannedAt, AnnouncementTlsTrust TlsTrust, bool? FiltersByIp,
     string? ContactName, string? ContactEmail, string? ContactPhone, string? Note);
 
 /// <summary>
@@ -77,7 +77,6 @@ public class CertificateQuestionnaireService(
         link.PlannedAt = answer.Takeover == AnnouncementTakeover.WillImport ? answer.PlannedAt : null;
         link.TlsTrust = answer.TlsTrust;
         link.FiltersByIp = answer.FiltersByIp;
-        link.TheirIps = answer.TheirIps;
         link.ContactName = answer.ContactName;
         link.ContactEmail = answer.ContactEmail;
         link.ContactPhone = answer.ContactPhone;
@@ -161,7 +160,7 @@ public class CertificateQuestionnaireService(
             if (string.IsNullOrEmpty(value))
                 return null;
             if (value.Length > length)
-                problems.Add($"{name}: max. {length} znaků / characters.");
+                problems.Add($"{name}: max. {length} characters / znaků.");
             return value.Length > length ? value[..length] : value;
         }
 
@@ -173,7 +172,7 @@ public class CertificateQuestionnaireService(
             _ => null,
         };
         if (takeover is null)
-            problems.Add("Vyberte, zda certifikát převezmete. / Please choose whether you will take the certificate over.");
+            problems.Add("Please choose whether you will take the certificate over. / Vyberte, zda certifikát převezmete.");
 
         DateTime? plannedAt = null;
         if (form.GetValueOrDefault("planned") is { Length: > 0 } planned)
@@ -181,7 +180,7 @@ public class CertificateQuestionnaireService(
             if (DateTime.TryParseExact(planned.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
                 plannedAt = date;
             else
-                problems.Add("Datum ve tvaru RRRR-MM-DD. / Date as YYYY-MM-DD.");
+                problems.Add("Date as YYYY-MM-DD. / Datum ve tvaru RRRR-MM-DD.");
         }
 
         var tls = form.GetValueOrDefault("tls") switch
@@ -195,10 +194,10 @@ public class CertificateQuestionnaireService(
 
         var email = Text("email", 200);
         if (email is not null && !MailAddress.TryCreate(email, out _))
-            problems.Add("Neplatná e-mailová adresa. / Invalid e-mail address.");
+            problems.Add("Invalid e-mail address. / Neplatná e-mailová adresa.");
 
         var answer = new QuestionnaireAnswer(takeover ?? AnnouncementTakeover.WillImport, plannedAt, tls, filters,
-            Text("ips", 500), Text("name", 200), email, Text("phone", 100), Text("note", 2000));
+            Text("name", 200), email, Text("phone", 100), Text("note", 2000));
         return (problems.Count == 0 ? answer : null, problems);
     }
 
@@ -213,7 +212,6 @@ public class CertificateQuestionnaireService(
         },
         $"TLS: {a.TlsTrust}",
         a.FiltersByIp switch { true => "filters by IP", false => "no IP filter", _ => null },
-        a.TheirIps is { } ips ? $"calls from {ips}" : null,
         a.ContactEmail is { } email ? $"contact {a.ContactName} <{email}>" : null,
         a.Note is { } note ? $"note: {note}" : null,
     }.Where(s => s is not null));

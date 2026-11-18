@@ -40,41 +40,10 @@ public static partial class CertificateAnnouncementTemplate
     ];
 
     public const string DefaultSubject =
-        "Změna OFTP2 certifikátu / OFTP2 certificate change – {Company} – {ActivateAt}";
+        "OFTP2 certificate change / Změna OFTP2 certifikátu – {Company} – {ActivateAt}";
 
     public const string DefaultBody = """
-        English version below.
-
-        Dobrý den,
-
-        od {ActivateAt} budeme pro OFTP2 komunikaci s vámi používat nový certifikát vydaný {IssuerName}.
-        Týká se těchto spojení (partner – vaše Odette ID (host) ⇄ naše Odette ID):
-
-        {Connections}
-
-        Prosíme, nahrajte si nový certifikát do svého OFTP2 systému před tímto termínem:
-        - pro šifrování souborů, které nám posíláte, a pro ověřování našich podpisů,
-        - pro TLS, pokud máte náš certifikát připnutý; důvěřujete-li kořenové autoritě vydavatele, pro TLS nemusíte dělat nic.
-        Soubory zašifrované pro dosavadní certifikát (sériové číslo {ReplacedSerialNumber}) přijmeme ještě do {PreviousUntil}.{?PreviousUntil}
-
-        Nový certifikát je v příloze ({FileName}) a na konci tohoto e-mailu. Před importem prosím porovnejte jeho otisk:
-          Subjekt:       {Subject}
-          Vydavatel:     {Issuer}
-          Sériové číslo: {SerialNumber}
-          Platnost:      {ValidFrom} – {ValidTo}
-          SHA-256:       {Sha256}
-        Ke stažení je také na {PageUrl}{?PageUrl}
-        Certifikát vám zároveň posíláme přes OFTP (ODETTE_CERTIFICATE_DELIVER).{?Oftp}
-
-        Převzetí certifikátu nám prosím potvrďte v krátkém dotazníku (asi na minutu; ptáme se v něm i na whitelisting IP adres):{?ConfirmUrl}
-        {ConfirmUrl}{?ConfirmUrl}
-        S dotazy nám odpovězte na tento e-mail.{?ConfirmUrl}
-        Převzetí certifikátu nám prosím potvrďte odpovědí na tento e-mail.{!ConfirmUrl}
-
-        S pozdravem
-        {Company}
-
-        ------------------------------------------------------------
+        Česká verze je níže.
 
         Dear EDI partner,
 
@@ -103,6 +72,37 @@ public static partial class CertificateAnnouncementTemplate
         Please confirm that you have taken the certificate over by replying to this e-mail.{!ConfirmUrl}
 
         Best regards
+        {Company}
+
+        ------------------------------------------------------------
+
+        Dobrý den,
+
+        od {ActivateAt} budeme pro OFTP2 komunikaci s vámi používat nový certifikát vydaný {IssuerName}.
+        Týká se těchto spojení (partner – vaše Odette ID (host) ⇄ naše Odette ID):
+
+        {Connections}
+
+        Prosíme, nahrajte si nový certifikát do svého OFTP2 systému před tímto termínem:
+        - pro šifrování souborů, které nám posíláte, a pro ověřování našich podpisů,
+        - pro TLS, pokud máte náš certifikát připnutý; důvěřujete-li kořenové autoritě vydavatele, pro TLS nemusíte dělat nic.
+        Soubory zašifrované pro dosavadní certifikát (sériové číslo {ReplacedSerialNumber}) přijmeme ještě do {PreviousUntil}.{?PreviousUntil}
+
+        Nový certifikát je v příloze ({FileName}) a na konci tohoto e-mailu. Před importem prosím porovnejte jeho otisk:
+          Subjekt:       {Subject}
+          Vydavatel:     {Issuer}
+          Sériové číslo: {SerialNumber}
+          Platnost:      {ValidFrom} – {ValidTo}
+          SHA-256:       {Sha256}
+        Ke stažení je také na {PageUrl}{?PageUrl}
+        Certifikát vám zároveň posíláme přes OFTP (ODETTE_CERTIFICATE_DELIVER).{?Oftp}
+
+        Převzetí certifikátu nám prosím potvrďte v krátkém dotazníku (asi na minutu; ptáme se v něm i na whitelisting IP adres):{?ConfirmUrl}
+        {ConfirmUrl}{?ConfirmUrl}
+        S dotazy nám odpovězte na tento e-mail.{?ConfirmUrl}
+        Převzetí certifikátu nám prosím potvrďte odpovědí na tento e-mail.{!ConfirmUrl}
+
+        S pozdravem
         {Company}
 
         ------------------------------------------------------------

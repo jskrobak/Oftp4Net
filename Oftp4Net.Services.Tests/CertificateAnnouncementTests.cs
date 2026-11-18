@@ -42,14 +42,14 @@ public class CertificateAnnouncementTests
     }
 
     [Fact]
-    public void DefaultTemplate_HasBothLanguagesWithTheNoteOnTop()
+    public void DefaultTemplate_HasEnglishFirstAndCzechBelow()
     {
         var values = CertificateAnnouncementTemplate.Placeholders.ToDictionary(p => p.Name, p => (string?)$"<{p.Name}>");
 
         var text = CertificateAnnouncementTemplate.Render(CertificateAnnouncementTemplate.DefaultBody, values);
 
-        Assert.StartsWith("English version below.", text);
-        Assert.True(text.IndexOf("Dobrý den", StringComparison.Ordinal) < text.IndexOf("Dear EDI partner", StringComparison.Ordinal));
+        Assert.StartsWith("Česká verze je níže.", text);
+        Assert.True(text.IndexOf("Dear EDI partner", StringComparison.Ordinal) < text.IndexOf("Dobrý den", StringComparison.Ordinal));
         // Every placeholder of the default text is a known one.
         Assert.DoesNotMatch(@"\{[A-Za-z0-9]+\}", text);
         Assert.Equal(2, CountOf(text, "<Connections>"));

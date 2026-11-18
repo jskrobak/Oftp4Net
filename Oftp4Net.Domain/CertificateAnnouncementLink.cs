@@ -71,10 +71,6 @@ public class CertificateAnnouncementLink
     /// <summary>Whether the partner lets only known addresses connect to it.</summary>
     public bool? FiltersByIp { get; set; }
 
-    /// <summary>Addresses the partner calls us from.</summary>
-    [StringLength(500)]
-    public string? TheirIps { get; set; }
-
     [StringLength(200)]
     public string? ContactName { get; set; }
 

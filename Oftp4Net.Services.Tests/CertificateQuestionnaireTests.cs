@@ -13,11 +13,11 @@ public class CertificateQuestionnaireTests
     {
         var (answer, problems) = CertificateQuestionnaireService.Parse(Form(
             ("takeover", "will"), ("planned", "2026-12-10"), ("tls", "pinned"), ("ipfilter", "yes"),
-            ("ips", " 203.0.113.10 "), ("name", "EDI team"), ("email", "edi@partner.example"), ("phone", ""), ("note", "Thanks")));
+            ("name", "EDI team"), ("email", "edi@partner.example"), ("phone", ""), ("note", "Thanks")));
 
         Assert.Empty(problems);
         Assert.Equal(new QuestionnaireAnswer(AnnouncementTakeover.WillImport, new DateTime(2026, 12, 10), AnnouncementTlsTrust.Pinned, true,
-            "203.0.113.10", "EDI team", "edi@partner.example", null, "Thanks"), answer);
+            "EDI team", "edi@partner.example", null, "Thanks"), answer);
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public class CertificateQuestionnaireTests
     public void Describe_SumsTheAnswerUpForTheLog()
     {
         var text = CertificateQuestionnaireService.Describe(new QuestionnaireAnswer(AnnouncementTakeover.WillImport, new DateTime(2026, 12, 10),
-            AnnouncementTlsTrust.CertificationAuthority, false, null, "EDI", "edi@partner.example", null, null));
+            AnnouncementTlsTrust.CertificationAuthority, false, "EDI", "edi@partner.example", null, null));
 
         Assert.Equal("will import by 2026-12-10; TLS: CertificationAuthority; no IP filter; contact EDI <edi@partner.example>", text);
     }

@@ -109,7 +109,7 @@
                                         var q = mail.Questionnaire;
                                         <div class="border rounded p-2 mb-2 small">
                                             <div><strong>Answer of @q.RespondedAt?.ToString("g")</strong> <span class="text-body-secondary">from @q.RemoteAddress; written by anybody with the link, check before relying on it</span></div>
-                                            <div>Certificate: @Describe(q); TLS: @q.TlsTrust; filters by IP: @(q.FiltersByIp switch { true => "yes", false => "no", _ => "unknown" })@(q.TheirIps is { } ips ? $"; calls from {ips}" : "")</div>
+                                            <div>Certificate: @Describe(q); TLS: @q.TlsTrust; filters by IP: @(q.FiltersByIp switch { true => "yes", false => "no", _ => "unknown" })</div>
                                             @if (q.ContactEmail is not null || q.ContactPhone is not null)
                                             {
                                                 <div>
