@@ -36,28 +36,26 @@ public class CertificateAnnouncementTests
 
         var text = CertificateAnnouncementTemplate.Render(CertificateAnnouncementTemplate.DefaultBody, values);
 
-        Assert.Contains("potvrďte odpovědí na tento e-mail", text);
         Assert.Contains("by replying to this e-mail", text);
         Assert.DoesNotContain("questionnaire", text);
     }
 
     [Fact]
-    public void DefaultTemplate_HasEnglishFirstAndCzechBelow()
+    public void DefaultTemplate_IsEnglishWithEveryPlaceholderKnown()
     {
         var values = CertificateAnnouncementTemplate.Placeholders.ToDictionary(p => p.Name, p => (string?)$"<{p.Name}>");
 
         var text = CertificateAnnouncementTemplate.Render(CertificateAnnouncementTemplate.DefaultBody, values);
 
-        Assert.StartsWith("Česká verze je níže.", text);
-        Assert.True(text.IndexOf("Dear EDI partner", StringComparison.Ordinal) < text.IndexOf("Dobrý den", StringComparison.Ordinal));
+        Assert.StartsWith("Dear EDI partner", text);
         // Every placeholder of the default text is a known one.
         Assert.DoesNotMatch(@"\{[A-Za-z0-9]+\}", text);
-        Assert.Equal(2, CountOf(text, "<Connections>"));
-        Assert.Equal(2, CountOf(text, "<PageUrl>"));
+        Assert.Equal(1, CountOf(text, "<Connections>"));
+        Assert.Equal(1, CountOf(text, "<PageUrl>"));
         Assert.Equal(1, CountOf(text, "<Pem>"));
-        Assert.Equal(2, CountOf(text, "<ConfirmUrl>"));
+        Assert.Equal(1, CountOf(text, "<ConfirmUrl>"));
         // With a questionnaire the line asking for a reply instead is left out.
-        Assert.DoesNotContain("potvrďte odpovědí na tento e-mail", text);
+        Assert.DoesNotContain("by replying to this e-mail", text);
         Assert.DoesNotContain("{?", text);
     }
 

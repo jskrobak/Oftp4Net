@@ -34,7 +34,7 @@ with a Blazor administration UI. Runs on .NET 10 with PostgreSQL.
 - New certificates of partners scheduled for the time the partner starts using them, from the UI or the REST API
 - Our own certificate replaced at a scheduled time, with files encrypted for the previous or the next one still
   decrypted around the roll-over, our certificates published on a page without sign in for partners to download, and
-  the new certificate announced to the partners by e-mail (SMTP or Microsoft Graph) in English and Czech
+  the new certificate announced to the partners by e-mail (SMTP or Microsoft Graph)
 - Automatic exchange of certificates over OFTP (ODETTE_CERTIFICATE_DELIVER, _REQUEST and _REPLACE): renewals,
   roll-overs and replacements taken over without the administrator
 - Certificate signing requests (CSR) with the profile of the OFTP2 Certificate Policy, for the Odette CA and others
@@ -1054,8 +1054,7 @@ selected ones; each sent message is written to *Logs → Certificates* per partn
 selected again. Partners without an e-mail address are listed to be completed. Answers of the
 [questionnaire](#questionnaire) and the delivery of the certificate over OFTP are shown with each message.
 
-The text is a template with placeholders, edited on the same page and stored in the settings: by default English and
-Czech in one message, with "Česká verze je níže." (Czech version below) on top. `{Name}` is replaced by its value (the page lists
+The text is a template with placeholders, edited on the same page and stored in the settings: by default in English. `{Name}` is replaced by its value (the page lists
 them); a line with `{?Name}` is left out when the value is empty, e.g. `{?PageUrl}` when the certificate page is not
 published and `{?Oftp}` when the certificate is not sent over OFTP, and a line with `{!Name}` when it is not empty.
 
@@ -1063,12 +1062,12 @@ published and `{?Oftp}` when the certificate is not sent over OFTP, and a line w
 
 *Link a questionnaire to each message* (on by default) gives every message its own address,
 `/cert/confirm/{token}`, with a random token of 43 characters; the default text names it as `{ConfirmUrl}` and asks
-for a reply by e-mail only without it (`{!ConfirmUrl}`). The page, in English with Czech under it, shows the connections of the
+for a reply by e-mail only without it (`{!ConfirmUrl}`). The page, in English, shows the connections of the
 message, the time of the change and the fingerprint, and asks:
 
 1. whether the partner will import the certificate (and by when), has imported it already or needs help,
 2. how it checks our TLS certificate: trusting the issuing authority, pinned, not at all, or does not know,
-3. whether it accepts connections only from known IP addresses (our outbound addresses and our host are shown),
+3. whether it accepts connections only from known IP addresses (our outbound addresses are shown),
 4. the contact of its EDI team, and a note.
 
 Anybody with the link may answer and change the answer until a month after the replaced certificate is given up; it

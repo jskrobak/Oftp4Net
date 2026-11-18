@@ -148,8 +148,7 @@ public class CertificateQuestionnaireService(
     }
 
     /// <summary>
-    /// Reads and checks the form of the questionnaire. Returns the answer, or the problems in both languages of the
-    /// page when it cannot be stored.
+    /// Reads and checks the form of the questionnaire. Returns the answer, or the problems when it cannot be stored.
     /// </summary>
     public static (QuestionnaireAnswer? Answer, List<string> Problems) Parse(IReadOnlyDictionary<string, string?> form)
     {
@@ -160,7 +159,7 @@ public class CertificateQuestionnaireService(
             if (string.IsNullOrEmpty(value))
                 return null;
             if (value.Length > length)
-                problems.Add($"{name}: max. {length} characters / znaků.");
+                problems.Add($"{name}: at most {length} characters.");
             return value.Length > length ? value[..length] : value;
         }
 
@@ -172,7 +171,7 @@ public class CertificateQuestionnaireService(
             _ => null,
         };
         if (takeover is null)
-            problems.Add("Please choose whether you will take the certificate over. / Vyberte, zda certifikát převezmete.");
+            problems.Add("Please choose whether you will take the certificate over.");
 
         DateTime? plannedAt = null;
         if (form.GetValueOrDefault("planned") is { Length: > 0 } planned)
@@ -180,7 +179,7 @@ public class CertificateQuestionnaireService(
             if (DateTime.TryParseExact(planned.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
                 plannedAt = date;
             else
-                problems.Add("Date as YYYY-MM-DD. / Datum ve tvaru RRRR-MM-DD.");
+                problems.Add("Please enter the date as YYYY-MM-DD.");
         }
 
         var tls = form.GetValueOrDefault("tls") switch
@@ -194,7 +193,7 @@ public class CertificateQuestionnaireService(
 
         var email = Text("email", 200);
         if (email is not null && !MailAddress.TryCreate(email, out _))
-            problems.Add("Invalid e-mail address. / Neplatná e-mailová adresa.");
+            problems.Add("Please enter a valid e-mail address.");
 
         var answer = new QuestionnaireAnswer(takeover ?? AnnouncementTakeover.WillImport, plannedAt, tls, filters,
             Text("name", 200), email, Text("phone", 100), Text("note", 2000));

@@ -207,7 +207,7 @@ public static class PublicCertificateEndpoints
         body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
         main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
         h1 { font-size: 1.5rem; margin: 0 0 4px; } h2 { font-size: 1.05rem; margin: 22px 0 6px; }
-        p { margin: 4px 0; } .muted { color: var(--muted); } .alt { color: var(--muted); }
+        p { margin: 4px 0; } .muted { color: var(--muted); }
         .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 10px 0; }
         code { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
         a { color: var(--accent); }
@@ -222,13 +222,11 @@ public static class PublicCertificateEndpoints
 
     private static string GoneHtml() => $$"""
         <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="robots" content="noindex"><title>Questionnaire / Dotazník</title><style>{{Style}}</style></head><body><main>
-        <h1>The questionnaire is no longer available</h1><p class="alt">Dotazník už není k dispozici.</p>
-        <p class="muted">The link is invalid or has expired. Please reply to our e-mail instead.<br>
-        Odkaz je neplatný nebo jeho platnost skončila. Odpovězte prosím na náš e-mail.</p></main></body></html>
+        <meta name="robots" content="noindex"><title>Questionnaire</title><style>{{Style}}</style></head><body><main>
+        <h1>The questionnaire is no longer available</h1>
+        <p class="muted">The link is invalid or has expired. Please reply to our e-mail instead.</p></main></body></html>
         """;
 
-    /// <summary>The questionnaire in English with the Czech text under it (or behind it, in muted colour).</summary>
     private static string QuestionnaireHtml(QuestionnaireView v, string token, IReadOnlyList<string> problems, bool saved,
         IFormCollection? form = null)
     {
@@ -238,36 +236,32 @@ public static class PublicCertificateEndpoints
         string Checked(string name, string value, bool stored) =>
             (form is not null ? form[name].ToString() == value : stored) ? " checked" : "";
         static string Time(DateTimeOffset t) => t.ToString("yyyy-MM-dd HH:mm 'UTC'zzz");
-        static string Choice(string name, string value, string isChecked, string en, string cs) =>
-            $"""<label class="choice"><input type="radio" name="{name}" value="{value}"{isChecked}> {en} / <span class="alt">{cs}</span></label>""";
-        static string Heading(string en, string cs) => $"""<h2>{en} <span class="alt">/ {cs}</span></h2>""";
+        static string Choice(string name, string value, string isChecked, string text) =>
+            $"""<label class="choice"><input type="radio" name="{name}" value="{value}"{isChecked}> {text}</label>""";
 
         var company = string.IsNullOrWhiteSpace(v.Company) ? "" : $" – {E(v.Company)}";
         var html = new StringBuilder();
         html.Append($$"""
             <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-            <meta name="robots" content="noindex"><title>OFTP2 certificate change / Změna OFTP2 certifikátu</title><style>{{Style}}</style></head>
+            <meta name="robots" content="noindex"><title>OFTP2 certificate change</title><style>{{Style}}</style></head>
             <body><main>
             <h1>OFTP2 certificate change{{company}}</h1>
-            <p class="alt">Změna OFTP2 certifikátu{{company}}</p>
             """);
 
         if (saved)
-            html.Append("""<div class="card"><p class="ok">Thank you, your answer is saved. / Děkujeme, odpověď jsme uložili.</p>""" +
-                        """<p class="muted">You can change it below at any time. / Odpověď můžete níže kdykoli upravit.</p></div>""");
+            html.Append("""<div class="card"><p class="ok">Thank you, your answer is saved.</p><p class="muted">You can change it below at any time.</p></div>""");
         else if (a.RespondedAt is { } responded)
-            html.Append($"""<div class="card"><p>Answered on {responded:yyyy-MM-dd HH:mm} – you can change it. / Odpověď z {responded:yyyy-MM-dd HH:mm} – můžete ji upravit.</p></div>""");
+            html.Append($"""<div class="card"><p>Answered on {responded:yyyy-MM-dd HH:mm} – you can change it below.</p></div>""");
 
         html.Append("""<div class="card">""");
-        html.Append($"""<p>From <strong>{E(Time(v.ActivateAt))}</strong> we use a new certificate for these connections:</p>""");
-        html.Append($"""<p class="alt">Od <strong>{E(Time(v.ActivateAt))}</strong> používáme nový certifikát pro tato spojení:</p>""");
+        html.Append($"""<p>From <strong>{E(Time(v.ActivateAt))}</strong> we use a new certificate for these connections (partner – your Odette ID (host) ⇄ our Odette ID):</p>""");
         html.Append("""<ul class="connections">""");
         foreach (var c in v.Connections)
             html.Append($"""<li>{E(c.PartnerName)} – <code>{E(c.PartnerSsid)}</code> ({E(c.Host)}:{c.Port}) ⇄ <code>{E(c.OurSsid)}</code></li>""");
         html.Append("</ul>");
-        html.Append($"""<p class="muted">{E(v.CertificateSubject)}, serial number / sériové číslo <code>{E(v.SerialNumber)}</code><br>SHA-256 <code>{E(v.Sha256)}</code></p>""");
+        html.Append($"""<p class="muted">{E(v.CertificateSubject)}, serial number <code>{E(v.SerialNumber)}</code><br>SHA-256 <code>{E(v.Sha256)}</code></p>""");
         if (v.PreviousUntil is { } until)
-            html.Append($"""<p class="muted">The current certificate is accepted until {E(Time(until))}. / Dosavadní certifikát přijímáme do {E(Time(until))}.</p>""");
+            html.Append($"""<p class="muted">The current certificate is accepted until {E(Time(until))}.</p>""");
         if (v.CertificateKey is { } key)
             html.Append($"""<p><a href="/cert/{key}.cer">{key}.cer</a> · <a href="/cert">/cert</a></p>""");
         html.Append("</div>");
@@ -277,43 +271,40 @@ public static class PublicCertificateEndpoints
 
         html.Append($"""<form method="post" action="/cert/confirm/{E(token)}">""");
 
-        html.Append(Heading("1. Taking the certificate over", "Převzetí certifikátu"));
-        html.Append(Choice("takeover", "will", Checked("takeover", "will", a.Takeover == AnnouncementTakeover.WillImport), "We will import it by", "Nahrajeme ho do"));
+        html.Append("<h2>1. Taking the certificate over</h2>");
+        html.Append(Choice("takeover", "will", Checked("takeover", "will", a.Takeover == AnnouncementTakeover.WillImport), "We will import it by"));
         html.Append($"""<input type="date" name="planned" value="{Value("planned", a.PlannedAt?.ToString("yyyy-MM-dd"))}" style="max-width:220px">""");
-        html.Append(Choice("takeover", "done", Checked("takeover", "done", a.Takeover == AnnouncementTakeover.Imported), "It is imported already", "Už je nahraný"));
-        html.Append(Choice("takeover", "help", Checked("takeover", "help", a.Takeover == AnnouncementTakeover.NeedsHelp),
-            "We need help (see the note)", "Potřebujeme pomoc (napište do poznámky)"));
+        html.Append(Choice("takeover", "done", Checked("takeover", "done", a.Takeover == AnnouncementTakeover.Imported), "It is imported already"));
+        html.Append(Choice("takeover", "help", Checked("takeover", "help", a.Takeover == AnnouncementTakeover.NeedsHelp), "We need help (see the note)"));
 
-        html.Append(Heading("2. How do you check our TLS certificate?", "Jak ověřujete náš TLS certifikát?"));
-        foreach (var (value, stored, en, cs) in new[]
+        html.Append("<h2>2. How do you check our TLS certificate?</h2>");
+        foreach (var (value, stored, text) in new[]
                  {
-                     ("ca", AnnouncementTlsTrust.CertificationAuthority, "We trust the issuing certification authority", "Důvěřujeme vydávající certifikační autoritě"),
-                     ("pinned", AnnouncementTlsTrust.Pinned, "We have pinned your certificate itself", "Máme připnutý přímo váš certifikát"),
-                     ("none", AnnouncementTlsTrust.NotChecked, "We do not check it", "Neověřujeme ho"),
-                     ("unknown", AnnouncementTlsTrust.Unknown, "We do not know", "Nevíme"),
+                     ("ca", AnnouncementTlsTrust.CertificationAuthority, "We trust the issuing certification authority"),
+                     ("pinned", AnnouncementTlsTrust.Pinned, "We have pinned your certificate itself"),
+                     ("none", AnnouncementTlsTrust.NotChecked, "We do not check it"),
+                     ("unknown", AnnouncementTlsTrust.Unknown, "We do not know"),
                  })
-            html.Append(Choice("tls", value, Checked("tls", value, a.TlsTrust == stored), en, cs));
+            html.Append(Choice("tls", value, Checked("tls", value, a.TlsTrust == stored), text));
 
-        html.Append(Heading("3. IP addresses", "IP adresy"));
-        html.Append("""<p>Do you accept connections only from known IP addresses (whitelisting)? <span class="alt">/ Povolujete příchozí spojení jen ze známých IP adres (whitelisting)?</span></p>""");
-        foreach (var (value, stored, en, cs) in new[] { ("yes", (bool?)true, "Yes", "Ano"), ("no", false, "No", "Ne"), ("unknown", null, "We do not know", "Nevíme") })
-            html.Append(Choice("ipfilter", value, Checked("ipfilter", value, a.RespondedAt is not null && a.FiltersByIp == stored), en, cs));
+        html.Append("<h2>3. IP addresses</h2>");
+        html.Append("<p>Do you accept connections only from known IP addresses (whitelisting)?</p>");
+        foreach (var (value, stored, text) in new[] { ("yes", (bool?)true, "Yes"), ("no", false, "No"), ("unknown", null, "We do not know") })
+            html.Append(Choice("ipfilter", value, Checked("ipfilter", value, a.RespondedAt is not null && a.FiltersByIp == stored), text));
         if (v.OurIps.Count > 0)
-            html.Append($"""<p class="muted">We call you from / Voláme vás z adres: <code>{E(string.Join(", ", v.OurIps))}</code></p>""");
-        if (!string.IsNullOrWhiteSpace(v.Host))
-            html.Append($"""<p class="muted">You call us at / Nás voláte na: <code>{E(v.Host)}{(v.Port is { } port ? $":{port}" : "")}</code></p>""");
+            html.Append($"""<p class="muted">We call you from: <code>{E(string.Join(", ", v.OurIps))}</code></p>""");
 
-        html.Append(Heading("4. Contact of your EDI team", "Kontakt na váš EDI tým"));
+        html.Append("<h2>4. Contact of your EDI team</h2>");
         html.Append("""<div class="row">""");
-        html.Append($"""<label>Name / <span class="alt">Jméno</span><input type="text" name="name" maxlength="200" value="{Value("name", a.ContactName)}"></label>""");
+        html.Append($"""<label>Name<input type="text" name="name" maxlength="200" value="{Value("name", a.ContactName)}"></label>""");
         html.Append($"""<label>E-mail<input type="email" name="email" maxlength="200" value="{Value("email", a.ContactEmail)}"></label>""");
-        html.Append($"""<label>Phone / <span class="alt">Telefon</span><input type="text" name="phone" maxlength="100" value="{Value("phone", a.ContactPhone)}"></label>""");
+        html.Append($"""<label>Phone<input type="text" name="phone" maxlength="100" value="{Value("phone", a.ContactPhone)}"></label>""");
         html.Append("</div>");
 
-        html.Append(Heading("5. Note", "Poznámka"));
+        html.Append("<h2>5. Note</h2>");
         html.Append($"""<textarea name="note" rows="4" maxlength="2000">{Value("note", a.Note)}</textarea>""");
 
-        html.Append("""<button type="submit">Submit / Odeslat</button>""");
+        html.Append("""<button type="submit">Submit</button>""");
         html.Append("</form></main></body></html>");
         return html.ToString();
     }
